@@ -1,0 +1,11 @@
+# Claude Code session transcripts
+*.jsonl
+
+**/.DS_Store
+**/build
+**/build-release
+
+# Kronos backup files -- real personal setlists + Korg factory content,
+# and some run tens of MB; not meant to be committed to this repo.
+*.PCG
+*.SNG

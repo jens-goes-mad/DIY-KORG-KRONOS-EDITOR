@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>DIY Kronos Editor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>DIY Kronos Editor</h1>
+    <span class="subtitle">Drag a .PCG file onto a pane to open it -- drag a row within a pane to swap, drag across panes to copy</span>
+  </header>
+
+  <main class="panes">
+    <section class="pane" data-pane="A"></section>
+    <section class="pane" data-pane="B"></section>
+  </main>
+
+  <footer class="statusbar" id="statusBar">Ready.</footer>
+
+  <script src="pane.js"></script>
+  <script src="mock_bridge.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

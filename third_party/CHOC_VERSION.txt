@@ -1,0 +1,2 @@
+a08bfd84494921700703a8433b9d1a304edfafd2 (2026-07-07)
+Vendored from https://github.com/Tracktion/choc, header-only, ISC license.

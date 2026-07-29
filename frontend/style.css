@@ -1,0 +1,234 @@
+:root {
+  color-scheme: dark;
+  --bg: #1e1f22;
+  --panel: #2a2b2e;
+  --border: #3d3e42;
+  --text: #e4e4e6;
+  --text-dim: #9a9ba0;
+  --accent: #5b8def;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.topbar h1 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.subtitle {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.panes {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  min-height: 0;
+}
+
+.pane {
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 10px;
+  gap: 8px;
+  border: 2px dashed transparent;
+}
+
+.pane.drag-over {
+  border-color: var(--accent);
+  background: rgba(91, 141, 239, 0.08);
+}
+
+.pane-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setlist-select, .filter-input {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 5px 8px;
+}
+
+.setlist-select {
+  flex: 1;
+}
+
+.filter-input {
+  width: 100%;
+}
+
+.setlist-select:disabled, .filter-input:disabled {
+  opacity: 0.5;
+}
+
+.setlist-info {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.entries-scroll {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.entries-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.entries-table th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.entries-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.entries-table .col-index {
+  width: 3.5em;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.entries-table .col-narrow {
+  width: 4.5em;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.entries-table .col-bank {
+  width: 9em;  /* double col-narrow -- "USER-A-009" style labels were wrapping at 4.5em */
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.color-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.entries-table tbody tr {
+  cursor: grab;
+}
+
+.entries-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.entries-table tbody tr.drop-target {
+  background: rgba(91, 141, 239, 0.25);
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
+.entries-table tbody tr.expanded {
+  background: rgba(91, 141, 239, 0.12);
+}
+
+.instrument-name {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.instrument-name-unknown {
+  opacity: 0.6;
+}
+
+.entries-table td.has-comment {
+  text-decoration: underline dotted var(--text-dim);
+  text-underline-offset: 3px;
+}
+
+.comment-editor-row td {
+  background: var(--panel);
+  padding: 8px;
+  cursor: default;
+}
+
+.comment-editor-row-inner {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.comment-editor {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  resize: vertical;
+  overflow-y: hidden;  /* grown to fit content in JS instead of scrolling */
+}
+
+.comment-editor-row-inner button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 12px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.comment-editor-row-inner button:hover {
+  filter: brightness(1.1);
+}
+
+.statusbar {
+  padding: 6px 16px;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+}
