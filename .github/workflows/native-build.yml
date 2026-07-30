@@ -5,6 +5,17 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # Skip the 4-platform native rebuild for changes that can't affect it
+    # (docs/, frontend/ -- Debug reads frontend/ from disk, Release embeds
+    # it as inert byte data, neither path recompiles anything when it
+    # changes). Tags always build regardless of paths, since path filters
+    # only apply to branch pushes.
+    paths:
+      - "CMakeLists.txt"
+      - "src/**"
+      - "third_party/**"
+      - "tools/**"
+      - ".github/workflows/native-build.yml"
 
 jobs:
   macos-arm64:
