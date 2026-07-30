@@ -104,9 +104,9 @@ thus: [jens-goes-mad](/me).
 
 ## Where to look next
 
-- [Format notes](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/blob/main/docs/README.md) --
-  the full `.PCG`/`.SNG` container/chunk layout, SDB1/SBK1/CBK1/MBK1/PBK1 record
-  structures, and a running list of open questions, in the repo itself for now.
+- [The file format](/format) -- the full `.PCG`/`.SNG` container/chunk layout,
+  SDB1/SBK1/CBK1/MBK1/PBK1 record structures, Combi Timbre references, and a running
+  list of open questions.
 - [Project status](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/blob/main/STATE.md) --
   what's built, what's verified, and the full list of known blind spots.
 
