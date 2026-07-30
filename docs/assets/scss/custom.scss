@@ -1,0 +1,163 @@
+/*
+    You can add your own custom styles here.
+*/
+
+h1, h2, h3, h4, h5, h6 {
+  color: orange;
+  margin: 10px;
+}
+
+/* Base style for color blocks (light mode by default) */
+.colorblock {
+  background-color: var(--bg-light);
+}
+
+/* Dark mode override: when a parent has data-scheme="dark", use the dark color */
+[data-scheme="dark"] .colorblock {
+  background-color: var(--bg-dark);
+}
+
+.badge {
+  white-space: nowrap;
+  background-color: orange;
+  color: black;
+  padding: 4px;
+  text-align: center !important;
+  border-radius: 5px;
+}
+.timeline-table {
+  border: orange solid;
+  border-width: 2px 0 2px 0;
+}
+.timeline-title {
+  color: orange;
+  text-align: left;
+  font-weight: bold;
+}
+.timeline-table ul {
+  padding-left: 15px;
+  margin: 0;
+}
+
+.category-list .article-image img {
+  object-fit: fill !important;
+}
+.article-list img {
+  object-fit: cover !important;
+}
+
+.gallery {
+  background-color: #232325 !important;
+}
+article.main-article .section-card {
+  color: lightgray !important;
+}
+article.main-article div.section-card section.article-content img.gallery-image {
+  width: 100%;
+  height: 100%;
+}
+
+.sidebar {
+  font-size: 0.95em;
+}
+.sidebar-siblings {
+  border-width: 1px;
+  border-color: lightgray;
+  border-style: solid;
+  border-radius: 10px;
+  padding: 0 15px 0 15px;
+}
+.sidebar-siblings p {
+  color: #999999;
+}
+
+
+#TableOfContents > ol li ol li {
+  margin: 0 !important;
+}
+
+p.warning {
+  background-color: orangered;
+  color: yellow;
+  font-weight: bold;
+  padding: 10px;
+}
+
+.chatgpt {
+  background-color: black;
+  /* background-image: url('/img/ChatGPT_logo.svg');
+  background-repeat: no-repeat; */
+  color: white;
+  padding: 10px;
+  border-radius: 10px;
+}
+.menu-action {
+  font-family: monospace;
+  font-size: 0.9em;
+}
+.cli-action {
+  background-color: #2a2e2e;
+  border-radius: 5px;
+  color: lightgrey;
+  font-family: monospace;
+  font-size: 0.9em;
+  padding: 5px;
+}
+
+code {
+  font-family: monospace;
+  font-size: 0.8em;
+}
+
+/* Reference tables (MIDI message/CC tables): first column only needs to fit
+   short numbers, so shrink it to its content instead of taking an even
+   share of the table width -- frees up room for the wider hex/binary
+   columns. white-space: nowrap on table-cell <code> stops those hex/binary
+   values themselves from line-wrapping regardless of column width. */
+.article-content table td:first-child,
+.article-content table th:first-child {
+  width: 1%;
+  white-space: nowrap;
+}
+.article-content table code {
+  white-space: nowrap;
+}
+
+.site-index-branch {
+  margin-bottom: 1.5em;
+}
+.site-index-branch h3 {
+  margin-bottom: 0.2em;
+}
+.site-index-leaves {
+  margin: 0.3em 0 0 1.2em;
+  padding: 0;
+  list-style: disc;
+}
+.site-index-leaves li {
+  margin-bottom: 0.3em;
+}
+.site-index-desc {
+  color: #999999;
+  font-size: 0.9em;
+}
+
+section.article-content a::before {
+  color: orange;
+  content: "↗ ";
+}
+section.article-content a {
+  color: #A0A0A0;
+}
+section.article-content a:hover {
+  color: black;
+  font-weight: bolder;
+}
+
+
+header.shown-by-page {
+  background-color: #2a2e2e;
+  text-align: center;
+  padding-top: 20px;
+  padding-botton  : 20px;
+}
