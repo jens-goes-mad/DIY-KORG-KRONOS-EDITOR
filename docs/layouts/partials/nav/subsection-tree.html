@@ -1,0 +1,22 @@
+{{/* layouts/partials/nav/subsection-tree.html */}}
+
+{{- $current := . -}}
+{{- $sections := .Sections -}}
+
+{{ if gt (len $sections) 0 }}
+  <nav class="nested-subsection-nav">
+    <ul>
+      {{ range $section := $sections }}
+        {{/* Only render if this section is a direct child of the current section */}}
+        {{ if eq $section.Parent $current }}
+          <li>
+            <a href="{{ $section.RelPermalink }}">{{ $section.Title }}</a>
+
+            {{/* Recursively include the partial for deeper levels */}}
+            {{ partial "nav/subsection-tree.html" $section }}
+          </li>
+        {{ end }}
+      {{ end }}
+    </ul>
+  </nav>
+{{ end }}

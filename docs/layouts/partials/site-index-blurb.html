@@ -1,0 +1,8 @@
+{{/* Partial: site-index-blurb.html -- compact one-line description for a
+     page, used by the site-index shortcode. Prefers the page's own
+     `links[0].description` front matter (already written for most section
+     pages), falling back to an auto-summary for pages without one. */}}
+{{- $desc := "" }}
+{{- with .Params.links }}{{ $desc = (index . 0).description }}{{ end }}
+{{- if not $desc }}{{ $desc = .Summary | plainify | truncate 140 }}{{ end }}
+{{- $desc }}

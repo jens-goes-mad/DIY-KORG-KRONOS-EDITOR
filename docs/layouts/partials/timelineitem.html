@@ -1,0 +1,11 @@
+<tr>
+    <td class="whitespace-nowrap align-top">
+        <span class="badge">{{ .label }}</span>
+    </td>
+    <td class="align-top">
+        <div class="timeline-title">{{ .title }}</div>
+        <div>
+            {{ .body | markdownify }}
+        </div>
+    </td>
+</tr>

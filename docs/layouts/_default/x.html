@@ -1,0 +1,14 @@
+{{ define "main" }}
+    {{ $filtered := where (where .Site.RegularPages "Type" "in" .Site.Params.mainSections) "Params.hidden" "!=" true }}
+    {{ $sorted := sort $filtered "Params.categoryWeight" }}
+
+    <section class="article-list category-list">
+        {{ range $index, $element := $sorted }}
+            {{ partial "article-list/default" . }}
+        {{ end }}
+    </section>
+{{ end }}
+
+{{ define "right-sidebar" }}
+    {{ partial "sidebar/right.html" (dict "Context" . "Scope" "homepage") }}
+{{ end }}

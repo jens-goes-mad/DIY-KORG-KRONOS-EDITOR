@@ -1,0 +1,13 @@
+<div class="accordion" id="{{ .id }}">
+    <button class="accordion-toggle {{ if .open }}active{{ end }}">
+        <span class="chevron"></span>
+{{ .title }}
+    </button>
+    <div class="accordion-content {{ if .open }}open{{ end }}">
+        <div class="accordion-inner">
+            <a href="{{ .link }}">
+{{ .content | safeHTML }}
+            </a>
+        </div>
+    </div>
+</div>

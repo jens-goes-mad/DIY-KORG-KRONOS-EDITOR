@@ -1,0 +1,39 @@
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        document.querySelectorAll(".accordion-toggle").forEach(function (toggle) {
+            toggle.addEventListener("click", function () {
+                const content = toggle.nextElementSibling;
+                const isOpen = content.classList.contains("open");
+
+                // Close all others
+                document.querySelectorAll(".accordion-content").forEach(el => {
+                    el.classList.remove("open");
+                    el.style.maxHeight = null;
+                });
+
+                document.querySelectorAll(".accordion-toggle").forEach(btn => {
+                    btn.classList.remove("active");
+                });
+
+                // Toggle current one
+                if (!isOpen) {
+                    content.classList.add("open");
+                    content.style.maxHeight = content.scrollHeight + "px";
+                    toggle.classList.add("active"); // ✅ THIS LINE sets the class on the button!
+                }
+            });
+        });
+
+        // Also: open default accordion (e.g. first)
+        const initiallyOpen = document.querySelector(".accordion-content.open");
+        if (initiallyOpen) {
+            initiallyOpen.style.maxHeight = initiallyOpen.scrollHeight + "px";
+
+            // ✅ Add .active to the button BEFORE it
+            const toggle = initiallyOpen.previousElementSibling;
+            if (toggle && toggle.classList.contains("accordion-toggle")) {
+                toggle.classList.add("active");
+            }
+        }
+    });
+</script>

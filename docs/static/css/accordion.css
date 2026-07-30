@@ -1,0 +1,43 @@
+.accordion {
+  margin: 0 10px 0 10px;
+}
+
+.accordion-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+/* Default (light) */
+.accordion-toggle {
+  align-items: center;
+  background: none;
+  border: none;
+  color: black;
+  cursor: pointer;
+  display: flex;
+  font-weight: bold;
+  gap: 0.5rem;
+  padding-left: 0;
+}
+
+/* Dark mode */
+html[data-scheme="dark"] .accordion-toggle {
+  color: #ddd;
+}
+
+.accordion-toggle .chevron::before {
+  color: orange;
+  content: "▸"; /* right-facing arrow */
+  display: inline-block;
+  font-size: 1.75em;
+  transition: transform 0.2s ease;
+}
+
+.accordion-toggle.active .chevron::before,
+.accordion-content.open ~ .accordion-toggle .chevron::before {
+  color: orange;
+  content: "▸"; /* right-facing arrow */
+  font-size: 1.75em;
+  transform: rotate(90deg); /* downward arrow */
+}

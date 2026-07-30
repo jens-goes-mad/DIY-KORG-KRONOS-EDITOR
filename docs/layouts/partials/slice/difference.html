@@ -1,0 +1,16 @@
+{{/*
+    Returns all items in A that are NOT in B
+    Usage: {{ partial "slice/difference" (dict "A" $listA "B" $listB) }}
+*/}}
+
+{{- $A := .A -}}
+{{- $B := .B -}}
+{{- $result := slice -}}
+
+{{- range $A }}
+    {{- if not (in $B .) }}
+        {{- $result = $result | append . }}
+    {{- end }}
+{{- end }}
+
+{{- return $result -}}

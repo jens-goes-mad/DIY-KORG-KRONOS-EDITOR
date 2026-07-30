@@ -1,0 +1,86 @@
+{{- $scope := default "homepage" .Scope -}}
+{{- $context := .Context -}}
+{{- $pages := .Pages -}}
+
+{{- with (index .Context.Site.Params.widgets $scope) -}}
+    <aside class="sidebar right-sidebar sticky">
+
+    {{ range $widget := . }}
+        {{ if templates.Exists (printf "partials/widget/%s.html" .type) }}
+            <!-- Ensure that the `params` is not nil -->
+            {{- $params := default dict .params -}}
+            {{ partial (printf "widget/%s" .type) (dict "Context" $context "Params" $params) }}
+        {{ else }}
+            {{ warnf "Widget %s not found" .type }}
+        {{ end }}
+    {{ end }}
+
+        <div class="sidebar-siblings">
+    {{ $pagesWithoutParent := slice }}
+    {{ if and $pages (gt (len $pages) 0) }}
+        {{ $pagesWithoutParent := append $pages . }}
+        {{ $pagesWithoutParent := where $pagesWithoutParent "Params.parent" "ne" nil }}
+    {{ end }}
+
+    {{- $root := $context.FirstSection -}}
+    {{- $descendants := slice -}}
+    {{ if $root }}
+        {{ range $root.Pages }}
+            {{ $descendants = $descendants | append . }}
+        {{ end }}
+    {{ end }}
+
+    {{- $descendantsFiltered := slice -}}
+    {{ range $descendants }}
+        {{ if not (in $pages .) }}
+            {{ $descendantsFiltered = $descendantsFiltered | append . }}
+        {{ end }}
+    {{ end }}
+
+    {{ if and $pages (gt (len $pages) 0) }}
+            <h2>Similar Topics</h2>
+        {{ range $pages }}
+            {{ partial "components/accordion.html" (dict
+                "link" .RelPermalink
+                "title" .Title
+                "content" (partial "components/div-content-right-section.html" .)
+            ) }}
+        {{ end }}
+    {{ end }}
+
+    {{ if not $pages }}
+        {{- $current := $context -}}
+        {{- $siblings := slice -}}
+
+        {{ if and (not $pages) $current.Parent }}
+            {{ $siblings = where $current.Parent.Pages "RelPermalink" "ne" $current.RelPermalink }}
+        {{ else if and (not $pages) $current.Section }}
+            {{ $siblings = where (where $context.Site.RegularPages "Section" $current.Section) "RelPermalink" "ne" $current.RelPermalink }}
+        {{ end }}
+
+        {{ $descendantsFiltered = partial "slice/difference" (dict "A" $descendantsFiltered "B" $siblings) }}
+        {{ if and $current.Section (gt (len $siblings) 0) }}
+            <h2>More in this section</h2>
+            {{ range $siblings }}
+                {{ partial "components/accordion.html" (dict
+                    "link" .RelPermalink
+                    "title" .Title
+                    "content" (partial "components/div-content-right-section.html" .)
+                ) }}
+            {{ end }}
+        {{ end }}
+    {{ end }}
+
+    {{ if $descendantsFiltered }}
+    <h2>Chapters</h2>
+        {{ range $descendantsFiltered }}
+            {{ partial "components/accordion.html" (dict
+                "link" .RelPermalink
+                "title" .Title
+                "content" (partial "components/div-content-right-section.html" .)
+            ) }}
+        {{ end }}
+    {{ end }}
+        </div>
+    </aside>
+{{ end }}

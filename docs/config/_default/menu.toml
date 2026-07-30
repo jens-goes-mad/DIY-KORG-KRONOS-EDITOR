@@ -1,0 +1,25 @@
+# Configure main menu and social menu
+#[[main]]
+#identifier = "home"
+#name = "Home"
+#url = "/"
+#[main.params]
+#icon = "home"
+#newtab = true
+
+[[social]]
+identifier = "github"
+name = "GitHub"
+url = "https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/"
+[social.params]
+icon = "brand-github"
+
+[[social]]
+identifier = "email"
+name = "EMail"
+url = "mailto:jens@diy-pedalboard.de"
+[social.params]
+vendor = "font-awesome-solid"
+icon = "mail"
+
+# https://icons.hugomods.com/docs/vendors/#tabler-icons

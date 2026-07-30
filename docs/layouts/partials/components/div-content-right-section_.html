@@ -1,0 +1,28 @@
+<p>
+<debug>
+    0 {{ .Params }}
+</debug>
+{{ with .Params.links }}
+    {{ range . }}
+    <debug>
+        2 {{ . }} {{ .RelPermalink }}
+    </debug>
+    <a href="{{ .RelPermalink }}">
+        {{ if .summary }}
+            {{ .summary }}
+        {{ else }}
+            {{ if .title }}
+                {{ .title }}
+            {{ else }}
+                {{ .description | default "No description" }}
+            {{ end }}
+        {{ end }}
+    </a>
+    <br>
+    {{ end }}
+{{ else }}
+    <a href="{{ .RelPermalink }}">
+    {{ .Summary }}
+    </a>
+{{ end }}
+</p>

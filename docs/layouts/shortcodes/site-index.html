@@ -1,0 +1,30 @@
+{{/* Shortcode: site-index.html -- recursively lists the whole site (in main-menu
+     weight order) as a tree, each node showing a compact one-line blurb via
+     the site-index-blurb partial. */}}
+{{- $self := .Page }}
+<div class="site-index">
+{{- range .Site.Menus.main }}
+  {{- $page := .Page }}
+  {{- if and $page (ne $page $self) }}
+  <div class="site-index-branch">
+    <h3><a href="{{ $page.RelPermalink }}">{{ $page.Title }}</a></h3>
+    {{- with (partial "site-index-blurb.html" $page) }}
+    <p class="site-index-desc">{{ . }}</p>
+    {{- end }}
+    {{- $children := $page.RegularPagesRecursive.ByTitle }}
+    {{- if $children }}
+    <ul class="site-index-leaves">
+      {{- range $children }}
+      <li>
+        <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+        {{- with (partial "site-index-blurb.html" .) }}
+        <span class="site-index-desc"> — {{ . }}</span>
+        {{- end }}
+      </li>
+      {{- end }}
+    </ul>
+    {{- end }}
+  </div>
+  {{- end }}
+{{- end }}
+</div>

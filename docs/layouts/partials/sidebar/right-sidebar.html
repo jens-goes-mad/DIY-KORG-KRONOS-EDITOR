@@ -1,0 +1,48 @@
+{{- $scope := default "homepage" .Scope -}}
+{{- $context := .Context -}}
+{{- $pages := .Pages -}}
+
+{{- with (index .Context.Site.Params.widgets $scope) -}}
+  <aside class="sidebar right-sidebar sticky">
+    {{ range $widget := . }}
+      {{ if templates.Exists (printf "partials/widget/%s.html" .type) }}
+        {{- $params := default dict .params -}}
+        {{ partial (printf "widget/%s" .type) (dict "Context" $context "Params" $params) }}
+      {{ else }}
+        {{ warnf "Widget %s not found" .type }}
+      {{ end }}
+    {{ end }}
+
+    {{/* Show child pages (subtopics) if defined */}}
+    {{ if $pages }}
+    {{/* if and $pages (not (reflect.IsSlice $pages)) */}}
+      <div class="sidebar-siblings">
+        <h2>Topics</h2>
+        {{ range $pages }}
+          <h3><a href="{{ .RelPermalink }}">{{ .Title }}</a></h3>
+          <p>{{ .Summary }}</p>
+        {{ end }}
+      </div>
+    {{ else }}
+      {{/* Fallback to showing siblings in same section */}}
+      {{- $current := $context -}}
+      {{- $siblings := slice -}}
+
+      {{ if and $current.Parent (not (reflect.IsSlice $current.Parent)) }}
+        {{ $siblings = where $current.Parent.Pages "RelPermalink" "ne" $current.RelPermalink }}
+      {{ else if $current.Section }}
+        {{ $siblings = where (where $context.Site.RegularPages "Section" $current.Section) "RelPermalink" "ne" $current.RelPermalink }}
+      {{ end }}
+
+      {{ if gt (len $siblings) 0 }}
+        <div class="sidebar-siblings">
+          <h2>More in this section</h2>
+          {{ range $siblings }}
+            <h3><a href="{{ .RelPermalink }}">{{ .Title }}</a></h3>
+            <p>{{ .Summary }}</p>
+          {{ end }}
+        </div>
+      {{ end }}
+    {{ end }}
+  </aside>
+{{ end }}
