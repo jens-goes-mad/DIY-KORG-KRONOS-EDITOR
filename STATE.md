@@ -182,12 +182,23 @@ three phases, only the first of which is built:
     flag distinguishing "really assigned to 0/0" from "never touched" --
     documented in `PcgFile.h`, not fixed (no known fix without a new
     reverse-engineering lead, same as the other format blind spots below).
-  - **Phase 2 (not started)**: reverse-engineer where inside a Combi's
-    ~7,810-byte record its Timbres reference a Program -- likely the same
-    method used twice already (project owner builds a test Combi with a
-    few known, distinct Program assignments, we diff the bytes). Unlocks
-    real Combi-usage tracking (today's `getProgramUsage` explicitly flags
-    `combiUsagesAvailable: false` rather than silently implying zero).
+  - **Phase 2 (structure CONFIRMED, not wired into usage-counting yet)**:
+    each Combi's 16 Timbres sit at a fixed 188-byte stride starting 4806
+    bytes into the record; the first 3 bytes are Program number, a raw
+    bank code, and a status byte (Off/Internal/External/Ex2 -- top 3
+    bits). Confirmed via real Combi samples the project owner provided,
+    cross-checked against an independent external reference
+    (`DaBlick/PCG-Tools`, see `docs/references/`) -- see `docs/README.md`
+    §6 for the full derivation, including a Combi that initially looked
+    like a model gap but turned out to be the project owner's
+    recollection of that Combi not matching what was actually saved.
+    `PcgFile`'s `TimbreRef`/`CombiInfo::timbres` and `timbreBankName()`
+    are built and smoke-tested; still TODO: wire this into real
+    Combi-usage counting (today's `getProgramUsage` still explicitly
+    flags `combiUsagesAvailable: false` rather than silently implying
+    zero) -- deliberately not done yet since only 8 of the ~34 possible
+    bank codes are confirmed, and a real "Combi refs" count would need
+    every bank a user's file actually uses to resolve correctly.
   - **Phase 3 (not started, depends on Phase 2)**: actual deletion of
     unused duplicate Programs and repointing Combis at a kept copy -- the
     first real write-back to a `.PCG` file this project would ever do.

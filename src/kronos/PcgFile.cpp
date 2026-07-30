@@ -237,15 +237,29 @@ constexpr size_t kCombiTimbreBaseOffset = 4806;
 constexpr size_t kCombiTimbreStride = 188;
 constexpr int kCombiTimbreCount = 16;
 
+// Top 3 bits of the status byte (offset+2 within a Timbre block) -- see
+// TimbreStatus's doc comment in PcgFile.h. The lower 5 bits are a separate,
+// unrelated field (the Timbre's own 0-based index) and are ignored here.
+TimbreStatus decodeTimbreStatus(uint8_t statusByte) {
+    switch ((statusByte >> 5) & 0x07) {
+        case 0: return TimbreStatus::Off;
+        case 1: return TimbreStatus::Internal;
+        case 3: return TimbreStatus::External;
+        case 4: return TimbreStatus::Ex2;
+        default: return TimbreStatus::Unknown;
+    }
+}
+
 std::vector<TimbreRef> readCombiTimbres(const uint8_t* data, size_t recordOff, size_t recordEnd) {
     std::vector<TimbreRef> timbres;
     timbres.reserve(kCombiTimbreCount);
     for (int i = 0; i < kCombiTimbreCount; ++i) {
         size_t h = recordOff + kCombiTimbreBaseOffset + static_cast<size_t>(i) * kCombiTimbreStride;
         TimbreRef ref;
-        if (h + 1 < recordEnd) {
+        if (h + 2 < recordEnd) {
             ref.number = data[h];
             ref.rawBankCode = data[h + 1];
+            ref.status = decodeTimbreStatus(data[h + 2]);
             ref.isDefault = (ref.number == 0 && ref.rawBankCode == 0);
         }
         timbres.push_back(ref);
@@ -292,19 +306,29 @@ std::vector<CombiRecord> collectCombiRecords(const std::vector<uint8_t>& data, c
 
 }  // namespace
 
-// Confirmed via real Combi samples the project owner provided directly
-// (see docs/README.md's "Combi Timbre references" section): INT-A..D are a
-// simple sequential 0..3, then USER-D=20 and USER-AA=24 suggest USER-A..G
-// occupy 17..23 with USER-AA immediately after -- but only these exact
-// codes have been directly verified so far. Everything else returns "" so
-// the UI shows the raw numeric code instead of a guessed name.
+// Confirmed via real Combi samples the project owner provided directly,
+// cross-checked against an independent external reference (DaBlick/
+// PCG-Tools' "PCG Structure Kronos.txt", see docs/references/) -- both
+// sources agree at every point they overlap (INT-A/B/C, and USER-F's code
+// independently explaining a byte this project had first read from its own
+// sample but the project owner had misremembered the Program number for).
+// See docs/README.md's "Combi Timbre references" section for the full
+// derivation. Every code below is a directly-verified byte value, from one
+// source or the other -- not an extrapolation. That said, the two anchors
+// on each side (INT-A..D=0..3, USER-A=17/USER-D=20/USER-F=22/USER-AA=24)
+// strongly imply a contiguous INT-A..G=0..6 / USER-A..G=17..23 scheme;
+// deliberately not added below until each individual code is confirmed the
+// same way as these -- everything else returns "" so the UI shows the raw
+// numeric code instead of a guessed name.
 std::string timbreBankName(int rawBankCode) {
     switch (rawBankCode) {
         case 0: return "INT-A";
         case 1: return "INT-B";
         case 2: return "INT-C";
         case 3: return "INT-D";
+        case 17: return "USER-A";
         case 20: return "USER-D";
+        case 22: return "USER-F";
         case 24: return "USER-AA";
         default: return "";
     }

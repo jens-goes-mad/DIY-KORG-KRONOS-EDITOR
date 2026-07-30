@@ -274,7 +274,127 @@ All out-of-range cases are left showing a raw `bank-number` rather than a
 guessed label, both for the name (empty, degrading gracefully) and the
 UI's bank label.
 
-## 6. Open questions (consolidated)
+## 6. Combi Timbre references — CONFIRMED (Program refs), status byte CONFIRMED
+
+Each Combi record (`CMB1 > CBK1`, §5.1) has 16 Timbre slots, each optionally
+referencing a Program. Confirmed by the project owner providing several
+real Combis with known Timbre->Program assignments, and independently
+cross-checked against a third-party reverse-engineering of this format
+(`DaBlick/PCG-Tools`, see `docs/references/README.md`) -- both sources
+agree at every point they overlap.
+
+### 6.1 Layout
+
+16 fixed-size 188-byte blocks starting 4806 bytes into the Combi's own
+record (i.e. `recordOffset + 4806 + timbreIndex * 188`), regardless of how
+many Timbres are actually in use -- this stride does **not** vary with
+content, an earlier "variable-length" theory was tested and disproven.
+Each block's first 3 bytes:
+
+```
+offset  field
+0       Program number (0-127), raw byte
+1       raw bank code (see §6.2 -- NOT the same index space as §5.2's
+        Program bank list; some other, absolute Kronos-internal numbering)
+2       status byte -- top 3 bits ((byte >> 5) & 0x07): 0=Off, 1=Internal,
+        3=External (MIDI), 4=Ex2 (expansion board). Lower 5 bits are a
+        separate, unrelated field: the Timbre's own 0-based index (0..15),
+        confirmed by watching it count up regardless of status.
+```
+
+**Off does not imply "no reference stored"**: a Timbre can hold a genuine,
+non-zero Program number/bank while its status is Off (e.g. temporarily
+disabled without clearing the assignment). The all-zero
+number=0/bank=0/status=Off pattern seen on every genuinely-untouched
+Timbre slot is a *separate* signal (`TimbreRef::isDefault` in
+`PcgFile.h`) from the on/off status (`TimbreRef::status`) -- both are
+tracked independently rather than collapsed into one flag, since anything
+usage-counting-related (e.g. "is this Program safe to delete") should
+probably still count an Off-but-referenced Timbre as a real reference.
+
+### 6.2 Confirmed raw bank codes
+
+```
+0   INT-A       17  USER-A
+1   INT-B       20  USER-D
+2   INT-C       22  USER-F
+3   INT-D       24  USER-AA
+```
+
+Every code above is a directly-verified byte value (from a real Combi
+sample, the external reference, or both) -- not an extrapolation. That
+said, the two clusters (`INT-A..D = 0..3`, `USER-A/D/F = 17/20/22`,
+`USER-AA = 24` right after) strongly imply a contiguous
+`INT-A..G = 0..6` / `USER-A..G = 17..23` scheme. Deliberately **not**
+added to the lookup table (`kronos::timbreBankName()`) until each
+individual code is confirmed the same rigorous way -- unknown codes
+surface as a raw number in the UI rather than a guessed name.
+
+### 6.3 A resolved "anomaly" (worth recording as a methodology note)
+
+An early Combi sample ("061 Sledgehammer") appeared to contradict this
+model: Timbre 3 and 4's raw bytes didn't match the Program numbers the
+project owner recalled from memory, and Timbres 5-9 (which the project
+owner believed were "active") read as all-zero/Off. Decoding the status
+byte resolved this completely: Timbres 5-9 in that specific saved backup
+are genuinely `Off` in the file (not a parsing gap -- the project owner's
+recollection of that Combi's live state didn't match what was actually in
+the saved backup), and Timbre 4's raw bytes (`number=85, bank=22`) decode
+cleanly to `USER-F-085` once bank 22 was identified -- not the
+`INT-A-093` recalled from memory. Both the external reference's own
+independent test data and this project's byte-level analysis agree,
+which is what settled it. Left in as an example of a "disagreement" that
+turned out to be bad ground truth, not a model gap -- consistent with
+this document's practice of recording what was *actually* resolved and
+how, not just the final answer.
+
+## 7. Notes from an external reference (not yet used by this parser)
+
+`docs/references/PCG-Structure-Kronos-DaBlick.txt` (see
+`docs/references/README.md` for origin/license) goes further than this
+project has in a few areas. Recorded here for later, even though nothing
+below is wired into `PcgFile.cpp` yet:
+
+- **`DIV1` chunk** (a `PCG1` sibling, right after the 16-byte file header):
+  a table of counts/bitmasks for how many banks of each kind the file
+  actually has (Program, Combi, Drum Kit, Wave Sequence, Global, DPI, Set
+  List slots) -- this project currently discovers banks by scanning for
+  chunk tags rather than reading this header, so it's an alternative
+  (unused) source of the same information, not a gap in what currently
+  works.
+- **Program bank count discrepancy**: the external doc's `DIV1` example
+  reads `21` Program banks, but this project has only ever found/parsed
+  20 `MBK1`/`PBK1` chunks in real files (§5.2). Unresolved which is
+  right -- possibly a 21st bank this project's chunk scan is missing
+  entirely, or a quirk of that specific example file.
+- **`MBK1` = EXi bank, `PBK1` = HD-1 bank**: the two Program bank tags
+  this project already treats identically for name lookup (§5) turn out
+  to signal which *sound engine* that bank's Programs use (EXi = the
+  software synth engines like AL-1/MOD-7/etc., HD-1 = the PCM sample
+  playback engine). Plausibly relevant to why some Combi Timbre blocks
+  (§6) have visibly different internal parameter layouts from each other
+  -- likely engine-dependent -- but not confirmed or acted on yet.
+- **A possible third Set List slot type**: this project's SBK1 parsing
+  (§4.3) reads a single bit (`isProgram`: 1=Program, 0=Combi). The
+  external doc describes a byte with three possible values instead --
+  `00=Combi, 01=Program, 02=Song` -- implying Set List slots might be able
+  to reference a Song/sequence directly, which a single bit read could
+  silently misclassify as a Combi. Not reproduced against a real file
+  yet; worth a dedicated check before trusting `isProgram` on an
+  otherwise-unusual slot.
+- **`DKT1` (Drum Kits) / `WSQ1` (Wave Sequences)**: confirmed to contain
+  `DBK1`/`WBK1` sub-bank chunks (15 of each) following the same
+  count/numRecords/bytesPerRecord header shape as every other bank type
+  in this format -- still entirely unparsed by this project (open
+  question §8.6), but now known to at least share the familiar shape
+  rather than being a total unknown.
+- **An unresolved anomaly in the source itself**: its own test data shows
+  a Timbre meant to reference `GM127` decoding to `number=126, bank=6`
+  instead -- flagged by that document's own author as unexplained. Left
+  unresolved there too; recorded here in case it becomes relevant once
+  GM/bank-6 territory is explored further.
+
+## 8. Open questions (consolidated)
 
 1. The 4-byte prefix field preceding every chunk header, throughout the
    whole format (§1.2) -- a running byte offset? An index? Untested.
@@ -297,8 +417,16 @@ UI's bank label.
    Comment text somewhere in a round-trip through the app. Neither the
    read nor write path does any trimming in code, so the cause -- if
    real -- isn't obvious from inspection alone.
+9. The remaining Combi Timbre bank codes (§6.2): `INT-E/F/G` and
+   `USER-B/C/E/G` are strongly implied by the confirmed codes either side
+   of them, but not independently verified the same rigorous way.
+10. A possible third SBK1 slot type ("Song", §7) this project's single-bit
+    `isProgram` read can't represent -- could be silently misclassifying
+    some slots as Combis. Not reproduced yet.
+11. Whether the external reference's `21`-Program-banks `DIV1` reading
+    (§7) points at a real 21st bank this project's chunk scan is missing.
 
-## 7. Where this is implemented
+## 9. Where this is implemented
 
 - `src/kronos/PcgFile.{h,cpp}` -- the parser itself: chunk-tag scanning,
   SDB1/SBK1/CBK1/MBK1/PBK1 record parsing, the instrument-name

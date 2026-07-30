@@ -192,11 +192,16 @@ function createLibrary(root, { log, panes }) {
   // Formats one Timbre's Program reference for display: the confirmed bank
   // name when known, otherwise the raw numeric code so it's still honest
   // about what was found (see docs/README.md's "Combi Timbre references"
-  // section -- only some bank codes have been identified so far).
+  // section -- only some bank codes have been identified so far). A
+  // Timbre can hold a real reference while switched off (status != Off is
+  // NOT the same thing as isDefault -- see TimbreRef's doc comment in
+  // PcgFile.h), so that's called out explicitly rather than hidden --
+  // it still counts as "this Combi references that Program."
   function formatTimbreRef(t) {
     if (t.isDefault) return "--";
     const bank = t.bankName || `code ${t.rawBankCode}`;
-    return `${bank}-${kronosNumber(t.number)}`;
+    const ref = `${bank}-${kronosNumber(t.number)}`;
+    return t.status === "Off" ? `${ref} (off)` : ref;
   }
 
   function buildTimbreRow(combi) {
@@ -214,7 +219,7 @@ function createLibrary(root, { log, panes }) {
     list.className = "usage-list timbre-list";
     combi.timbres.forEach((t, i) => {
       const li = document.createElement("li");
-      li.className = t.isDefault ? "timbre-default" : "";
+      li.className = t.isDefault ? "timbre-default" : t.status === "Off" ? "timbre-inactive-ref" : "";
       li.textContent = `Timbre ${i + 1}: ${formatTimbreRef(t)}`;
       list.appendChild(li);
     });

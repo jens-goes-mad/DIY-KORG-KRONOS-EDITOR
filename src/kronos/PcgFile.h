@@ -52,10 +52,23 @@ struct ProgramInfo {
     uint64_t contentHash = 0;
 };
 
+// A Timbre's on/off + source-engine status, read from the byte immediately
+// after its [number][bank] pair (byte offset +2 within the Timbre block):
+// the top 3 bits ((byte >> 5) & 0x07) give this status, confirmed against
+// an independent external reference (DaBlick/PCG-Tools' "PCG Structure
+// Kronos.txt", see docs/README.md) and cross-checked against this project's
+// own real Combi samples. `Off` is what every genuinely-unassigned Timbre
+// slot shows; the lower 5 bits of the same byte are NOT part of this --
+// they hold the Timbre's own 0-based index, a redundant field unrelated to
+// on/off state (confirmed by watching it count 0..15 across a real Combi's
+// 16 Timbres regardless of status).
+enum class TimbreStatus { Off, Internal, External, Ex2, Unknown };
+
 // One Combi Timbre's Program reference, read directly from the Combi's raw
 // record bytes at a fixed stride (see docs/README.md's "Combi Timbre
 // references" section for how this was derived from real Combi samples the
-// project owner provided directly). Encoding: byte 0 = Program number, byte
+// project owner provided directly, and independently cross-checked against
+// DaBlick/PCG-Tools' reference doc). Encoding: byte 0 = Program number, byte
 // 1 = a raw bank code -- confirmed NOT to be the same index space
 // ProgramInfo::bank/SlotParams::bank use (those are PBK1 file order; this
 // is some other, absolute Kronos-internal numbering). Only a handful of
@@ -64,8 +77,15 @@ struct ProgramInfo {
 struct TimbreRef {
     int number = 0;
     int rawBankCode = 0;
-    // true when number==0 && rawBankCode==0 -- the pattern consistently
-    // seen on every Timbre slot that isn't actually assigned to a Program.
+    TimbreStatus status = TimbreStatus::Off;
+    // true when number==0 && rawBankCode==0 -- this Timbre slot has no real
+    // Program reference stored at all (as opposed to having one that's
+    // just currently switched off -- see `status`). Deliberately NOT tied
+    // to status: a Timbre can hold a genuine, non-zero bank/number while
+    // status is Off (e.g. temporarily disabled without clearing its
+    // assignment), and that should still count as "this Combi references
+    // that Program" for anything safety-related (e.g. deciding whether a
+    // Program is safe to delete) -- only isDefault means "nothing here."
     bool isDefault = true;
 };
 

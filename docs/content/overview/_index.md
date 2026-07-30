@@ -55,14 +55,18 @@ None of this is documented by Korg beyond the user manual's *behavior*. The on-d
 - **Instrument name cross-reference** (`CBK1`/`MBK1`/`PBK1`): every Set List slot's real
   Program/Combi name, resolved and shown inline -- confirmed against three independent
   named anchors.
-- **Combi Timbre-to-Program references** (in progress): each Combi's 16 Timbres turn out
-  to sit at a fixed 188-byte stride starting 4806 bytes into the Combi's own record, with
-  the referenced Program's number and a raw bank code as the first two bytes of each
-  block. Confirmed bank codes so far: `INT-A`=0, `INT-B`=1, `INT-C`=2, `INT-D`=3,
-  `USER-D`=20, `USER-AA`=24 -- enough to notice the shape of an absolute, gapped
-  numbering scheme (not simple file order), but not enough yet to map every bank. A
-  couple of Timbre slots in a 9-Timbre test Combi still don't match this model and are
-  parked for a dedicated follow-up test file, rather than papered over with a guess.
+- **Combi Timbre-to-Program references**: each Combi's 16 Timbres sit at a fixed
+  188-byte stride starting 4806 bytes into the Combi's own record: byte 0 is the
+  referenced Program's number, byte 1 a raw bank code, byte 2 an on/off/engine-type
+  status (Internal/External/Ex2/Off). Confirmed bank codes so far: `INT-A`=0, `INT-B`=1,
+  `INT-C`=2, `INT-D`=3, `USER-A`=17, `USER-D`=20, `USER-F`=22, `USER-AA`=24 -- enough to
+  see the shape of an absolute, gapped numbering scheme (not simple file order), though
+  not every bank is mapped yet. Independently cross-checked against a third-party
+  reverse-engineering of this same format,
+  [DaBlick/PCG-Tools](https://github.com/DaBlick/PCG-Tools) -- both sources agree at
+  every point they overlap, and it resolved what first looked like a gap in this
+  project's own model (turned out to be a Combi sample whose remembered state didn't
+  match what was actually saved in the file, not a parsing error).
 
 Deliberately **not** solved yet: Font size and Transpose encoding, a handful of reserved
 bytes whose purpose isn't known, Drum Kits/Wave Sequences/Global settings, and exactly

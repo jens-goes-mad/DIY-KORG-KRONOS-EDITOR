@@ -406,6 +406,14 @@ body {
   opacity: 0.6;
 }
 
+/* A real reference that's just currently switched off -- distinct from
+   .timbre-default (nothing stored here at all): still worth a visual
+   cue since it still counts as a reference for anything safety-related. */
+.timbre-inactive-ref {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 .duplicate-group {
   border: 1px solid var(--border);
   border-radius: 4px;

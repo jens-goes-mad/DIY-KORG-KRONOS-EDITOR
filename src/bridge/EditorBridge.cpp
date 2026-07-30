@@ -20,6 +20,16 @@ int countAt(const std::vector<std::vector<int>>& counts, int bank, int number) {
     return counts[bank][number];
 }
 
+std::string timbreStatusName(kronos::TimbreStatus status) {
+    switch (status) {
+        case kronos::TimbreStatus::Off: return "Off";
+        case kronos::TimbreStatus::Internal: return "Internal";
+        case kronos::TimbreStatus::External: return "External";
+        case kronos::TimbreStatus::Ex2: return "Ex2";
+        default: return "Unknown";
+    }
+}
+
 choc::value::Value setlistUsagesToValue(const std::vector<kronos::SetlistUsage>& usages) {
     auto result = choc::value::createEmptyArray();
     for (const auto& usage : usages) {
@@ -124,6 +134,11 @@ choc::value::Value EditorBridge::combiToValue(const kronos::CombiInfo& combi) {
         tv.setMember("rawBankCode", t.rawBankCode);
         tv.setMember("bankName", kronos::timbreBankName(t.rawBankCode));
         tv.setMember("isDefault", t.isDefault);
+        // Off does NOT imply isDefault -- a Timbre can hold a real,
+        // non-zero Program reference while switched off (see TimbreRef's
+        // doc comment in PcgFile.h). Exposed separately so the UI can show
+        // "referenced but inactive" rather than conflating the two.
+        tv.setMember("status", timbreStatusName(t.status));
         timbres.addArrayElement(tv);
     }
     v.setMember("timbres", timbres);

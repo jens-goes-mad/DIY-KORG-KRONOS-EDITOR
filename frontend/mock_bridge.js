@@ -67,12 +67,14 @@
   // (see docs/README.md's "Combi Timbre references" section).
   function makeFakeTimbres() {
     const timbres = [
-      { number: 100, rawBankCode: 1, bankName: "INT-B", isDefault: false },
-      { number: 15, rawBankCode: 20, bankName: "USER-D", isDefault: false },
-      { number: 90, rawBankCode: 0, bankName: "INT-A", isDefault: false },
+      { number: 100, rawBankCode: 1, bankName: "INT-B", status: "Internal", isDefault: false },
+      { number: 15, rawBankCode: 20, bankName: "USER-D", status: "Internal", isDefault: false },
+      // A real reference that's currently switched off -- exercises the
+      // "referenced but inactive" display case in mock mode too.
+      { number: 90, rawBankCode: 0, bankName: "INT-A", status: "Off", isDefault: false },
     ];
     for (let i = timbres.length; i < 16; i++) {
-      timbres.push({ number: 0, rawBankCode: 0, bankName: "INT-A", isDefault: true });
+      timbres.push({ number: 0, rawBankCode: 0, bankName: "INT-A", status: "Off", isDefault: true });
     }
     return timbres;
   }
