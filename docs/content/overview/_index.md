@@ -84,6 +84,8 @@ directly confirmed above.
 - Built on [CHOC](https://github.com/Tracktion/choc) (HTML/JS/CSS UI over a thin native
   C++ bridge) -- the same stack as the sibling `DIY-MIDI-METRONOME/EDITOR` project,
   reused rather than reinvented.
+- Genuinely cross-platform: one CMake project builds on macOS (arm64 + Intel), Linux,
+  and Windows, verified by CI on all four targets -- see [Building the app](/building).
 
 Nothing is written back to disk yet -- this is deliberately a read/browse/rearrange-in-
 memory tool for now. Actually deleting duplicate Programs and repointing Combis at a
@@ -107,6 +109,8 @@ thus: [jens-goes-mad](/me).
 - [The file format](/format) -- the full `.PCG`/`.SNG` container/chunk layout,
   SDB1/SBK1/CBK1/MBK1/PBK1 record structures, Combi Timbre references, and a running
   list of open questions.
+- [Building the app](/building) -- how to compile it yourself on macOS, Linux, or
+  Windows.
 - [Project status](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/blob/main/STATE.md) --
   what's built, what's verified, and the full list of known blind spots.
 

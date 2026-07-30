@@ -1,5 +1,7 @@
 # DIY Kronos Editor
 
+[![Build Kronos Editor (native)](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/actions/workflows/native-build.yml/badge.svg)](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/actions/workflows/native-build.yml)
+
 A cross-platform, cross-architecture editor for Korg Kronos `.PCG`/`.SNG`
 backup files, built on [CHOC](https://github.com/Tracktion/choc)
 (HTML/JS/CSS UI over a thin native C++ bridge) -- same stack as the sibling
@@ -81,7 +83,12 @@ loads, not something to build a "live reload on every drop" workflow around.
 
 ## Build
 
-Mirrors `DIY-MIDI-METRONOME/EDITOR`'s CMake setup:
+Builds on macOS (arm64 + Intel), Linux, and Windows -- verified via CI
+([`.github/workflows/native-build.yml`](.github/workflows/native-build.yml)),
+one CMake project, no per-platform source trees (CHOC maps to WebKit/
+WebKit2GTK/WebView2 depending on the OS). Full requirements and
+platform-specific notes: **[docs/content/building](docs/content/building/index.md)**
+(also live at [the project site](https://jens-goes-mad.github.io/DIY-KORG-KRONOS-EDITOR/building/)).
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
