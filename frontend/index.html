@@ -8,17 +8,26 @@
 <body>
   <header class="topbar">
     <h1>DIY Kronos Editor</h1>
-    <span class="subtitle">Drag a .PCG file onto a pane to open it -- drag a row within a pane to swap, drag across panes to copy</span>
+    <nav class="top-tabs" id="topTabs">
+      <button class="top-tab active" type="button" data-view="setlists">Set Lists</button>
+      <button class="top-tab" type="button" data-view="library">Library</button>
+    </nav>
   </header>
 
-  <main class="panes">
-    <section class="pane" data-pane="A"></section>
-    <section class="pane" data-pane="B"></section>
+  <main class="view" id="setlistsView">
+    <div class="view-hint">Drag a .PCG file onto a pane to open it -- drag a row within a pane to swap, drag across panes to copy</div>
+    <div class="panes">
+      <section class="pane" data-pane="A"></section>
+      <section class="pane" data-pane="B"></section>
+    </div>
   </main>
+
+  <main class="view" id="libraryView" hidden></main>
 
   <footer class="statusbar" id="statusBar">Ready.</footer>
 
   <script src="pane.js"></script>
+  <script src="library.js"></script>
   <script src="mock_bridge.js"></script>
   <script src="app.js"></script>
 </body>

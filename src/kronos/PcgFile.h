@@ -41,6 +41,34 @@ struct Setlist {
     std::vector<Song> songs;       // always 128 entries (a real Kronos Set List has exactly 128 slots)
 };
 
+// One Program, from PRG1's MBK1/PBK1 banks (see docs/README.md §5.2).
+struct ProgramInfo {
+    int bank = 0;
+    int number = 0;
+    std::string name;
+    // FNV-1a hash of the program's full raw record (computed at parse
+    // time -- the raw bytes themselves aren't kept around afterward, see
+    // PcgFile::loadFromMemory). Used to find byte-exact duplicates.
+    uint64_t contentHash = 0;
+};
+
+// One Combi, from CMB1's CBK1 banks (see docs/README.md §5.1). No
+// contentHash -- duplicate detection was only requested for Programs.
+struct CombiInfo {
+    int bank = 0;
+    int number = 0;
+    std::string name;
+};
+
+// One Set List slot that directly references a given Program (as opposed
+// to referencing it indirectly through a Combi -- Combi-internal
+// references aren't parsed yet, see docs/README.md's Phase 2 roadmap).
+struct SetlistUsage {
+    int setlistIndex = 0;
+    std::string setlistName;
+    int songIndex = 0;
+};
+
 // Parses a Korg Kronos .PCG/.SNG backup file and extracts all 128 Set Lists
 // from its SDB1 ("Set List database") chunk. Loads the whole file into
 // memory -- fine for desktop use at the ~50-70MB sizes these files run.
@@ -60,8 +88,44 @@ public:
     const std::vector<Setlist>& setlists() const { return setlists_; }
     std::vector<Setlist>& setlists() { return setlists_; }
 
+    const std::vector<ProgramInfo>& programs() const { return programs_; }
+    const std::vector<CombiInfo>& combis() const { return combis_; }
+
+    // Every Program-type Set List slot that directly references this
+    // bank/number. Does NOT include usage from inside a Combi's Timbres --
+    // that part of the format isn't parsed yet (see docs/README.md).
+    //
+    // Caveat: bank 0 / number 0 is also the all-zero byte value, so it
+    // over-counts -- a slot that was never actually assigned a Program
+    // still reads as "bank 0, number 0" (confirmed: this returns 16000+
+    // "usages" for 0/0 on a real backup, vs. a handful for any other
+    // bank/number). There's no known flag distinguishing "really assigned
+    // to bank 0/number 0" from "never touched" -- treat 0/0 usage counts
+    // with that in mind; every other bank/number has been spot-checked as
+    // accurate.
+    std::vector<SetlistUsage> programSetlistUsages(int bank, int number) const;
+
+    // Every Combi-type Set List slot that directly references this
+    // bank/number. Same bank-0/number-0 caveat as programSetlistUsages()
+    // applies here too.
+    std::vector<SetlistUsage> combiSetlistUsages(int bank, int number) const;
+
+    // Set-List-slot reference counts for every (bank, number) at once,
+    // indexed `[bank][number]` -- built in one pass over all Set Lists
+    // rather than calling programSetlistUsages()/combiSetlistUsages() once
+    // per Program/Combi (which would be O(programs x songs) instead of
+    // O(songs)). Used to attach a reference count to every row of a
+    // Programs/Combis listing without it being slow at ~2500/~1800 rows.
+    std::vector<std::vector<int>> setlistUsageCounts(bool isProgram) const;
+
+    // Groups of 2+ Programs sharing an identical contentHash (byte-exact
+    // duplicates). Programs with a unique hash are omitted entirely.
+    std::vector<std::vector<ProgramInfo>> findDuplicatePrograms() const;
+
 private:
     std::vector<Setlist> setlists_;
+    std::vector<ProgramInfo> programs_;
+    std::vector<CombiInfo> combis_;
 };
 
 }  // namespace kronos

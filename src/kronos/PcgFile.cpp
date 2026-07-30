@@ -5,6 +5,7 @@
 #include <fstream>
 #include <functional>
 #include <optional>
+#include <unordered_map>
 
 namespace kronos {
 
@@ -156,15 +157,40 @@ std::string readBankRecordName(const uint8_t* data, size_t recordOff, size_t end
     return std::string(reinterpret_cast<const char*>(data + nameOff), len);
 }
 
-// Parses a set of same-shaped bank chunks (CBK1s under CMB1, or MBK1/PBK1s
-// under PRG1) into [bank][number] -> name. Chunks not matching the expected
+// Standard FNV-1a 64-bit -- used to fingerprint a Program's full raw record
+// for byte-exact duplicate detection (PcgFile::findDuplicatePrograms()).
+// Collisions between genuinely different records are astronomically
+// unlikely at the ~2500-record scale these files run, so a hash match is
+// trusted directly without a follow-up byte-compare pass.
+uint64_t fnv1aHash(const uint8_t* data, size_t len) {
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    for (size_t i = 0; i < len; ++i) {
+        hash ^= data[i];
+        hash *= 0x100000001b3ULL;
+    }
+    return hash;
+}
+
+// One record from a CBK1 (Combi) or MBK1/PBK1 (Program) bank -- `bank` is
+// that chunk's position among its siblings (0-based), `number` the
+// record's position within it. `contentHash` is always computed (cheap)
+// even though only Program dedup uses it.
+struct BankRecord {
+    int bank = 0;
+    int number = 0;
+    std::string name;
+    uint64_t contentHash = 0;
+};
+
+// Walks a set of same-shaped bank chunks (CBK1s under CMB1, or MBK1/PBK1s
+// under PRG1) into a flat list of records. Chunks not matching the expected
 // header/size relationship are skipped rather than aborting the whole scan
 // -- keeps this tolerant of a bank that doesn't parse rather than losing
 // every other bank too.
-std::vector<std::vector<std::string>> parseNamedBanks(const std::vector<uint8_t>& data,
-                                                        const std::vector<ChunkInfo>& chunks) {
-    std::vector<std::vector<std::string>> banks;
-    for (const auto& chunk : chunks) {
+std::vector<BankRecord> collectBankRecords(const std::vector<uint8_t>& data, const std::vector<ChunkInfo>& chunks) {
+    std::vector<BankRecord> records;
+    for (size_t bankIdx = 0; bankIdx < chunks.size(); ++bankIdx) {
+        const auto& chunk = chunks[bankIdx];
         if (chunk.contentStart + 12 > chunk.contentEnd) continue;
 
         readU32BE(&data[chunk.contentStart]);  // meaning not understood yet, unused here
@@ -175,13 +201,27 @@ std::vector<std::vector<std::string>> parseNamedBanks(const std::vector<uint8_t>
         if (bytesPerRecord == 0) continue;
         if (recordsStart + static_cast<size_t>(bytesPerRecord) * numRecords > chunk.contentEnd) continue;
 
-        std::vector<std::string> names;
-        names.reserve(numRecords);
         for (uint32_t i = 0; i < numRecords; ++i) {
             size_t off = recordsStart + static_cast<size_t>(i) * bytesPerRecord;
-            names.push_back(readBankRecordName(data.data(), off, data.size()));
+            BankRecord rec;
+            rec.bank = static_cast<int>(bankIdx);
+            rec.number = static_cast<int>(i);
+            rec.name = readBankRecordName(data.data(), off, data.size());
+            rec.contentHash = fnv1aHash(&data[off], bytesPerRecord);
+            records.push_back(std::move(rec));
         }
-        banks.push_back(std::move(names));
+    }
+    return records;
+}
+
+// Builds the [bank][number] -> name lookup the instrumentName cross-
+// reference (below) uses, from an already-collected flat record list.
+std::vector<std::vector<std::string>> namesByBank(const std::vector<BankRecord>& records) {
+    std::vector<std::vector<std::string>> banks;
+    for (const auto& r : records) {
+        if (r.bank >= static_cast<int>(banks.size())) banks.resize(r.bank + 1);
+        if (r.number >= static_cast<int>(banks[r.bank].size())) banks[r.bank].resize(r.number + 1);
+        banks[r.bank][r.number] = r.name;
     }
     return banks;
 }
@@ -292,13 +332,21 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
     // failing the whole load.
     std::vector<ChunkInfo> cbkChunks;
     collectChunks(data, 16, data.size(), "CBK1", cbkChunks, 0);
-    std::vector<std::vector<std::string>> combiBankNames = parseNamedBanks(data, cbkChunks);  // [bank][number]
+    std::vector<BankRecord> combiRecords = collectBankRecords(data, cbkChunks);
+    std::vector<std::vector<std::string>> combiBankNames = namesByBank(combiRecords);  // [bank][number]
+
+    combis_.clear();
+    for (const auto& r : combiRecords) combis_.push_back({r.bank, r.number, r.name});
 
     std::vector<ChunkInfo> programBankChunks;
     collectChunks(
         data, 16, data.size(), [](const std::string& tag) { return tag == "MBK1" || tag == "PBK1"; },
         programBankChunks, 0);
-    std::vector<std::vector<std::string>> programBankNames = parseNamedBanks(data, programBankChunks);  // [bank][number]
+    std::vector<BankRecord> programRecords = collectBankRecords(data, programBankChunks);
+    std::vector<std::vector<std::string>> programBankNames = namesByBank(programRecords);  // [bank][number]
+
+    programs_.clear();
+    for (const auto& r : programRecords) programs_.push_back({r.bank, r.number, r.name, r.contentHash});
 
     for (auto& setlist : setlists_) {
         for (auto& song : setlist.songs) {
@@ -313,6 +361,67 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
     }
 
     return true;
+}
+
+namespace {
+
+std::vector<SetlistUsage> setlistUsagesFor(const std::vector<Setlist>& setlists, bool isProgram, int bank,
+                                            int number) {
+    std::vector<SetlistUsage> usages;
+    for (const auto& setlist : setlists) {
+        for (const auto& song : setlist.songs) {
+            if (!song.params.found || song.params.isProgram != isProgram) continue;
+            if (song.params.bank != bank || song.params.number != number) continue;
+            usages.push_back({setlist.index, setlist.name, song.index});
+        }
+    }
+    return usages;
+}
+
+}  // namespace
+
+std::vector<SetlistUsage> PcgFile::programSetlistUsages(int bank, int number) const {
+    return setlistUsagesFor(setlists_, true, bank, number);
+}
+
+std::vector<SetlistUsage> PcgFile::combiSetlistUsages(int bank, int number) const {
+    return setlistUsagesFor(setlists_, false, bank, number);
+}
+
+std::vector<std::vector<int>> PcgFile::setlistUsageCounts(bool isProgram) const {
+    std::vector<std::vector<int>> counts;
+    for (const auto& setlist : setlists_) {
+        for (const auto& song : setlist.songs) {
+            if (!song.params.found || song.params.isProgram != isProgram) continue;
+            int bank = song.params.bank;
+            int number = song.params.number;
+            if (bank < 0 || number < 0) continue;
+            if (bank >= static_cast<int>(counts.size())) counts.resize(bank + 1);
+            if (number >= static_cast<int>(counts[bank].size())) counts[bank].resize(number + 1, 0);
+            counts[bank][number]++;
+        }
+    }
+    return counts;
+}
+
+std::vector<std::vector<ProgramInfo>> PcgFile::findDuplicatePrograms() const {
+    std::unordered_map<uint64_t, std::vector<ProgramInfo>> byHash;
+    for (const auto& program : programs_) byHash[program.contentHash].push_back(program);
+
+    std::vector<std::vector<ProgramInfo>> groups;
+    for (auto& [hash, group] : byHash) {
+        if (group.size() < 2) continue;
+        std::sort(group.begin(), group.end(), [](const ProgramInfo& a, const ProgramInfo& b) {
+            return a.bank != b.bank ? a.bank < b.bank : a.number < b.number;
+        });
+        groups.push_back(std::move(group));
+    }
+    // unordered_map iteration order isn't deterministic run-to-run -- sort
+    // groups themselves so callers (and tests) see a stable order.
+    std::sort(groups.begin(), groups.end(), [](const auto& a, const auto& b) {
+        return a.front().bank != b.front().bank ? a.front().bank < b.front().bank : a.front().number < b.front().number;
+    });
+    return groups;
 }
 
 }  // namespace kronos

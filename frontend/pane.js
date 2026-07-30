@@ -336,7 +336,15 @@ function createPane(paneId, root, { onDropEntry, log }) {
     }
   });
 
-  return { refreshEntries };
+  // Exposed so other views (e.g. library.js's Pane A/B source selector)
+  // can show which Set List this pane currently has open, rather than
+  // just a bare "Pane A"/"Pane B" label with no indication of content.
+  function getCurrentSetlistName() {
+    const setlist = setlists.find((s) => s.index === currentSetlistIndex);
+    return setlist ? setlist.name : null;
+  }
+
+  return { refreshEntries, getCurrentSetlistName };
 }
 
 // Chunked to avoid blowing the call-stack limit of String.fromCharCode.apply

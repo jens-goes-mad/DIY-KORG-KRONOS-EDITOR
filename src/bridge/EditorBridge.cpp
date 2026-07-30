@@ -12,6 +12,26 @@ int intArg(const choc::value::ValueView& args, size_t index, int fallback = -1) 
     return static_cast<int>(args[static_cast<uint32_t>(index)].getWithDefault<double>(fallback));
 }
 
+// Bounds-checked lookup into the `[bank][number]` counts PcgFile::setlistUsageCounts()
+// returns -- a bank/number beyond what any slot referenced simply has no entry, i.e. 0 uses.
+int countAt(const std::vector<std::vector<int>>& counts, int bank, int number) {
+    if (bank < 0 || bank >= static_cast<int>(counts.size())) return 0;
+    if (number < 0 || number >= static_cast<int>(counts[bank].size())) return 0;
+    return counts[bank][number];
+}
+
+choc::value::Value setlistUsagesToValue(const std::vector<kronos::SetlistUsage>& usages) {
+    auto result = choc::value::createEmptyArray();
+    for (const auto& usage : usages) {
+        auto v = choc::value::createObject("SetlistUsage");
+        v.setMember("setlistIndex", usage.setlistIndex);
+        v.setMember("setlistName", usage.setlistName);
+        v.setMember("songIndex", usage.songIndex);
+        result.addArrayElement(v);
+    }
+    return result;
+}
+
 // Standard base64 (RFC 4648), decoding whatever the browser's
 // FileReader/btoa-equivalent side produced. Returns false on malformed input
 // rather than throwing -- this is untrusted data from the UI.
@@ -80,12 +100,34 @@ choc::value::Value EditorBridge::songToValue(const kronos::Song& song) {
     return v;
 }
 
+choc::value::Value EditorBridge::programToValue(const kronos::ProgramInfo& program) {
+    auto v = choc::value::createObject("ProgramInfo");
+    v.setMember("bank", program.bank);
+    v.setMember("number", program.number);
+    v.setMember("name", program.name);
+    return v;
+}
+
+choc::value::Value EditorBridge::combiToValue(const kronos::CombiInfo& combi) {
+    auto v = choc::value::createObject("CombiInfo");
+    v.setMember("bank", combi.bank);
+    v.setMember("number", combi.number);
+    v.setMember("name", combi.name);
+    return v;
+}
+
 kronos::Setlist* EditorBridge::setlistOf(const std::string& paneId, int setlistIndex) {
     auto it = m_panes.find(paneId);
     if (it == m_panes.end()) return nullptr;
     auto& setlists = it->second.file.setlists();
     if (setlistIndex < 0 || setlistIndex >= static_cast<int>(setlists.size())) return nullptr;
     return &setlists[static_cast<size_t>(setlistIndex)];
+}
+
+kronos::PcgFile* EditorBridge::fileOf(const std::string& paneId) {
+    auto it = m_panes.find(paneId);
+    if (it == m_panes.end()) return nullptr;
+    return &it->second.file;
 }
 
 choc::value::Value EditorBridge::finishOpen(const std::string& paneId, Pane pane) {
@@ -217,4 +259,85 @@ choc::value::Value EditorBridge::setComment(const choc::value::ValueView& args) 
 
     setlist->songs[songIndex].comment = newComment;
     return makeOk();
+}
+
+choc::value::Value EditorBridge::listPrograms(const choc::value::ValueView& args) {
+    const std::string paneId = stringArg(args, 0);
+    auto* file = fileOf(paneId);
+    if (file == nullptr) return choc::value::createEmptyArray();
+
+    // Computed once here rather than per-row (programSetlistUsages() per
+    // Program would be O(programs x songs) instead of O(songs)) -- see
+    // PcgFile::setlistUsageCounts()'s doc comment.
+    auto setlistCounts = file->setlistUsageCounts(/*isProgram=*/true);
+
+    auto result = choc::value::createEmptyArray();
+    for (const auto& program : file->programs()) {
+        auto v = programToValue(program);
+        v.setMember("setlistReferenceCount", countAt(setlistCounts, program.bank, program.number));
+        // Combi-internal Program references aren't parsed yet -- omit
+        // rather than claim 0 (see docs/README.md's Phase 2 roadmap).
+        v.setMember("combiReferenceCountAvailable", false);
+        result.addArrayElement(v);
+    }
+    return result;
+}
+
+choc::value::Value EditorBridge::listCombis(const choc::value::ValueView& args) {
+    const std::string paneId = stringArg(args, 0);
+    auto* file = fileOf(paneId);
+    if (file == nullptr) return choc::value::createEmptyArray();
+
+    auto setlistCounts = file->setlistUsageCounts(/*isProgram=*/false);
+
+    auto result = choc::value::createEmptyArray();
+    for (const auto& combi : file->combis()) {
+        auto v = combiToValue(combi);
+        const int count = countAt(setlistCounts, combi.bank, combi.number);
+        v.setMember("setlistReferenceCount", count);
+        // Full usage list too (not just the count) so the UI can show Set
+        // List name "badges" for combis with few enough references --
+        // skip the per-row query entirely when the bulk count says zero.
+        v.setMember("setlistUsages", count > 0
+                                          ? setlistUsagesToValue(file->combiSetlistUsages(combi.bank, combi.number))
+                                          : choc::value::createEmptyArray());
+        result.addArrayElement(v);
+    }
+    return result;
+}
+
+choc::value::Value EditorBridge::getProgramUsage(const choc::value::ValueView& args) {
+    const std::string paneId = stringArg(args, 0);
+    const int bank = intArg(args, 1);
+    const int number = intArg(args, 2);
+
+    auto* file = fileOf(paneId);
+    if (file == nullptr) return makeError("Pane '" + paneId + "' has no file loaded");
+
+    auto result = makeOk();
+    result.setMember("setlistUsages", setlistUsagesToValue(file->programSetlistUsages(bank, number)));
+    // Combi-internal Program references aren't parsed yet (see
+    // docs/README.md's Phase 2 roadmap) -- this flag is what lets the UI
+    // say so honestly instead of implying "zero Combi usages found".
+    result.setMember("combiUsagesAvailable", false);
+    return result;
+}
+
+choc::value::Value EditorBridge::findDuplicatePrograms(const choc::value::ValueView& args) {
+    const std::string paneId = stringArg(args, 0);
+    auto* file = fileOf(paneId);
+    if (file == nullptr) return choc::value::createEmptyArray();
+
+    auto result = choc::value::createEmptyArray();
+    for (const auto& group : file->findDuplicatePrograms()) {
+        auto groupValue = choc::value::createEmptyArray();
+        for (const auto& program : group) {
+            auto v = programToValue(program);
+            v.setMember("setlistUsageCount",
+                        static_cast<int>(file->programSetlistUsages(program.bank, program.number).size()));
+            groupValue.addArrayElement(v);
+        }
+        result.addArrayElement(groupValue);
+    }
+    return result;
 }

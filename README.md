@@ -17,6 +17,18 @@ First iteration scope (see `STATE.md` for current status):
 Nothing is written back to disk yet -- this is a read/browse/rearrange-in-
 memory tool for now.
 
+## Library view (Programs / Combis / Duplicates)
+
+A second top-level tab, alongside Set Lists: browse every Program and
+Combi on the unit directly (not just through Set List slots), see which
+Set List slots directly reference a given Program, and find Programs that
+are byte-for-byte duplicates of each other. Read-only -- this is Phase 1
+of a larger plan (see `STATE.md`'s "Program/Combi Library Editor" section)
+that eventually aims to delete unused duplicates and repoint Combis at a
+single kept copy; that part needs a currently-unparsed piece of the format
+(a Combi's internal Timbre-to-Program references) and a safe write-back
+mechanism this app has never had, so it's deliberately not built yet.
+
 ## The KORG PCG/SNG file format
 
 Everything about the file format -- container structure, the Set List
@@ -90,7 +102,9 @@ src/
   bridge/EditorBridge.{h,cpp} -- native functions exposed to the web UI
   main.cpp                   -- CHOC window/webview wiring
 frontend/
-  index.html, app.js, pane.js, style.css   -- dual-pane UI
+  index.html, app.js, style.css   -- top-level tab bar (Set Lists / Library) + shared wiring
+  pane.js                      -- Set Lists dual-pane UI
+  library.js                   -- Library view (Programs/Combis/Duplicates)
   mock_bridge.js              -- fake in-memory backend for plain-browser dev (no native build needed)
 third_party/choc/            -- vendored from DIY-MIDI-METRONOME/EDITOR
 ```

@@ -35,6 +35,13 @@ public:
     // move/copy; nothing is written back to disk (see README.md/STATE.md).
     choc::value::Value setComment(const choc::value::ValueView& args);
 
+    // Library browser (read-only) -- see docs/README.md and STATE.md's
+    // Program/Combi Library Editor plan for scope/roadmap.
+    choc::value::Value listPrograms(const choc::value::ValueView& args);          // [paneId]
+    choc::value::Value listCombis(const choc::value::ValueView& args);            // [paneId]
+    choc::value::Value getProgramUsage(const choc::value::ValueView& args);       // [paneId, bank, number]
+    choc::value::Value findDuplicatePrograms(const choc::value::ValueView& args); // [paneId]
+
 private:
     struct Pane {
         kronos::PcgFile file;
@@ -44,9 +51,12 @@ private:
     std::map<std::string, Pane> m_panes;
 
     kronos::Setlist* setlistOf(const std::string& paneId, int setlistIndex);
+    kronos::PcgFile* fileOf(const std::string& paneId);
     choc::value::Value finishOpen(const std::string& paneId, Pane pane);
 
     static choc::value::Value makeOk();
     static choc::value::Value makeError(const std::string& error);
     static choc::value::Value songToValue(const kronos::Song& song);
+    static choc::value::Value programToValue(const kronos::ProgramInfo& program);
+    static choc::value::Value combiToValue(const kronos::CombiInfo& combi);
 };

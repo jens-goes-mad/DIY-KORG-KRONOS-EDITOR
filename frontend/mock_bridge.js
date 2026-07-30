@@ -46,6 +46,39 @@
     };
   }
 
+  // Mock-only Programs -- deliberately includes a repeated name ("Init
+  // Program") on two different banks, standing in for a real byte-exact
+  // duplicate (the real bridge hashes full record content; this fake data
+  // has no such content to hash, so duplicates here are grouped by name
+  // instead, purely for exercising the Duplicates tab's UI).
+  function makeFakePrograms() {
+    const names = ["Berlin Grand SW2 U.C.", "Rain Again", "Init Program", "Init Program", "Subdivisions"];
+    const programs = [];
+    for (let bank = 0; bank < 2; bank++) {
+      names.forEach((name, number) =>
+        programs.push({ bank, number, name, setlistReferenceCount: 0, combiReferenceCountAvailable: false })
+      );
+    }
+    return programs;
+  }
+
+  function makeFakeCombis() {
+    const names = ["K-Lab: Katja's House", "Stradivarius Goes POP", "Rolling in the Deep"];
+    const combis = [];
+    for (let bank = 0; bank < 2; bank++) {
+      names.forEach((name, number) => {
+        // "Rolling in the Deep" gets a fabricated usage so the Set List
+        // "badges" column has something real to render in mock mode too.
+        const setlistUsages =
+          name === "Rolling in the Deep"
+            ? [{ setlistIndex: 1, setlistName: "Mock List 1", songIndex: 0 }]
+            : [];
+        combis.push({ bank, number, name, setlistReferenceCount: setlistUsages.length, setlistUsages });
+      });
+    }
+    return combis;
+  }
+
   function makeFakeFile(fileName) {
     const names = ["Mock Set List", ...mockSongsByList.map((_, i) => `Mock List ${i + 1}`)];
     const setlists = names.map((name, index) => ({ index, name: `${name} (${fileName})` }));
@@ -54,7 +87,7 @@
       const titles = mockSongsByList[i - 1] || [];
       songs[s.index] = Array.from({ length: 16 }, (_, k) => makeFakeSong(k, titles[k] || ""));
     });
-    return { setlists, songs };
+    return { setlists, songs, programs: makeFakePrograms(), combis: makeFakeCombis() };
   }
 
   window.openFileBytes = (paneId, _base64Data, displayName) => {
@@ -103,5 +136,39 @@
     if (!entry) return fail("Entry index out of range");
     entry.comment = newComment;
     return ok();
+  };
+
+  window.listPrograms = (paneId) => Promise.resolve(panes[paneId] ? panes[paneId].programs : []);
+
+  window.listCombis = (paneId) => Promise.resolve(panes[paneId] ? panes[paneId].combis : []);
+
+  window.getProgramUsage = (paneId, bank, number) => {
+    const pane = panes[paneId];
+    if (!pane) return fail(`Pane '${paneId}' has no file loaded`);
+
+    const setlistUsages = [];
+    for (const setlist of pane.setlists) {
+      const list = pane.songs[setlist.index] || [];
+      for (const song of list) {
+        if (song.isProgram && song.bank === bank && song.number === number) {
+          setlistUsages.push({ setlistIndex: setlist.index, setlistName: setlist.name, songIndex: song.index });
+        }
+      }
+    }
+    return ok({ setlistUsages, combiUsagesAvailable: false });
+  };
+
+  window.findDuplicatePrograms = (paneId) => {
+    const pane = panes[paneId];
+    if (!pane) return Promise.resolve([]);
+
+    const byName = {};
+    for (const p of pane.programs) {
+      (byName[p.name] = byName[p.name] || []).push(p);
+    }
+    const groups = Object.values(byName)
+      .filter((g) => g.length >= 2)
+      .map((g) => g.map((p) => Object.assign({ setlistUsageCount: 0 }, p)));
+    return Promise.resolve(groups);
   };
 })();

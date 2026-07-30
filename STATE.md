@@ -1,11 +1,12 @@
 === STATE BLOCK — GOALS, ACHIEVEMENTS, BLIND SPOTS ===
 Date: 2026-07-30
-Status: Working prototype. Core file format (Set List names + params +
-        instrument-name cross-reference) is reverse-engineered and wired
-        into a real CHOC app with drag-and-drop open, dual-pane browse/
-        filter/swap/copy, and an editable Comment field. About to become a
-        git repo (no commits yet as of this writing) -- this file is
-        written to be a clean starting point for that, not a session log.
+Status: Working prototype, now a git repo (github.com/jens-goes-mad/
+        DIY-KORG-KRONOS-EDITOR, `main` branch). Core file format (Set List
+        names + params + instrument-name cross-reference) is reverse-
+        engineered and wired into a real CHOC app with drag-and-drop open,
+        dual-pane browse/filter/swap/copy, an editable Comment field, and
+        (new) a read-only Program/Combi Library browser with byte-exact
+        duplicate detection -- see "PROGRAM/COMBI LIBRARY EDITOR" below.
 
 --- GOAL ---
 
@@ -143,6 +144,57 @@ independently verified the way Combi's order was).
     DIY-MIDI-METRONOME/EDITOR's setup exactly. No MIDI/audio deps (no
     rtmidi) -- this tool only reads local files, no device I/O.
 
+--- PROGRAM/COMBI LIBRARY EDITOR (planned, Phase 1 built) ---
+
+Goal beyond just Set Lists: browse every Program/Combi directly, see where
+each Program is actually used, find byte-exact duplicate Programs, and
+eventually delete the unused ones and repoint Combis at a single kept
+copy. That last part means writing to a real Kronos backup for the first
+time ever in this project, based on a part of the format that isn't
+reverse-engineered at all yet -- so the work was explicitly split into
+three phases, only the first of which is built:
+
+  - **Phase 1 (DONE)**: read-only. `PcgFile` gained `ProgramInfo`/
+    `CombiInfo` (flat `[[{bank, number, name}]]` lists, populated from the
+    same PRG1/CMB1 chunks the instrument-name cross-reference already
+    walked) plus `programSetlistUsages(bank, number)` (every Program-type
+    Set List slot referencing it) and `findDuplicatePrograms()` (groups of
+    2+ Programs whose full ~4960-byte record hashes to the same FNV-1a
+    value -- computed during parsing since the raw file bytes aren't kept
+    around afterward). `EditorBridge` exposes `listPrograms`/`listCombis`/
+    `getProgramUsage`/`findDuplicatePrograms`. `frontend/library.js` is a
+    new top-level "Library" tab (alongside "Set Lists") with Programs/
+    Combis/Duplicates sub-tabs, a Pane A/B source selector, filter/search,
+    and click-to-expand usage info per Program -- read-only, no drag-and-
+    drop, no delete/consolidate buttons (nothing to wire them to yet).
+    Verified against the real 47.9MB sample: 2560 Programs / 1792 Combis
+    (matches 20x128 / 14x128 exactly), the known "Berlin Grand SW2 U.C."
+    anchor round-trips correctly, and 62 duplicate groups covering 500 of
+    2560 Programs were found -- including real repeated content like
+    "Snappy Clav" and "Kompton Clav" turning up twice each in different
+    banks, a good sanity check.
+  - Caveat found during Phase 1: **bank 0 / number 0 is also the all-zero
+    byte value**, so `programSetlistUsages(0, 0)` massively over-counts --
+    16,000+ "usages" on the real sample, because a Set List slot that was
+    never actually assigned a Program still reads as bank 0/number 0.
+    Every other bank/number spot-checked (e.g. bank 2/number 8, bank
+    19/number 0) returns a small, correct-looking count. There's no known
+    flag distinguishing "really assigned to 0/0" from "never touched" --
+    documented in `PcgFile.h`, not fixed (no known fix without a new
+    reverse-engineering lead, same as the other format blind spots below).
+  - **Phase 2 (not started)**: reverse-engineer where inside a Combi's
+    ~7,810-byte record its Timbres reference a Program -- likely the same
+    method used twice already (project owner builds a test Combi with a
+    few known, distinct Program assignments, we diff the bytes). Unlocks
+    real Combi-usage tracking (today's `getProgramUsage` explicitly flags
+    `combiUsagesAvailable: false` rather than silently implying zero).
+  - **Phase 3 (not started, depends on Phase 2)**: actual deletion of
+    unused duplicate Programs and repointing Combis at a kept copy -- the
+    first real write-back to a `.PCG` file this project would ever do.
+    Needs a dry-run/preview step and a strong recommendation to keep an
+    untouched backup, since there's no way to run Korg's own file
+    validator from here to confirm nothing broke.
+
 --- BLIND SPOTS / NOT YET TOUCHED ---
 
 Format:
@@ -187,5 +239,16 @@ App/UI:
   14. No automated test suite -- all verification so far has been ad hoc
       standalone smoke-test binaries compiled during investigation, not
       committed/repeatable tests.
+  15. No progress indicator while opening a large file -- the drag-and-drop
+      open path (base64-encode in JS, decode + parse in C++) can take a
+      moment on a 50-70MB file and currently just shows static "Loading..."
+      text. An indeterminate spinner would be a small change; a real
+      percentage bar needs the encode/transfer to happen in chunks with
+      progress callbacks rather than as one monolithic step, which it
+      isn't today.
+  16. The new Library view hasn't been clicked through by the project
+      owner yet in the real app -- built and smoke-tested at the C++
+      layer, syntax-checked at the JS layer, same as most UI work in this
+      project's history, but not yet human-verified end to end.
 
 === END STATE BLOCK ===
