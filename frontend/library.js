@@ -38,6 +38,7 @@ function createLibrary(root, { log, panes }) {
   let combis = [];
   let duplicateGroups = [];
   let expandedProgramKey = null;  // `${bank}-${number}` of the one expanded usage row, if any
+  let expandedCombiKey = null;    // `${bank}-${number}` of the one expanded Timbre row, if any
 
   function currentPane() {
     return paneSelect.value;
@@ -188,6 +189,48 @@ function createLibrary(root, { log, panes }) {
     panel.appendChild(table);
   }
 
+  // Formats one Timbre's Program reference for display: the confirmed bank
+  // name when known, otherwise the raw numeric code so it's still honest
+  // about what was found (see docs/README.md's "Combi Timbre references"
+  // section -- only some bank codes have been identified so far).
+  function formatTimbreRef(t) {
+    if (t.isDefault) return "--";
+    const bank = t.bankName || `code ${t.rawBankCode}`;
+    return `${bank}-${kronosNumber(t.number)}`;
+  }
+
+  function buildTimbreRow(combi) {
+    const tr = document.createElement("tr");
+    tr.className = "comment-editor-row";
+    const td = document.createElement("td");
+    td.colSpan = 4;
+
+    const heading = document.createElement("div");
+    heading.className = "usage-heading";
+    heading.textContent = "Timbre Program references:";
+    td.appendChild(heading);
+
+    const list = document.createElement("ul");
+    list.className = "usage-list timbre-list";
+    combi.timbres.forEach((t, i) => {
+      const li = document.createElement("li");
+      li.className = t.isDefault ? "timbre-default" : "";
+      li.textContent = `Timbre ${i + 1}: ${formatTimbreRef(t)}`;
+      list.appendChild(li);
+    });
+    td.appendChild(list);
+
+    const note = document.createElement("div");
+    note.className = "usage-note";
+    note.textContent =
+      "Some raw bank codes aren't identified yet -- shown as \"code N\" rather than guessed. " +
+      "See STATE.md's Phase 2 notes.";
+    td.appendChild(note);
+
+    tr.appendChild(td);
+    return tr;
+  }
+
   function renderCombisPanel() {
     const panel = panels.combis;
     const needle = filterInput.value.trim().toLowerCase();
@@ -212,7 +255,16 @@ function createLibrary(root, { log, panes }) {
         badgesCell(c.setlistUsages),
         refCell(String(c.setlistReferenceCount), false)
       );
+
+      const key = `${c.bank}-${c.number}`;
+      if (key === expandedCombiKey) tr.classList.add("expanded");
+      tr.addEventListener("click", () => {
+        expandedCombiKey = expandedCombiKey === key ? null : key;
+        renderCombisPanel();
+      });
       tbody.appendChild(tr);
+
+      if (key === expandedCombiKey && c.timbres) tbody.appendChild(buildTimbreRow(c));
     }
 
     panel.appendChild(table);

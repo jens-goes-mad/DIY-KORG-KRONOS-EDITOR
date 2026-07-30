@@ -396,6 +396,16 @@ body {
   padding-left: 1.2em;
 }
 
+.timbre-list {
+  columns: 2;
+  font-variant-numeric: tabular-nums;
+}
+
+.timbre-default {
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+
 .duplicate-group {
   border: 1px solid var(--border);
   border-radius: 4px;

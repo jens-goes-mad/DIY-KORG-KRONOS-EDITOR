@@ -52,12 +52,36 @@ struct ProgramInfo {
     uint64_t contentHash = 0;
 };
 
+// One Combi Timbre's Program reference, read directly from the Combi's raw
+// record bytes at a fixed stride (see docs/README.md's "Combi Timbre
+// references" section for how this was derived from real Combi samples the
+// project owner provided directly). Encoding: byte 0 = Program number, byte
+// 1 = a raw bank code -- confirmed NOT to be the same index space
+// ProgramInfo::bank/SlotParams::bank use (those are PBK1 file order; this
+// is some other, absolute Kronos-internal numbering). Only a handful of
+// codes are confirmed to a named bank so far (see kronos::timbreBankName);
+// every other code is real but not yet identified.
+struct TimbreRef {
+    int number = 0;
+    int rawBankCode = 0;
+    // true when number==0 && rawBankCode==0 -- the pattern consistently
+    // seen on every Timbre slot that isn't actually assigned to a Program.
+    bool isDefault = true;
+};
+
+// Returns the confirmed bank name for a raw Combi Timbre bank code (e.g.
+// "USER-D"), or an empty string if this code hasn't been identified yet.
+// NOT the same lookup as the Program/Combi bank arrays used elsewhere --
+// see TimbreRef's comment.
+std::string timbreBankName(int rawBankCode);
+
 // One Combi, from CMB1's CBK1 banks (see docs/README.md §5.1). No
 // contentHash -- duplicate detection was only requested for Programs.
 struct CombiInfo {
     int bank = 0;
     int number = 0;
     std::string name;
+    std::vector<TimbreRef> timbres;  // always 16 entries, Timbre 1..16 in order
 };
 
 // One Set List slot that directly references a given Program (as opposed

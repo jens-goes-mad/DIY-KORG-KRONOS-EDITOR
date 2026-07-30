@@ -113,6 +113,20 @@ choc::value::Value EditorBridge::combiToValue(const kronos::CombiInfo& combi) {
     v.setMember("bank", combi.bank);
     v.setMember("number", combi.number);
     v.setMember("name", combi.name);
+    // Each Timbre's raw Program reference (see docs/README.md's "Combi
+    // Timbre references" section) -- bankName is "" when this particular
+    // raw code hasn't been identified yet, so the UI can fall back to
+    // showing the numeric code honestly instead of a guessed name.
+    auto timbres = choc::value::createEmptyArray();
+    for (const auto& t : combi.timbres) {
+        auto tv = choc::value::createObject("TimbreRef");
+        tv.setMember("number", t.number);
+        tv.setMember("rawBankCode", t.rawBankCode);
+        tv.setMember("bankName", kronos::timbreBankName(t.rawBankCode));
+        tv.setMember("isDefault", t.isDefault);
+        timbres.addArrayElement(tv);
+    }
+    v.setMember("timbres", timbres);
     return v;
 }
 

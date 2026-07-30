@@ -226,7 +226,89 @@ std::vector<std::vector<std::string>> namesByBank(const std::vector<BankRecord>&
     return banks;
 }
 
+// A Combi's 16 Timbres each reference a Program at a fixed 188-byte stride
+// starting 4806 bytes into the Combi's own record, byte 0 = number, byte 1
+// = raw bank code. Confirmed by the project owner providing real Combis
+// (with known Timbre->Program assignments) to diff against -- see
+// docs/README.md's "Combi Timbre references" section. `recordEnd` bounds
+// the read so a truncated/malformed record just yields default TimbreRefs
+// past that point rather than reading out of range.
+constexpr size_t kCombiTimbreBaseOffset = 4806;
+constexpr size_t kCombiTimbreStride = 188;
+constexpr int kCombiTimbreCount = 16;
+
+std::vector<TimbreRef> readCombiTimbres(const uint8_t* data, size_t recordOff, size_t recordEnd) {
+    std::vector<TimbreRef> timbres;
+    timbres.reserve(kCombiTimbreCount);
+    for (int i = 0; i < kCombiTimbreCount; ++i) {
+        size_t h = recordOff + kCombiTimbreBaseOffset + static_cast<size_t>(i) * kCombiTimbreStride;
+        TimbreRef ref;
+        if (h + 1 < recordEnd) {
+            ref.number = data[h];
+            ref.rawBankCode = data[h + 1];
+            ref.isDefault = (ref.number == 0 && ref.rawBankCode == 0);
+        }
+        timbres.push_back(ref);
+    }
+    return timbres;
+}
+
+// One record from a CBK1 (Combi) bank -- like BankRecord, but also carries
+// each Combi's 16 Timbre Program references (Programs have no equivalent,
+// hence a separate struct/collector rather than extending BankRecord).
+struct CombiRecord {
+    int bank = 0;
+    int number = 0;
+    std::string name;
+    std::vector<TimbreRef> timbres;
+};
+
+std::vector<CombiRecord> collectCombiRecords(const std::vector<uint8_t>& data, const std::vector<ChunkInfo>& chunks) {
+    std::vector<CombiRecord> records;
+    for (size_t bankIdx = 0; bankIdx < chunks.size(); ++bankIdx) {
+        const auto& chunk = chunks[bankIdx];
+        if (chunk.contentStart + 12 > chunk.contentEnd) continue;
+
+        readU32BE(&data[chunk.contentStart]);  // meaning not understood yet, unused here
+        uint32_t numRecords = readU32BE(&data[chunk.contentStart + 4]);
+        uint32_t bytesPerRecord = readU32BE(&data[chunk.contentStart + 8]);
+        size_t recordsStart = chunk.contentStart + 12;
+
+        if (bytesPerRecord == 0) continue;
+        if (recordsStart + static_cast<size_t>(bytesPerRecord) * numRecords > chunk.contentEnd) continue;
+
+        for (uint32_t i = 0; i < numRecords; ++i) {
+            size_t off = recordsStart + static_cast<size_t>(i) * bytesPerRecord;
+            CombiRecord rec;
+            rec.bank = static_cast<int>(bankIdx);
+            rec.number = static_cast<int>(i);
+            rec.name = readBankRecordName(data.data(), off, data.size());
+            rec.timbres = readCombiTimbres(data.data(), off, std::min(off + bytesPerRecord, data.size()));
+            records.push_back(std::move(rec));
+        }
+    }
+    return records;
+}
+
 }  // namespace
+
+// Confirmed via real Combi samples the project owner provided directly
+// (see docs/README.md's "Combi Timbre references" section): INT-A..D are a
+// simple sequential 0..3, then USER-D=20 and USER-AA=24 suggest USER-A..G
+// occupy 17..23 with USER-AA immediately after -- but only these exact
+// codes have been directly verified so far. Everything else returns "" so
+// the UI shows the raw numeric code instead of a guessed name.
+std::string timbreBankName(int rawBankCode) {
+    switch (rawBankCode) {
+        case 0: return "INT-A";
+        case 1: return "INT-B";
+        case 2: return "INT-C";
+        case 3: return "INT-D";
+        case 20: return "USER-D";
+        case 24: return "USER-AA";
+        default: return "";
+    }
+}
 
 bool PcgFile::load(const std::string& path, std::string& error) {
     std::ifstream file(path, std::ios::binary);
@@ -332,11 +414,16 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
     // failing the whole load.
     std::vector<ChunkInfo> cbkChunks;
     collectChunks(data, 16, data.size(), "CBK1", cbkChunks, 0);
-    std::vector<BankRecord> combiRecords = collectBankRecords(data, cbkChunks);
-    std::vector<std::vector<std::string>> combiBankNames = namesByBank(combiRecords);  // [bank][number]
+    std::vector<CombiRecord> combiRecords = collectCombiRecords(data, cbkChunks);
+    std::vector<std::vector<std::string>> combiBankNames;  // [bank][number]
+    for (const auto& r : combiRecords) {
+        if (r.bank >= static_cast<int>(combiBankNames.size())) combiBankNames.resize(r.bank + 1);
+        if (r.number >= static_cast<int>(combiBankNames[r.bank].size())) combiBankNames[r.bank].resize(r.number + 1);
+        combiBankNames[r.bank][r.number] = r.name;
+    }
 
     combis_.clear();
-    for (const auto& r : combiRecords) combis_.push_back({r.bank, r.number, r.name});
+    for (const auto& r : combiRecords) combis_.push_back({r.bank, r.number, r.name, r.timbres});
 
     std::vector<ChunkInfo> programBankChunks;
     collectChunks(

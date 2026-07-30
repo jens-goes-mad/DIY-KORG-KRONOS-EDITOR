@@ -62,6 +62,21 @@
     return programs;
   }
 
+  // Mock-only Timbre references -- three "active" slots followed by 13
+  // defaults, standing in for the real bridge's per-Combi Timbre array
+  // (see docs/README.md's "Combi Timbre references" section).
+  function makeFakeTimbres() {
+    const timbres = [
+      { number: 100, rawBankCode: 1, bankName: "INT-B", isDefault: false },
+      { number: 15, rawBankCode: 20, bankName: "USER-D", isDefault: false },
+      { number: 90, rawBankCode: 0, bankName: "INT-A", isDefault: false },
+    ];
+    for (let i = timbres.length; i < 16; i++) {
+      timbres.push({ number: 0, rawBankCode: 0, bankName: "INT-A", isDefault: true });
+    }
+    return timbres;
+  }
+
   function makeFakeCombis() {
     const names = ["K-Lab: Katja's House", "Stradivarius Goes POP", "Rolling in the Deep"];
     const combis = [];
@@ -73,7 +88,14 @@
           name === "Rolling in the Deep"
             ? [{ setlistIndex: 1, setlistName: "Mock List 1", songIndex: 0 }]
             : [];
-        combis.push({ bank, number, name, setlistReferenceCount: setlistUsages.length, setlistUsages });
+        combis.push({
+          bank,
+          number,
+          name,
+          setlistReferenceCount: setlistUsages.length,
+          setlistUsages,
+          timbres: makeFakeTimbres(),
+        });
       });
     }
     return combis;
