@@ -6,8 +6,14 @@
 #include <string>
 #include <vector>
 
-#include "choc/gui/choc_DesktopWindow.h"
+// Include order matters on Linux: choc_DesktopWindow.h uses GTK types
+// (GdkDragContext, GtkWidget, ...) without including <gtk/gtk.h> itself --
+// it relies on a header included earlier having already pulled that in.
+// choc_MessageLoop.h/choc_WebView.h both do (CHOC_LINUX branch), so either
+// must come first, or this fails to compile on Linux with "has not been
+// declared" errors for basic GTK types.
 #include "choc/gui/choc_MessageLoop.h"
+#include "choc/gui/choc_DesktopWindow.h"
 #include "choc/gui/choc_WebView.h"
 
 #include "bridge/EditorBridge.h"
