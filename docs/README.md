@@ -32,9 +32,22 @@ Motorola-style big-endian, unlike Microsoft's little-endian RIFF).
 ```
 offset  bytes                              meaning
 0       "KORG"                             magic
-4       0x68                               format/version byte(s) -- unknown
-5-15    00 02 02 01 00 00 00 00 00 00 00    unknown
+4       0x68                               Product ID (identifies "Kronos" specifically) -- assumed
+5       0x00                               format flag: 00=PCG, 01=SNG (assumed) -- our real sample is a
+                                            .PCG file and reads 0x00 here, consistent
+6       0x02                               Main Version -- assumed
+7       0x01-0x02 (varies by file)         Minor Version -- assumed
+8       0x00-0x01 (varies by file)         checksum flag: 00=none, 01=checksum present -- assumed,
+                                            location of any actual checksum not investigated
+9-15    00 00 00 00 00 00 00               reserved, all-zero in every sample seen so far
 ```
+
+Byte meanings above are **assumed**, not independently derived -- sourced
+from an external reference (`DaBlick/PCG-Tools`, see §7) and cross-checked
+against this project's own real file's actual byte values, which are
+consistent with every claim (including the format flag reading 0x00 on a
+real `.PCG` file). Nothing downstream in this parser depends on these
+fields yet.
 
 ### 1.2 Chunk framing
 
@@ -50,7 +63,10 @@ must be searched for at two candidate positions: directly, and 4 bytes
 later. All tags found so far are 4 characters, first an uppercase letter,
 remaining three uppercase letters or digits (`[A-Z][A-Z0-9]{3}`) --
 `KORG`, `PCG1`, `DIV1`, `SLS1`, `SLD1`, `SDB1`, `STL1`, `SBK1`, `PRG1`,
-`MBK1`, `PBK1`, `CMB1`, `CBK1`, `DKT1`, `WSQ1`, `GLB1`, `DPI1`.
+`MBK1`, `PBK1`, `CMB1`, `CBK1`, `DKT1`, `WSQ1`, `GLB1`, `DPI1`, and
+`DBK1`/`WBK1` (Drum Kit/Wave Sequence sub-banks, §7) and `INI1` (seen
+once in the external reference, §7, purpose entirely unknown -- not
+observed by this project directly yet).
 
 ## 2. Chunk hierarchy
 
@@ -381,13 +397,36 @@ below is wired into `PcgFile.cpp` yet:
   to reference a Song/sequence directly, which a single bit read could
   silently misclassify as a Combi. Not reproduced against a real file
   yet; worth a dedicated check before trusting `isProgram` on an
-  otherwise-unusual slot.
+  otherwise-unusual slot. The same example also shows one further
+  unexplained byte right after the slot's Type/Bank/Number fields
+  (their notes just mark it `??`) -- not confirmed to be (or not be)
+  this project's own reserved byte at SBK1 record offset +17 (§4.3),
+  since the two documents don't use the same offset baseline.
 - **`DKT1` (Drum Kits) / `WSQ1` (Wave Sequences)**: confirmed to contain
-  `DBK1`/`WBK1` sub-bank chunks (15 of each) following the same
+  `DBK1`/`WBK1` sub-bank chunks following the same
   count/numRecords/bytesPerRecord header shape as every other bank type
   in this format -- still entirely unparsed by this project (open
   question §8.6), but now known to at least share the familiar shape
-  rather than being a total unknown.
+  rather than being a total unknown. Unlike Programs/Combis' uniform
+  128-slots-per-bank, the external doc's example shows **non-uniform**
+  bank sizes here: Drum Kits split as 40 (Int) + 16 per USER letter
+  (`000-039` Int, `040-055` U-A, ... up to `136-151` U-G, 152 total);
+  Wave Sequences as 150 (Int) + 32 per USER letter (`000-149` Int,
+  `150-181` U-A, ... up to `342-373` U-G). Doesn't affect this
+  project's existing bank-scanning code either way -- it already reads
+  each bank's own `numRecords` from its header rather than assuming 128
+  -- just recorded since it's a real structural difference from every
+  bank type parsed so far.
+- **An `INI1` chunk tag**, seen once in the external doc's example
+  (immediately after `GLB1`, before what looks like a second
+  `SLS1`/`PRG1`/`MBK1`/`PBK1` sequence starting right after it) --
+  purpose entirely unknown, not observed by this project's own chunk
+  scan yet. Whether that apparent second Set-List/Program sequence is a
+  real second copy of something (an `.SNG` "song snapshot" bundling its
+  own referenced Set List/Programs alongside the main `.PCG` content,
+  maybe?) or just how the source document orders its own notes isn't
+  clear from the excerpt available -- flagged as a real "huh, what's
+  that" rather than asserted as a confirmed structure.
 - **An unresolved anomaly in the source itself**: its own test data shows
   a Timbre meant to reference `GM127` decoding to `number=126, bank=6`
   instead -- flagged by that document's own author as unexplained. Left
@@ -405,7 +444,8 @@ below is wired into `PcgFile.cpp` yet:
 5. Exactly which of the 20 PRG1 banks maps to which *display label* --
    the lookup mechanism itself is confirmed (§5.3); the specific label
    order (§5.2) is a positional assumption pending further verification.
-6. `DKT1` (Drum Kits), `WSQ1` (Wave Sequences), `GLB1`, `DPI1` -- entirely
+6. `DKT1` (Drum Kits), `WSQ1` (Wave Sequences), `GLB1`, `DPI1`, and `INI1`
+   (§7, tag observed once, never by this project directly) -- entirely
    unexplored. Unknown whether Set List slots can reference these
    directly (if so, the instrument-name lookup has a gap there too).
 7. The older SoundQuest `.SQS` backup dialect (`LIST`/`FORM`/`BANK`
@@ -425,6 +465,14 @@ below is wired into `PcgFile.cpp` yet:
     some slots as Combis. Not reproduced yet.
 11. Whether the external reference's `21`-Program-banks `DIV1` reading
     (§7) points at a real 21st bank this project's chunk scan is missing.
+12. The file-header checksum flag (§1.1, byte offset 8) -- our real
+    sample reads `0x01` ("checksum present" per the external reference),
+    but where any such checksum would actually live, and over what range
+    of bytes, hasn't been investigated at all.
+13. The apparent second `SLS1`/`PRG1`/`MBK1`/`PBK1` sequence right after
+    an `INI1` chunk in the external reference's example (§7) -- a real
+    second copy of something, or an artifact of how that document's own
+    notes are ordered? Not investigated against a real file.
 
 ## 9. Where this is implemented
 
