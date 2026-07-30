@@ -95,6 +95,17 @@ struct TimbreRef {
 // see TimbreRef's comment.
 std::string timbreBankName(int rawBankCode);
 
+// Whether `programBank` (this project's PBK1 file-order Program bank
+// index, see ProgramInfo::bank) is confirmed to line up with the *same*
+// numbering a Combi Timbre's raw bank code uses (TimbreRef::rawBankCode)
+// -- true only for INT-A..D (0..3), the range independently verified in
+// both schemes (see docs/README.md §6.2). Every other Program bank
+// (INT-E..G, every USER bank) has a Timbre code that's confirmed to sit
+// at a *different* index than its PBK1 file-order position (e.g. USER-D
+// is file-order index 11 but Timbre code 20) -- counting Combi usage for
+// those would silently produce wrong numbers, so it's not attempted.
+bool isConfirmedTimbreProgramBank(int programBank);
+
 // One Combi, from CMB1's CBK1 banks (see docs/README.md §5.1). No
 // contentHash -- duplicate detection was only requested for Programs.
 struct CombiInfo {
@@ -111,6 +122,18 @@ struct SetlistUsage {
     int setlistIndex = 0;
     std::string setlistName;
     int songIndex = 0;
+};
+
+// One Combi whose Timbres reference a given Program. `active` is true if
+// *any* matching Timbre's status isn't Off -- a Combi can reference a
+// Program only through an Off Timbre (e.g. a stale/disabled assignment),
+// which still counts as a reference (see TimbreRef::isDefault's comment)
+// but is worth distinguishing in the UI.
+struct CombiUsage {
+    int bank = 0;
+    int number = 0;
+    std::string name;
+    bool active = false;
 };
 
 // Parses a Korg Kronos .PCG/.SNG backup file and extracts all 128 Set Lists
@@ -161,6 +184,21 @@ public:
     // O(songs)). Used to attach a reference count to every row of a
     // Programs/Combis listing without it being slow at ~2500/~1800 rows.
     std::vector<std::vector<int>> setlistUsageCounts(bool isProgram) const;
+
+    // Every Combi whose Timbres reference this bank/number, regardless of
+    // on/off status (see CombiUsage::active). Only meaningful when
+    // isConfirmedTimbreProgramBank(bank) is true -- returns an empty list
+    // otherwise, same as if there were genuinely no usages, since this
+    // project can't yet tell the difference for unconfirmed banks.
+    std::vector<CombiUsage> combiUsagesForProgram(int bank, int number) const;
+
+    // Combi-usage counts for every (bank, number) at once, indexed
+    // `[bank][number]` -- same one-pass-instead-of-per-row idea as
+    // setlistUsageCounts(). Only populated for banks where
+    // isConfirmedTimbreProgramBank() is true; every other bank has no
+    // entry at all (callers must check isConfirmedTimbreProgramBank()
+    // themselves to tell "zero real usages" apart from "not computed").
+    std::vector<std::vector<int>> combiUsageCounts() const;
 
     // Groups of 2+ Programs sharing an identical contentHash (byte-exact
     // duplicates). Programs with a unique hash are omitted entirely.

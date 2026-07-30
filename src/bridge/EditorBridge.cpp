@@ -42,6 +42,19 @@ choc::value::Value setlistUsagesToValue(const std::vector<kronos::SetlistUsage>&
     return result;
 }
 
+choc::value::Value combiUsagesToValue(const std::vector<kronos::CombiUsage>& usages) {
+    auto result = choc::value::createEmptyArray();
+    for (const auto& usage : usages) {
+        auto v = choc::value::createObject("CombiUsage");
+        v.setMember("bank", usage.bank);
+        v.setMember("number", usage.number);
+        v.setMember("name", usage.name);
+        v.setMember("active", usage.active);
+        result.addArrayElement(v);
+    }
+    return result;
+}
+
 // Standard base64 (RFC 4648), decoding whatever the browser's
 // FileReader/btoa-equivalent side produced. Returns false on malformed input
 // rather than throwing -- this is untrusted data from the UI.
@@ -299,14 +312,18 @@ choc::value::Value EditorBridge::listPrograms(const choc::value::ValueView& args
     // Program would be O(programs x songs) instead of O(songs)) -- see
     // PcgFile::setlistUsageCounts()'s doc comment.
     auto setlistCounts = file->setlistUsageCounts(/*isProgram=*/true);
+    auto combiCounts = file->combiUsageCounts();
 
     auto result = choc::value::createEmptyArray();
     for (const auto& program : file->programs()) {
         auto v = programToValue(program);
         v.setMember("setlistReferenceCount", countAt(setlistCounts, program.bank, program.number));
-        // Combi-internal Program references aren't parsed yet -- omit
-        // rather than claim 0 (see docs/README.md's Phase 2 roadmap).
-        v.setMember("combiReferenceCountAvailable", false);
+        // Only banks where isConfirmedTimbreProgramBank() is true have a
+        // real count -- see PcgFile::combiUsageCounts()'s doc comment for
+        // why the rest can't be computed without risking a wrong answer.
+        const bool available = kronos::isConfirmedTimbreProgramBank(program.bank);
+        v.setMember("combiReferenceCountAvailable", available);
+        v.setMember("combiReferenceCount", available ? countAt(combiCounts, program.bank, program.number) : 0);
         result.addArrayElement(v);
     }
     return result;
@@ -345,10 +362,13 @@ choc::value::Value EditorBridge::getProgramUsage(const choc::value::ValueView& a
 
     auto result = makeOk();
     result.setMember("setlistUsages", setlistUsagesToValue(file->programSetlistUsages(bank, number)));
-    // Combi-internal Program references aren't parsed yet (see
-    // docs/README.md's Phase 2 roadmap) -- this flag is what lets the UI
-    // say so honestly instead of implying "zero Combi usages found".
-    result.setMember("combiUsagesAvailable", false);
+    // Only true for banks where isConfirmedTimbreProgramBank() holds --
+    // this flag is what lets the UI say "not available for this bank"
+    // honestly instead of implying "zero Combi usages found".
+    const bool combiAvailable = kronos::isConfirmedTimbreProgramBank(bank);
+    result.setMember("combiUsagesAvailable", combiAvailable);
+    result.setMember("combiUsages", combiAvailable ? combiUsagesToValue(file->combiUsagesForProgram(bank, number))
+                                                    : choc::value::createEmptyArray());
     return result;
 }
 
@@ -364,6 +384,11 @@ choc::value::Value EditorBridge::findDuplicatePrograms(const choc::value::ValueV
             auto v = programToValue(program);
             v.setMember("setlistUsageCount",
                         static_cast<int>(file->programSetlistUsages(program.bank, program.number).size()));
+            const bool combiAvailable = kronos::isConfirmedTimbreProgramBank(program.bank);
+            v.setMember("combiUsageCountAvailable", combiAvailable);
+            v.setMember("combiUsageCount", combiAvailable
+                                                ? static_cast<int>(file->combiUsagesForProgram(program.bank, program.number).size())
+                                                : 0);
             groupValue.addArrayElement(v);
         }
         result.addArrayElement(groupValue);

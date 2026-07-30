@@ -334,6 +334,10 @@ std::string timbreBankName(int rawBankCode) {
     }
 }
 
+bool isConfirmedTimbreProgramBank(int programBank) {
+    return programBank >= 0 && programBank <= 3;
+}
+
 bool PcgFile::load(const std::string& path, std::string& error) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
@@ -507,6 +511,38 @@ std::vector<std::vector<int>> PcgFile::setlistUsageCounts(bool isProgram) const 
             int bank = song.params.bank;
             int number = song.params.number;
             if (bank < 0 || number < 0) continue;
+            if (bank >= static_cast<int>(counts.size())) counts.resize(bank + 1);
+            if (number >= static_cast<int>(counts[bank].size())) counts[bank].resize(number + 1, 0);
+            counts[bank][number]++;
+        }
+    }
+    return counts;
+}
+
+std::vector<CombiUsage> PcgFile::combiUsagesForProgram(int bank, int number) const {
+    std::vector<CombiUsage> usages;
+    if (!isConfirmedTimbreProgramBank(bank)) return usages;
+
+    for (const auto& combi : combis_) {
+        bool referenced = false;
+        bool active = false;
+        for (const auto& t : combi.timbres) {
+            if (t.isDefault || t.rawBankCode != bank || t.number != number) continue;
+            referenced = true;
+            if (t.status != TimbreStatus::Off) active = true;
+        }
+        if (referenced) usages.push_back({combi.bank, combi.number, combi.name, active});
+    }
+    return usages;
+}
+
+std::vector<std::vector<int>> PcgFile::combiUsageCounts() const {
+    std::vector<std::vector<int>> counts;
+    for (const auto& combi : combis_) {
+        for (const auto& t : combi.timbres) {
+            if (t.isDefault || !isConfirmedTimbreProgramBank(t.rawBankCode)) continue;
+            int bank = t.rawBankCode;
+            int number = t.number;
             if (bank >= static_cast<int>(counts.size())) counts.resize(bank + 1);
             if (number >= static_cast<int>(counts[bank].size())) counts[bank].resize(number + 1, 0);
             counts[bank][number]++;

@@ -56,7 +56,17 @@
     const programs = [];
     for (let bank = 0; bank < 2; bank++) {
       names.forEach((name, number) =>
-        programs.push({ bank, number, name, setlistReferenceCount: 0, combiReferenceCountAvailable: false })
+        // bank 0/1 are both within the confirmed INT-A..D range (see
+        // kronos::isConfirmedTimbreProgramBank()), so mock mode marks
+        // Combi refs available too, mirroring the real bridge.
+        programs.push({
+          bank,
+          number,
+          name,
+          setlistReferenceCount: 0,
+          combiReferenceCountAvailable: true,
+          combiReferenceCount: 0,
+        })
       );
     }
     return programs;
@@ -179,7 +189,20 @@
         }
       }
     }
-    return ok({ setlistUsages, combiUsagesAvailable: false });
+    const combiUsagesAvailable = bank >= 0 && bank <= 3;
+    const combiUsages = combiUsagesAvailable
+      ? pane.combis
+          .filter((c) => c.timbres.some((t) => !t.isDefault && t.rawBankCode === bank && t.number === number))
+          .map((c) => ({
+            bank: c.bank,
+            number: c.number,
+            name: c.name,
+            active: c.timbres.some(
+              (t) => !t.isDefault && t.rawBankCode === bank && t.number === number && t.status !== "Off"
+            ),
+          }))
+      : [];
+    return ok({ setlistUsages, combiUsagesAvailable, combiUsages });
   };
 
   window.findDuplicatePrograms = (paneId) => {
@@ -192,7 +215,7 @@
     }
     const groups = Object.values(byName)
       .filter((g) => g.length >= 2)
-      .map((g) => g.map((p) => Object.assign({ setlistUsageCount: 0 }, p)));
+      .map((g) => g.map((p) => Object.assign({ setlistUsageCount: 0, combiUsageCountAvailable: true, combiUsageCount: 0 }, p)));
     return Promise.resolve(groups);
   };
 })();

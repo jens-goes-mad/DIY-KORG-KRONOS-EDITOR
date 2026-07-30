@@ -95,7 +95,10 @@ function createLibrary(root, { log, panes }) {
     td.className = unavailable ? "col-refs col-refs-unavailable" : "col-refs";
     td.textContent = text;
     if (unavailable) {
-      td.title = "Combi-internal Program references aren't parsed yet -- see STATE.md's Phase 2 roadmap.";
+      td.title =
+        "Combi usage is only confirmed correct for INT-A..D so far -- other banks would risk a wrong " +
+        "count due to the Combi-internal bank numbering not matching this bank's index everywhere. " +
+        "See docs/README.md's Combi Timbre references section.";
     }
     return td;
   }
@@ -143,8 +146,35 @@ function createLibrary(root, { log, panes }) {
       if (!usage.combiUsagesAvailable) {
         const note = document.createElement("div");
         note.className = "usage-note";
-        note.textContent = "Combi usage: not available yet -- Combi-internal Program references aren't parsed yet.";
+        note.textContent =
+          "Combi usage: not available for this bank yet -- only confirmed for INT-A..D so far. " +
+          "See docs/README.md's Combi Timbre references section.";
         box.appendChild(note);
+      } else {
+        const combiHeading = document.createElement("div");
+        combiHeading.className = "usage-heading";
+        combiHeading.textContent = `Combi usage (${usage.combiUsages.length}):`;
+        box.appendChild(combiHeading);
+
+        if (usage.combiUsages.length === 0) {
+          const none = document.createElement("div");
+          none.className = "usage-empty";
+          none.textContent = "No Combi's Timbres reference this Program.";
+          box.appendChild(none);
+        } else {
+          const list = document.createElement("ul");
+          list.className = "usage-list";
+          for (const c of usage.combiUsages) {
+            const li = document.createElement("li");
+            li.textContent = `${formatBankNumber({ isProgram: false, bank: c.bank, number: c.number })} "${c.name || "(empty)"}"`;
+            if (!c.active) {
+              li.textContent += " (via an Off Timbre only)";
+              li.className = "timbre-inactive-ref";
+            }
+            list.appendChild(li);
+          }
+          box.appendChild(list);
+        }
       }
     })();
 
@@ -172,7 +202,9 @@ function createLibrary(root, { log, panes }) {
         bankCell(true, p.bank, p.number),
         nameTd,
         refCell(String(p.setlistReferenceCount), false),
-        refCell("0", true)
+        p.combiReferenceCountAvailable
+          ? refCell(String(p.combiReferenceCount), false)
+          : refCell("n/a", true)
       );
 
       const key = `${p.bank}-${p.number}`;
@@ -309,7 +341,11 @@ function createLibrary(root, { log, panes }) {
 
       for (const p of group) {
         const tr = document.createElement("tr");
-        tr.append(bankCell(true, p.bank, p.number), refCell(String(p.setlistUsageCount), false), refCell("0", true));
+        tr.append(
+          bankCell(true, p.bank, p.number),
+          refCell(String(p.setlistUsageCount), false),
+          p.combiUsageCountAvailable ? refCell(String(p.combiUsageCount), false) : refCell("n/a", true)
+        );
         tbody.appendChild(tr);
       }
 
