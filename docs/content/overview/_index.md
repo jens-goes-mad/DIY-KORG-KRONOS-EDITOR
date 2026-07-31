@@ -111,6 +111,8 @@ thus: [jens-goes-mad](/me).
   list of open questions.
 - [Building the app](/building) -- how to compile it yourself on macOS, Linux, or
   Windows.
+- [App architecture & components](/components) -- how the UI is being split into small,
+  standalone, byte-level-tested pieces, and why.
 - [Project status](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/blob/main/STATE.md) --
   what's built, what's verified, and the full list of known blind spots.
 
