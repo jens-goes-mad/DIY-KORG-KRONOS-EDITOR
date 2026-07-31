@@ -7,6 +7,8 @@
 #include <optional>
 #include <unordered_map>
 
+#include "ProgramDecoder.h"
+
 namespace kronos {
 
 namespace {
@@ -185,75 +187,6 @@ std::string readBankRecordName(const uint8_t* data, size_t recordOff, size_t end
         --len;
     }
     return std::string(reinterpret_cast<const char*>(data + nameOff), len);
-}
-
-// Standard FNV-1a 64-bit -- used to fingerprint a Program's full raw record
-// for byte-exact duplicate detection (PcgFile::findDuplicatePrograms()).
-// Collisions between genuinely different records are astronomically
-// unlikely at the ~2500-record scale these files run, so a hash match is
-// trusted directly without a follow-up byte-compare pass.
-uint64_t fnv1aHash(const uint8_t* data, size_t len) {
-    uint64_t hash = 0xcbf29ce484222325ULL;
-    for (size_t i = 0; i < len; ++i) {
-        hash ^= data[i];
-        hash *= 0x100000001b3ULL;
-    }
-    return hash;
-}
-
-// One record from a CBK1 (Combi) or MBK1/PBK1 (Program) bank -- `bank` is
-// that chunk's position among its siblings (0-based), `number` the
-// record's position within it. `contentHash` is always computed (cheap)
-// even though only Program dedup uses it.
-struct BankRecord {
-    int bank = 0;
-    int number = 0;
-    std::string name;
-    uint64_t contentHash = 0;
-};
-
-// Walks a set of same-shaped bank chunks (CBK1s under CMB1, or MBK1/PBK1s
-// under PRG1) into a flat list of records. Chunks not matching the expected
-// header/size relationship are skipped rather than aborting the whole scan
-// -- keeps this tolerant of a bank that doesn't parse rather than losing
-// every other bank too.
-std::vector<BankRecord> collectBankRecords(const std::vector<uint8_t>& data, const std::vector<ChunkInfo>& chunks) {
-    std::vector<BankRecord> records;
-    for (size_t bankIdx = 0; bankIdx < chunks.size(); ++bankIdx) {
-        const auto& chunk = chunks[bankIdx];
-        if (chunk.contentStart + 12 > chunk.contentEnd) continue;
-
-        readU32BE(&data[chunk.contentStart]);  // meaning not understood yet, unused here
-        uint32_t numRecords = readU32BE(&data[chunk.contentStart + 4]);
-        uint32_t bytesPerRecord = readU32BE(&data[chunk.contentStart + 8]);
-        size_t recordsStart = chunk.contentStart + 12;
-
-        if (bytesPerRecord == 0) continue;
-        if (recordsStart + static_cast<size_t>(bytesPerRecord) * numRecords > chunk.contentEnd) continue;
-
-        for (uint32_t i = 0; i < numRecords; ++i) {
-            size_t off = recordsStart + static_cast<size_t>(i) * bytesPerRecord;
-            BankRecord rec;
-            rec.bank = static_cast<int>(bankIdx);
-            rec.number = static_cast<int>(i);
-            rec.name = readBankRecordName(data.data(), off, data.size());
-            rec.contentHash = fnv1aHash(&data[off], bytesPerRecord);
-            records.push_back(std::move(rec));
-        }
-    }
-    return records;
-}
-
-// Builds the [bank][number] -> name lookup the instrumentName cross-
-// reference (below) uses, from an already-collected flat record list.
-std::vector<std::vector<std::string>> namesByBank(const std::vector<BankRecord>& records) {
-    std::vector<std::vector<std::string>> banks;
-    for (const auto& r : records) {
-        if (r.bank >= static_cast<int>(banks.size())) banks.resize(r.bank + 1);
-        if (r.number >= static_cast<int>(banks[r.bank].size())) banks[r.bank].resize(r.number + 1);
-        banks[r.bank][r.number] = r.name;
-    }
-    return banks;
 }
 
 // A Combi's 16 Timbres each reference a Program at a fixed 188-byte stride
@@ -483,15 +416,53 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
     combis_.clear();
     for (const auto& r : combiRecords) combis_.push_back({r.bank, r.number, r.name, r.timbres});
 
+    // Programs: the first field decoded via a standalone per-record
+    // decoder (src/kronos/ProgramDecoder.h) instead of inline in a
+    // generic bank-walking helper -- see STATE.md's "ARCHITECTURE:
+    // DECODER/ENCODER REFACTOR". This single walk populates both
+    // programs_ (the table/dedup view) and programBankNames (the
+    // instrument-name cross-reference below) from the same decoded
+    // fields, and also records each bank's location in
+    // programBankLocations_ so decodeProgram() can re-decode any single
+    // Program on demand later, straight from the retained raw bytes
+    // (data_, set at the end of this function) -- not just once, here.
     std::vector<ChunkInfo> programBankChunks;
     collectChunks(
         data, 16, data.size(), [](const std::string& tag) { return tag == "MBK1" || tag == "PBK1"; },
         programBankChunks, 0);
-    std::vector<BankRecord> programRecords = collectBankRecords(data, programBankChunks);
-    std::vector<std::vector<std::string>> programBankNames = namesByBank(programRecords);  // [bank][number]
 
     programs_.clear();
-    for (const auto& r : programRecords) programs_.push_back({r.bank, r.number, r.name, r.contentHash});
+    programBankLocations_.clear();
+    std::vector<std::vector<std::string>> programBankNames;  // [bank][number]
+
+    for (size_t bankIdx = 0; bankIdx < programBankChunks.size(); ++bankIdx) {
+        const auto& chunk = programBankChunks[bankIdx];
+        if (chunk.contentStart + 12 > chunk.contentEnd) continue;
+
+        readU32BE(&data[chunk.contentStart]);  // meaning not understood yet, unused here
+        uint32_t numRecords = readU32BE(&data[chunk.contentStart + 4]);
+        uint32_t bytesPerRecord = readU32BE(&data[chunk.contentStart + 8]);
+        size_t recordsStart = chunk.contentStart + 12;
+
+        if (bytesPerRecord == 0) continue;
+        if (recordsStart + static_cast<size_t>(bytesPerRecord) * numRecords > chunk.contentEnd) continue;
+
+        programBankLocations_.push_back({recordsStart, numRecords, bytesPerRecord});
+
+        for (uint32_t i = 0; i < numRecords; ++i) {
+            size_t off = recordsStart + static_cast<size_t>(i) * bytesPerRecord;
+            const uint8_t* record = &data[off];
+            ProgramFields fields = decodeProgramFields(record, bytesPerRecord, static_cast<int>(bankIdx), static_cast<int>(i));
+            uint64_t hash = hashProgramRecord(record, bytesPerRecord);
+            programs_.push_back({fields.bank, fields.number, fields.name, hash});
+
+            if (fields.bank >= static_cast<int>(programBankNames.size())) programBankNames.resize(fields.bank + 1);
+            if (fields.number >= static_cast<int>(programBankNames[fields.bank].size())) {
+                programBankNames[fields.bank].resize(fields.number + 1);
+            }
+            programBankNames[fields.bank][fields.number] = fields.name;
+        }
+    }
 
     for (auto& setlist : setlists_) {
         for (auto& song : setlist.songs) {
@@ -504,6 +475,12 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
             song.instrumentName = banks[bank][number];
         }
     }
+
+    // Retained rather than discarded, now that decodeProgram() (and
+    // future per-record decoders) can re-read from it on demand -- see
+    // STATE.md's "ARCHITECTURE: DECODER/ENCODER REFACTOR". Moved, not
+    // copied: nothing above this point needs the local `data` again.
+    data_ = std::move(data);
 
     return true;
 }
@@ -599,6 +576,20 @@ std::vector<std::vector<ProgramInfo>> PcgFile::findDuplicatePrograms() const {
         return a.front().bank != b.front().bank ? a.front().bank < b.front().bank : a.front().number < b.front().number;
     });
     return groups;
+}
+
+std::optional<ProgramInfo> PcgFile::decodeProgram(int bank, int number) const {
+    if (bank < 0 || bank >= static_cast<int>(programBankLocations_.size())) return std::nullopt;
+    const auto& loc = programBankLocations_[bank];
+    if (number < 0 || static_cast<uint32_t>(number) >= loc.numRecords) return std::nullopt;
+
+    size_t off = loc.recordsStart + static_cast<size_t>(number) * loc.bytesPerRecord;
+    if (off + loc.bytesPerRecord > data_.size()) return std::nullopt;
+
+    const uint8_t* record = &data_[off];
+    ProgramFields fields = decodeProgramFields(record, loc.bytesPerRecord, bank, number);
+    uint64_t hash = hashProgramRecord(record, loc.bytesPerRecord);
+    return ProgramInfo{fields.bank, fields.number, fields.name, hash};
 }
 
 }  // namespace kronos

@@ -22,6 +22,7 @@ add_executable(kronos_editor
     src/main.cpp
     src/bridge/EditorBridge.cpp
     src/kronos/PcgFile.cpp
+    src/kronos/ProgramDecoder.cpp
 )
 
 target_include_directories(kronos_editor PRIVATE

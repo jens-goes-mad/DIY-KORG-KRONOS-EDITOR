@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -53,14 +54,18 @@ struct Setlist {
     std::vector<Song> songs;       // always 128 entries (a real Kronos Set List has exactly 128 slots)
 };
 
-// One Program, from PRG1's MBK1/PBK1 banks (see docs/README.md §5.2).
+// One Program's table row: `bank`/`name`/`number` are raw Kronos fields,
+// read directly off PRG1's MBK1/PBK1 banks (see docs/README.md §5.2) by
+// src/kronos/ProgramDecoder.h. `contentHash` is deliberately NOT a Kronos
+// format field -- it's this project's own application-level bookkeeping
+// (an FNV-1a hash of the record's raw bytes, for byte-exact duplicate
+// detection), computed once and cached here rather than recomputed on
+// every use. See docs/content/components/index.md for why this
+// raw-field/derived-data split is kept explicit rather than blurred.
 struct ProgramInfo {
     int bank = 0;
     int number = 0;
     std::string name;
-    // FNV-1a hash of the program's full raw record (computed at parse
-    // time -- the raw bytes themselves aren't kept around afterward, see
-    // PcgFile::loadFromMemory). Used to find byte-exact duplicates.
     uint64_t contentHash = 0;
 };
 
@@ -216,10 +221,39 @@ public:
     // duplicates). Programs with a unique hash are omitted entirely.
     std::vector<std::vector<ProgramInfo>> findDuplicatePrograms() const;
 
+    // Re-decodes one Program directly from the retained raw file bytes,
+    // independently of programs() (which was built once during load) --
+    // proof that the decoder is a real, reusable, on-demand operation
+    // rather than something only ever run once. Returns nullopt if
+    // bank/number is out of range, or no file is loaded.
+    //
+    // This is the first piece of the architecture direction described in
+    // docs/content/components/index.md and STATE.md's "ARCHITECTURE:
+    // DECODER/ENCODER REFACTOR" section: raw bytes are retained as the
+    // one canonical copy (see data_ below) instead of being discarded
+    // after an eager parse, and small per-record decoders
+    // (src/kronos/ProgramDecoder.h so far) compute structure from them on
+    // demand. Combi and Set List slot decoders are the planned next steps
+    // once this is proven out -- programs_/combis_/setlists_ below still
+    // reflect the older eager-parse shape for everything else.
+    std::optional<ProgramInfo> decodeProgram(int bank, int number) const;
+
 private:
+    // Where one PRG1 sub-bank's (MBK1 or PBK1) records live within data_
+    // -- retained so decodeProgram() can locate and re-decode a specific
+    // record on demand, without re-scanning the whole file's chunk
+    // hierarchy every time.
+    struct ProgramBankLocation {
+        size_t recordsStart = 0;
+        uint32_t numRecords = 0;
+        uint32_t bytesPerRecord = 0;
+    };
+
     std::vector<Setlist> setlists_;
     std::vector<ProgramInfo> programs_;
     std::vector<CombiInfo> combis_;
+    std::vector<uint8_t> data_;                          // the whole file's raw bytes, retained after load
+    std::vector<ProgramBankLocation> programBankLocations_;  // index into data_, one entry per PRG1 sub-bank
 };
 
 }  // namespace kronos
