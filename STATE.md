@@ -250,39 +250,101 @@ full rationale):
     first and so far only one built this way; a generic reusable envelope/ADSR editor
     (shared across every Kronos synth engine's envelope curves) was discussed as a strong
     future candidate given how much of the Kronos reuses the same ADSR-shaped UI.
-  - **Backend (agreed, not yet started -- this is the active next task)**: `PcgFile`
-    currently parses the *whole* file eagerly into `setlists_`/`programs_`/`combis_` at
-    load time, and explicitly discards the raw file bytes afterward to avoid holding the
-    file twice in memory. That's flipping: raw bytes become the retained, canonical
-    state, and small per-record-type decoders (mirroring the frontend pattern) compute
-    just-enough structure on demand from them instead of a big eager pre-built copy.
-    This also happens to be the cleanest fix for a staleness class of bug the project
-    owner flagged before it was ever written: if a component/decoder holds a byte
-    snapshot captured once and something else changes the underlying record in the
-    meantime, a later write silently reverts that other change. With raw bytes as the
-    *one* retained copy (not a byte snapshot plus a separate structured shadow copy),
-    every decode always reads the current state -- there's nothing to go stale.
-  - **Sequencing (explicit, small-iterations-first)**: start with a **Program decoder
-    only** -- `{name, bank, number}` for table population, plus a `hash()` method
-    (bytes+position -> content hash, generalizing what `ProgramInfo::contentHash` already
-    does today) for `findDuplicatePrograms()`. Table rows deliberately keep *raw Kronos
-    fields* (name/bank/number, read straight off the bytes) and *our own derived data*
-    (the hash) conceptually separate -- the hash is not part of the Kronos format, it's
-    application-level bookkeeping computed once and cached. Once this passes tests and a
-    real UI pass, do the same for Combi, then Set List slot.
-  - **No encoder yet, deliberately**: every current use case (table population, dedup)
-    is read-only. An encoder gets built once there's an actual write feature driving its
-    real shape, same "don't build for hypothetical future needs" principle already
-    applied elsewhere in this project -- `setlist-comment.js`'s encoder is the one
-    exception, because Comment/Font-size editing already exists as a real (if not yet
-    wired into `pane.js`) use case. **Renaming Programs/Combis/Set Lists** was explicitly
-    named as a likely upcoming feature that would need a Program (and later Combi/
-    Set List) encoder -- not started, but the reason encoders aren't being ruled out
-    long-term, just deferred until a concrete need exists.
+  - **Backend (Program decoder BUILT 2026-08-01, verified zero-regression against the
+    real 47.9MB file)**: `PcgFile` no longer discards the raw file bytes after parsing
+    (`data_`, retained). `src/kronos/ProgramDecoder.{h,cpp}` is the first small,
+    per-record decoder (mirrors the frontend pattern): `decodeProgramFields()` (raw
+    Kronos fields) and `hashProgramRecord()` (our own derived bookkeeping) as separate
+    functions, plus `PcgFile::decodeProgram(bank, number)` proving a record can be
+    re-decoded on demand from the retained bytes, not just once at load. This also
+    happens to be the cleanest fix for a staleness class of bug the project owner
+    flagged before it was ever written: if a component/decoder holds a byte snapshot
+    captured once and something else changes the underlying record in the meantime, a
+    later write silently reverts that other change. With raw bytes as the *one* retained
+    copy (not a byte snapshot plus a separate structured shadow copy), every decode
+    always reads the current state -- there's nothing to go stale.
+  - **Sequencing (explicit, small-iterations-first)**: Program decoder done, scoped to
+    exactly `{name, bank, number}` for table population plus `hash()` for
+    `findDuplicatePrograms()` -- table rows deliberately keep *raw Kronos fields*
+    (name/bank/number) and *our own derived data* (the hash) conceptually separate, since
+    the hash isn't part of the Kronos format. **Test infrastructure is next** (see below
+    -- explicitly prioritized over continuing to Combi), then Combi, then Set List slot,
+    each following the same pattern once proven.
+  - **Chunk-based data flow for components (designed 2026-08-01, not yet implemented)**:
+    two deliberately different tiers, not one architecture for everything --
+    - *Bulk/list views* (Programs table, dedup, etc.) stay served by native decoders
+      walking the whole retained buffer -- real efficiency win here (e.g.
+      `findDuplicatePrograms()` hashes ~12.7MB across ~2560 records; genuinely faster
+      native than doing the same in a WebView's JS engine, and avoids repeatedly
+      shipping large data across the JS/native bridge for something already sitting in
+      native memory).
+    - *Detail/edit views* (Comment+Font-size today, more later) request the *specific
+      raw byte chunk* they need (one record's bytes) via the bridge, and do their own
+      decode/encode entirely in JS -- exactly `setlist-comment.js`'s existing pattern,
+      generalized. Preserves the "test without building the native app" property
+      specifically where it matters most: interactive UI a human iterates on.
+    - **Why not a deferred edit overlay**: originally considered keeping the retained
+      buffer strictly immutable and layering pending edits on top as a `{position ->
+      new bytes}` overlay (for undo/redo, and to avoid touching canonical state).
+      Rejected: overlay keys are position-based (bank/number), and any *reorder*
+      operation (moving/swapping Programs, Combis, Set List entries -- already a core
+      feature) would leave a stale overlay entry silently applying to whatever record
+      now occupies that position instead of the one it was meant for. **Decided
+      instead**: `encode()` writes back *immediately* into `data_` via a new bridge
+      method, `putRecordBytes()` -- baking the edit directly into the bytes that any
+      later reorder would move, rather than tracking it separately. Safe specifically
+      because this app is single-threaded JS with exactly one user editing at a time --
+      no concurrent-writer conflicts to resolve. Undo/redo stays achievable this way too
+      (each `putRecordBytes()` call is a discrete, reversible operation -- keep old
+      bytes alongside new in a history stack), just not built yet.
+    - **`putRecordBytes()` must keep the structured cache in sync**: `Song.comment`/
+      `Song.params.fontSize` etc. are cached fields, parsed once out of `data_` into
+      `setlists_` at load time. A raw-byte-only write would leave them stale (Set List
+      table keeps showing the old comment). Required behavior once built: (1) overwrite
+      bytes in `data_`, (2) re-run the *existing* SBK1 decode on just the newly-written
+      bytes, (3) update the corresponding `Song` in `setlists_` from that fresh decode --
+      so the structured cache is always derived from canonical bytes right after a
+      write, never hand-maintained separately.
+    - **Cross-pane refresh gap (existing, sharpens once more write paths land)**: the
+      two-pane UI can have the *same* Set List open in both panes (e.g. to move
+      Programs/Combis between positions easily). `onDropEntry` in `app.js` today only
+      refreshes the *target* pane after `moveEntry`/`copyEntry` -- if the other pane
+      happens to show the same Set List, it silently goes stale. **Decided**: no general
+      pub/sub/event-bus system yet -- that solves a more general problem than the one
+      concrete scenario that actually exists. Instead, extend the one place that already
+      coordinates both panes (`app.js`) to check whether the other pane currently shows
+      the same Set List (a small `getCurrentSetlistIndex()` on the pane object, mirroring
+      the existing `getCurrentSetlistName()`) and refresh it too if so. Revisit a real
+      pub/sub only if a second, genuinely different cross-component sync need shows up.
+  - **Streaming/mmap for raw bytes -- considered, not applicable to the current data
+    path**: retaining the whole file in `data_` isn't a preference for "native heap over
+    streaming" -- it's a consequence of how bytes actually arrive. The app's only wired
+    file-opening mechanism (drag-and-drop) means the whole file is already fully
+    materialized in memory multiple times (browser `File.arrayBuffer()`, a base64
+    string shipped across the bridge, then decoded back to bytes) *before*
+    `PcgFile::loadFromMemory` ever sees it -- there's no live socket/handle left to
+    stream from by that point. `PcgFile::load(path)` (a plain `ifstream` read, not wired
+    to any UI control -- dropped in favor of drag-and-drop specifically because of the
+    NSOpenPanel-behind-the-window bug, see Blind Spots) is the one place a real
+    seek/mmap-based reader would genuinely help. Worth revisiting *if* path-based
+    opening ever becomes primary again (e.g. if that native-dialog bug gets fixed).
+  - **No encoder yet beyond `setlist-comment.js`, deliberately**: every current
+    Program/Combi use case (table population, dedup) is read-only. An encoder gets
+    built once there's an actual write feature driving its real shape, same "don't
+    build for hypothetical future needs" principle already applied elsewhere in this
+    project. **Renaming Programs/Combis/Set Lists** was explicitly named as a likely
+    upcoming feature that would need one -- not started.
+  - **Open/Save dialog**: real write-back (`putRecordBytes()`, and eventually saving to
+    disk) will need either a working native Save dialog (the NSOpenPanel-behind-the-
+    window bug, unresolved, see Blind Spots) or some other path-recovery mechanism --
+    drag-and-drop is input-only, it can't hand back a path to save *to*. Explicitly
+    deferred: this project is still in read-only territory (Phase 1/2 of the Library
+    Editor, no Program/Combi/Set-List encoder exists yet either), so fixing this now
+    would be solving a problem too early.
   - **Explicitly not committed to being final**: both the project owner and this
-    assistant agreed to revisit/rethink this shape after the Program decoder proves
-    itself (or doesn't) against real tests and the real UI, rather than committing to it
-    across the whole codebase up front.
+    assistant agreed to revisit/rethink this shape as each piece (Program decoder now
+    done; chunk-based component wiring next) proves itself against real tests and the
+    real UI, rather than committing to it across the whole codebase up front.
 
 --- BLIND SPOTS / NOT YET TOUCHED ---
 
@@ -329,11 +391,20 @@ App/UI:
       Windows, path-filtered to skip docs/frontend-only pushes).
   14. Still no *committed* automated test suite for the C++ backend --
       verification there is still ad hoc standalone smoke-test binaries,
-      same as before. Partially addressed on the frontend side: components
-      under `frontend/components/` (see "ARCHITECTURE" below) each ship
-      with a standalone `.test.html` harness with real, committed
-      self-check assertions -- the backend decoder/encoder refactor is
-      expected to bring the same rigor to `PcgFile.cpp`.
+      compiled and thrown away, same as before (including for the new
+      Program decoder). Partially addressed on the frontend side:
+      components under `frontend/components/` (see "ARCHITECTURE" below)
+      each ship with a standalone `.test.html` harness with real,
+      committed self-check assertions, though those only run when a
+      human opens the page in a browser -- no headless/CI runner either.
+      **Current top priority (2026-08-01, agreed explicitly with the
+      project owner: testing outranks new features right now)**: a real,
+      committed C++ test target (small, scoped to just the format-parsing
+      code -- not `main.cpp`/`EditorBridge.cpp`/CHOC, so it stays fast and
+      dependency-light -- wired into CMake via `ctest`), plus a headless
+      `node`-runnable `.test.js` per frontend component alongside its
+      existing browser harness. Not built yet -- this is the very next
+      task, before Combi or any further component wiring.
   15. No progress indicator while opening a large file -- the drag-and-drop
       open path (base64-encode in JS, decode + parse in C++) can take a
       moment on a 50-70MB file and currently just shows static "Loading..."

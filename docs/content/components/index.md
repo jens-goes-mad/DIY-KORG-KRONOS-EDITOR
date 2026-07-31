@@ -47,6 +47,40 @@ The real app then wires the same codec/component into `pane.js` against the actu
 loaded file -- same code path as the test harness, just fed real bytes from
 `EditorBridge` instead of a hardcoded fixture.
 
+## The backend side: decoders, and a two-tier data flow
+
+The same split is happening in `src/kronos/` too, not just the frontend.
+[`ProgramDecoder.h/.cpp`](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/blob/main/src/kronos/ProgramDecoder.h)
+is the first one: `decodeProgramFields()` (raw Kronos fields) and `hashProgramRecord()`
+(this project's own derived bookkeeping, not a Kronos format field) as separate,
+independently reusable functions -- mirroring the frontend codec split. `PcgFile` now
+retains the whole loaded file's raw bytes instead of discarding them after an initial
+parse, so a decoder can be re-invoked on demand later, not just once at load time.
+
+That said, not everything moves to per-chunk decoding -- there are deliberately two
+tiers:
+
+- **Bulk/list views** (the Programs table, duplicate detection) stay served by a native
+  decoder walking the whole retained buffer once. That's a real efficiency win --
+  hashing every Program for dedup is genuinely faster in native code than doing the
+  same scan in a WebView's JS engine, and it avoids shipping a large amount of data
+  across the JS/native bridge for something already sitting in native memory.
+- **Detail/edit views** (Comment + Font size today) request the *specific raw byte
+  chunk* they're working on from the bridge, and decode/encode it entirely in
+  JavaScript -- exactly what `setlist-comment.js` already does. This is where "test
+  without building the native app" actually matters, since that's the UI a human
+  iterates on directly.
+
+Writes from the JS side go straight back into the native buffer immediately (a
+`putRecordBytes()`-style bridge call), rather than being tracked as a separate pending
+overlay -- an overlay keyed by a record's position turns out to be a real hazard once
+you consider that Programs/Combis/Set List entries can be reordered, which would leave
+a stale pending edit silently applying to whatever now sits in that position. Writing
+straight through sidesteps that; it's safe here specifically because this is a
+single-threaded, single-user app with no concurrent writers to reconcile. Full reasoning
+in `STATE.md`'s "ARCHITECTURE: DECODER/ENCODER REFACTOR" section, which is kept current
+as this evolves.
+
 ## Why this helps contributors
 
 - **You can work on one component without building anything.** Clone the repo, run a

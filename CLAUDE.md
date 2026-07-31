@@ -53,18 +53,37 @@ against the raw file) against real bytes -- not just by reasoning about hex dump
 Both frontend and backend are moving toward small, focused, independently-testable
 decoder/encoder units instead of one big eager parse. Full rationale in
 `docs/content/components/index.md` and the decision record in `STATE.md`'s
-"ARCHITECTURE: DECODER/ENCODER REFACTOR" section. Short version:
+"ARCHITECTURE: DECODER/ENCODER REFACTOR" section (read that section for the full
+reasoning -- this is a compressed pointer, not a replacement). Short version:
 
 - Frontend: `frontend/components/{kronos,generic}/*.js` -- each a pure codec
   (`decode`/`encode`, no DOM) plus a component (DOM only, operates on decoded state)
   plus a standalone `.test.html` harness (no native build, no CHOC, just a static file
   server). `setlist-comment.js` is the first one built this way.
-- Backend (in progress): `PcgFile` is moving from eager full-file parsing (with raw
-  bytes discarded after parsing) to retaining raw bytes as the one canonical copy, with
-  small per-record decoders computing structure on demand. Sequencing: Program decoder
-  first (read-only: table row + content hash for dedup), then Combi, then Set List slot,
-  each proven out with tests and real UI before moving to the next. No encoders until a
-  real write feature needs one.
+- Backend: `PcgFile` retains raw file bytes (`data_`) instead of discarding them after
+  parsing. `src/kronos/ProgramDecoder.{h,cpp}` (built, verified zero-regression) is the
+  first per-record decoder; Combi and Set List slot are next, same pattern.
+- **Two-tier data flow, not one architecture for everything**: bulk/list views (tables,
+  dedup) stay served by native decoders walking the whole retained buffer -- real
+  efficiency win for scanning/hashing thousands of records. Detail/edit views request
+  the *specific raw byte chunk* they need via the bridge and decode/encode it entirely
+  in JS, same as `setlist-comment.js` already does -- preserves "test without building
+  the native app" specifically where it matters (interactive UI).
+- **Writes are immediate, not a deferred overlay**: `encode()` writes straight into
+  `data_` via `putRecordBytes()` rather than tracking pending edits separately keyed by
+  position -- a position-keyed overlay breaks the moment something reorders records
+  (the overlay would apply to whatever now occupies that position). Safe because this
+  app is single-threaded with one user editing at a time. `putRecordBytes()` must also
+  re-derive any cached structured fields (e.g. `Song.comment`) from the freshly-written
+  bytes, not leave them stale.
+- No encoders beyond `setlist-comment.js` yet -- built once a real write feature (e.g.
+  renaming) needs one, not speculatively.
+- **Current top priority, explicitly agreed with the project owner: testing outranks
+  new features right now.** Before Combi or any further component wiring: a real,
+  committed C++ test target (scoped to just the format-parsing code, not the full app/
+  CHOC, so it stays fast) via CMake/`ctest`, plus a headless `node`-runnable `.test.js`
+  per frontend component alongside its browser harness. Not built yet.
 
-This shape is explicitly not committed to being final -- revisit it if the Program
-decoder doesn't feel right once it's built.
+This shape is explicitly not committed to being final -- revisit it as each piece
+(Program decoder now done; chunk-based component wiring next) proves itself against
+real tests and the real UI.
