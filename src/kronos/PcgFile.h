@@ -6,17 +6,29 @@
 
 namespace kronos {
 
-// Confirmed by diffing a purpose-built test file (setlist_test.PCG) where
-// each parameter was varied in isolation across known slots -- see
-// README.md's "SBK1" section for the byte-level derivation. Font size and
-// Transpose are NOT included here yet -- their encoding isn't solved.
+// Confirmed by diffing purpose-built test files (setlist_test.PCG, and
+// later test_1.PCG for Font size/Transpose specifically) where each
+// parameter was varied in isolation across known slots -- see
+// docs/README.md's "SBK1" section (§4.3-4.4) for the byte-level
+// derivation, including the bit-packing note: Font size and Transpose
+// each share a byte with Color/Bank respectively, so reading (or
+// writing) any of these four fields must mask to the bits it actually
+// owns -- see PcgFile.cpp's readSlotParams() for the exact masks.
+//
+// 0=S (the true baseline -- zero extra bits set), 1=XS, 2=M, 3=L, 4=XL --
+// not alphabetical/size order, that's just what the confirmed bit
+// encoding produces (see docs/README.md §4.4).
+enum class FontSize { S, XS, M, L, XL };
+
 struct SlotParams {
     bool isProgram = true;  // true = Program, false = Combi
-    int bank = 0;           // bank index
+    int bank = 0;           // bank index (masked to this field's own 5 bits -- see docs/README.md §4.3)
     int number = 0;         // program/combi number within that bank (0-127)
-    int color = 1;          // 1-based color index (1, 2, 4, 16, ... seen)
+    int color = 1;          // 1-based color index (1..16 -- masked to this field's own bits, see §4.3)
     int holdTime = 0;       // Hold Time value
     int volume = 127;       // 0-127, MIDI-style
+    FontSize fontSize = FontSize::S;
+    int transpose = 0;      // semitones, signed (confirmed range -24..+24; encoding supports -32..+31)
     bool found = false;     // false if this slot had no SBK1 record at all (e.g. SBK1 missing/malformed)
 };
 

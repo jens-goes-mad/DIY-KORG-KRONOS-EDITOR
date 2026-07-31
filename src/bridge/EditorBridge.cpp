@@ -20,6 +20,17 @@ int countAt(const std::vector<std::vector<int>>& counts, int bank, int number) {
     return counts[bank][number];
 }
 
+std::string fontSizeName(kronos::FontSize size) {
+    switch (size) {
+        case kronos::FontSize::S: return "S";
+        case kronos::FontSize::XS: return "XS";
+        case kronos::FontSize::M: return "M";
+        case kronos::FontSize::L: return "L";
+        case kronos::FontSize::XL: return "XL";
+        default: return "S";
+    }
+}
+
 std::string timbreStatusName(kronos::TimbreStatus status) {
     switch (status) {
         case kronos::TimbreStatus::Off: return "Off";
@@ -107,8 +118,7 @@ choc::value::Value EditorBridge::songToValue(const kronos::Song& song) {
     auto v = choc::value::createObject("SongEntry");
     v.setMember("index", song.index);
     v.setMember("label", song.name);
-    // From SBK1 -- see README.md ("SBK1") for how these were decoded.
-    // Font size and Transpose aren't included: their encoding isn't solved yet.
+    // From SBK1 -- see docs/README.md §4.3-4.4 for how these were decoded.
     v.setMember("paramsFound", song.params.found);
     v.setMember("isProgram", song.params.isProgram);
     v.setMember("bank", song.params.bank);
@@ -116,6 +126,8 @@ choc::value::Value EditorBridge::songToValue(const kronos::Song& song) {
     v.setMember("color", song.params.color);
     v.setMember("holdTime", song.params.holdTime);
     v.setMember("volume", song.params.volume);
+    v.setMember("fontSize", fontSizeName(song.params.fontSize));
+    v.setMember("transpose", song.params.transpose);
     v.setMember("comment", song.comment);
     // The actual Combi's own name (cross-referenced from CMB1/CBK1) --
     // empty for Programs (not implemented yet) or if not found.

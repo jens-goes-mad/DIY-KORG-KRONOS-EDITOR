@@ -187,33 +187,68 @@ project owner set up groups of 4-6 near-identical slots each varying
 
 | Offset | Field | Encoding | Confirmed via |
 |---|---|---|---|
-| +12 | Type + Color | `byte = 4*(color-1) + type`; bit0 = type (1=Program, 0=Combi), remaining bits = 1-based color | Color values `1,2,4,16` -> byte `1,5,13,61`, exact match |
-| +13 | Bank | raw bank index | see §5 |
+| +12 | Type + Color + Font size (low 2 bits) | bit0 = type (1=Program, 0=Combi); bits 2-5 = `4*(color-1)`, 1-based color (this byte's bits 0-5 only -- see §4.4 note); bits 6-7 = Font size's low 2 bits, see §4.4 | Color values `1,2,4,16` -> byte `1,5,13,61`, exact match |
+| +13 | Bank + Transpose (high 3 bits) | bits 0-4 = raw bank index (see §5); bits 5-7 = Transpose's high 3 bits, see §4.4 | see §5 |
 | +14 | Number | program/combi number within that bank (0-127) | see §5 |
 | +15 | Hold Time | `byte = HoldTime + 1` | Values `1,2,3,5` -> byte `2,3,4,6`, exact match. Default/baseline byte value 6 => default Hold Time is 5. |
 | +16 | Volume | raw 0-127, MIDI-style, no transform | Values `0,1,80,127` matched exactly. Default/baseline is 127. |
-| +17 | *(reserved)* | **unknown** | -- |
+| +17 | Font size (high bit) + Transpose (low 3 bits) | bit 4 = Font size's high bit, see §4.4; bits 5-7 = Transpose's low 3 bits, see §4.4; bit 3 and bits 0-2 still **unexplained** | see §4.4 |
 | +18.. | Comment | free ASCII text, can contain literal `\r\n`; NUL-terminated (not `\r\n`-terminated) | Multiple test comments matched exactly, incl. multi-line ones |
 
-### 4.4 Font size and Transpose — NOT solved
+Bits 6-7 of +12 and bit 4 of +17 (Font size), and bits 5-7 of +13 and +17
+(Transpose), overlap with fields already documented above (Color, Bank) --
+**always mask to the bits you actually own when reading or writing any of
+these four fields**. A naive full-byte read of Bank/Color would silently
+produce wrong values on any real slot that also has a non-default Font
+size or Transpose set. Presumably Korg packed fields this tightly because
+the format predates spare bytes being cheap -- see the open questions
+list for what bit 3 and bits 0-2 of +17 might still be doing.
 
-Tested with real values, neither fits a clean pattern:
+### 4.4 Font size and Transpose — CONFIRMED
 
-- **Font size** (values `1,2,4,5` tested): byte-region values seen were
-  `0x41, 0x01, 0xc1, 0x01`. Two of the four are just the Color-formula
-  *baseline* (`0x01`), the other two imply color=17/49 via that same
-  formula -- both implausibly large versus Color's own observed max of 16.
-  Most likely Font size isn't in that byte region at all, and the changes
-  seen were an unrelated side effect. Real location: **unknown**.
-- **Transpose** (values `0,-1,+1,+24,-12,+12` tested across two rounds):
-  non-baseline bytes appeared at *different offsets* depending on the
-  value (e.g. `-1` at byte+13 relative offset showing `0xe0`, `+1` showing
-  `0x20` four bytes later, `+24` back at the earlier offset as `0x60`).
-  Inconsistent with one fixed-position signed field. One partial fit:
-  `byte(+16-ish) = (transpose * 32) mod 256` matched for small values
-  (0, +1) but is ambiguous for larger ones (+12 and -12 collide on the
-  same byte value under that formula, meaning sign must be carried
-  elsewhere -- unresolved). Needs a cleaner, wider-spread test.
+Both isolated and confirmed via a purpose-built test file (Set List 127,
+slots 0-4 for Font size, slots 8-19 for Transpose -- confirmed to be
+properly isolated this time, unlike the earlier Font size false start,
+see below) with the project owner giving the exact real values used.
+Both fields turn out to be a handful of bits packed across two otherwise-
+unrelated bytes rather than living in one clean byte of their own.
+
+**Font size** -- 3 bits, split across +12's top 2 bits and +17's bit 4:
+
+```
+value = ((byte17 >> 4) & 1) * 4 + ((byte12 >> 7) & 1) * 2 + ((byte12 >> 6) & 1) * 1
+0 = S (the true baseline/default -- zero extra bits set)
+1 = XS
+2 = M
+3 = L (== M's bit | XS's bit, i.e. both of the other two bits set)
+4 = XL
+```
+
+**Transpose** -- a 6-bit two's-complement signed value (range -32..+31),
+high 3 bits in +13's top 3 bits, low 3 bits in +17's top 3 bits:
+
+```
+unsigned6 = ((byte13 >> 5) & 0x7) << 3 | ((byte17 >> 5) & 0x7)
+transpose = unsigned6 >= 32 ? unsigned6 - 64 : unsigned6
+```
+
+Verified against all 12 of the project owner's real test values
+(`-24, -23, -12, -11, -10, -1, 0, 1, 11, 12, 13, 24`) -- every single one
+round-trips exactly through this formula, no exceptions.
+
+**Why the earlier attempt failed**: the original "Font size" observation
+(`0x41, 0x01, 0xc1, 0x01`, recorded as unsolved) was never from isolated
+Font-size-only slots at all -- confirmed with the project owner. Those
+byte values are exactly the Color-sweep test's own edge-case slots
+(colors 17, 1, 49, 1 -- byte `+12`'s bits 6-7 set to non-zero, which the
+plain Color formula misreads as "colors beyond the documented 1-16
+range" precisely because those bits are Font size's, not Color's). The
+old Transpose partial fit (`byte(+16-ish) = (transpose*32) mod 256`,
+matched only for small values) is also now explained: that's `+17`'s top
+3 bits, the low half of the real 6-bit value -- it looked right for
+small transpose values because the high 3 bits (in `+13`) happened to
+still be 0 for those, and broke down for larger values because the high
+half lives in a completely different byte.
 
 ## 5. Instrument-name cross-reference — CONFIRMED
 
@@ -419,7 +454,7 @@ Recorded here for later, even though nothing below is wired into
   `DBK1`/`WBK1` sub-bank chunks following the same
   count/numRecords/bytesPerRecord header shape as every other bank type
   in this format -- still entirely unparsed by this project (open
-  question §8.6), but now known to at least share the familiar shape
+  question §8.5), but now known to at least share the familiar shape
   rather than being a total unknown. Unlike Programs/Combis' uniform
   128-slots-per-bank, the external doc's example shows **non-uniform**
   bank sizes here: Drum Kits split as 40 (Int) + 16 per USER letter
@@ -452,37 +487,40 @@ Recorded here for later, even though nothing below is wired into
    whole format (§1.2) -- a running byte offset? An index? Untested.
 2. What the `used`/`count` header field (present in SDB1, SBK1, CBK1,
    MBK1, PBK1 alike) actually counts.
-3. Font size and Transpose encodings in an SBK1 record (§4.4).
-4. The reserved byte at SBK1 record offset +17 (§4.3).
-5. Exactly which of the 20 PRG1 banks maps to which *display label* --
+3. Byte +17's bit 3 and bits 0-2 (§4.3) -- still unexplained now that bit
+   4 and bits 5-7 are confirmed as Font size/Transpose (§4.4). Real files
+   do show isolated non-zero values there independent of Font
+   size/Transpose (e.g. `0x08`), so something real is still unaccounted
+   for in this byte.
+4. Exactly which of the 20 PRG1 banks maps to which *display label* --
    the lookup mechanism itself is confirmed (§5.3); the specific label
    order (§5.2) is a positional assumption pending further verification.
-6. `DKT1` (Drum Kits), `WSQ1` (Wave Sequences), `GLB1`, `DPI1`, and `INI1`
+5. `DKT1` (Drum Kits), `WSQ1` (Wave Sequences), `GLB1`, `DPI1`, and `INI1`
    (§7, tag observed once, never by this project directly) -- entirely
    unexplored. Unknown whether Set List slots can reference these
    directly (if so, the instrument-name lookup has a gap there too).
-7. The older SoundQuest `.SQS` backup dialect (`LIST`/`FORM`/`BANK`
+6. The older SoundQuest `.SQS` backup dialect (`LIST`/`FORM`/`BANK`
    wrapping, seen in some third-party backup tools) is structurally
    different from the `KORG`/`PCG1` dialect this document/parser covers --
    never tested against it, likely needs its own separate reverse-
    engineering pass if ever needed.
-8. Reported (not yet reproduced): leading spaces disappearing from
+7. Reported (not yet reproduced): leading spaces disappearing from
    Comment text somewhere in a round-trip through the app. Neither the
    read nor write path does any trimming in code, so the cause -- if
    real -- isn't obvious from inspection alone.
-9. The remaining Combi Timbre bank codes (§6.2): `INT-E/F/G` and
+8. The remaining Combi Timbre bank codes (§6.2): `INT-E/F/G` and
    `USER-B/C/E/G` are strongly implied by the confirmed codes either side
    of them, but not independently verified the same rigorous way.
-10. A possible third SBK1 slot type ("Song", §7) this project's single-bit
-    `isProgram` read can't represent -- could be silently misclassifying
-    some slots as Combis. Not reproduced yet.
-11. Whether the external reference's `21`-Program-banks `DIV1` reading
+9. A possible third SBK1 slot type ("Song", §7) this project's single-bit
+   `isProgram` read can't represent -- could be silently misclassifying
+   some slots as Combis. Not reproduced yet.
+10. Whether the external reference's `21`-Program-banks `DIV1` reading
     (§7) points at a real 21st bank this project's chunk scan is missing.
-12. The file-header checksum flag (§1.1, byte offset 8) -- our real
+11. The file-header checksum flag (§1.1, byte offset 8) -- our real
     sample reads `0x01` ("checksum present" per the external reference),
     but where any such checksum would actually live, and over what range
     of bytes, hasn't been investigated at all.
-13. The apparent second `SLS1`/`PRG1`/`MBK1`/`PBK1` sequence right after
+12. The apparent second `SLS1`/`PRG1`/`MBK1`/`PBK1` sequence right after
     an `INI1` chunk in the external reference's example (§7) -- a real
     second copy of something, or an artifact of how that document's own
     notes are ordered? Not investigated against a real file.

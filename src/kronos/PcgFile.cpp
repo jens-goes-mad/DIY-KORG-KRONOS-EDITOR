@@ -95,16 +95,30 @@ std::string readRecordName(const uint8_t* data, size_t off, size_t end) {
 // SBK1 per-Set-List block: a name/header record (kSbkHeaderSize bytes,
 // not re-parsed here -- SDB1 already gave us the name), followed by 128
 // song parameter records on a fixed stride. Offsets confirmed by diffing
-// setlist_test.PCG, a file the project owner built specifically to isolate
-// one parameter per group of slots -- see README.md's "SBK1" section.
+// setlist_test.PCG and test_1.PCG, files the project owner built
+// specifically to isolate one parameter per group of slots -- see
+// docs/README.md's "SBK1" section (§4.3-4.4).
+//
+// +12 and +17 are each shared by two fields, and +13 by two more --
+// Font size and Transpose are packed a few bits at a time into otherwise-
+// unrelated bytes (Type+Color, Bank), presumably because this format
+// predates spare bytes being cheap. Every mask below exists so reading
+// (or writing) one field never touches bits that belong to another.
 constexpr size_t kSbkHeaderSize = 40;
 constexpr size_t kSbkRecordSize = 542;
-constexpr size_t kSbkTypeColorOffset = 12;  // bit0: 1=Program/0=Combi; bits2-7: (color-1)
-constexpr size_t kSbkBankOffset = 13;
+constexpr size_t kSbkTypeColorOffset = 12;  // bit0: 1=Program/0=Combi; bits2-5: (color-1); bits6-7: Font size low 2 bits
+constexpr uint8_t kSbkTypeColorMask = 0x3F;      // bits 0-5 -- Type+Color's own bits
+constexpr uint8_t kSbkFontSizeLowMask = 0xC0;    // bits 6-7 of +12
+constexpr size_t kSbkBankOffset = 13;       // bits0-4: bank; bits5-7: Transpose high 3 bits
+constexpr uint8_t kSbkBankMask = 0x1F;           // bits 0-4 -- Bank's own bits
+constexpr uint8_t kSbkTransposeHighMask = 0xE0;  // bits 5-7 of +13
 constexpr size_t kSbkNumberOffset = 14;
 constexpr size_t kSbkHoldTimeOffset = 15;  // stored value = Hold Time + 1
 constexpr size_t kSbkVolumeOffset = 16;
-constexpr size_t kSbkCommentOffset = 18;  // one reserved/flag byte at +17 not understood yet, see README.md
+constexpr size_t kSbkFontTransposeOffset = 17;   // bit4: Font size high bit; bits5-7: Transpose low 3 bits; bit3 and bits0-2 still unexplained, see docs/README.md
+constexpr uint8_t kSbkFontSizeHighMask = 0x10;   // bit 4 of +17
+constexpr uint8_t kSbkTransposeLowMask = 0xE0;   // bits 5-7 of +17
+constexpr size_t kSbkCommentOffset = 18;
 
 // The Comment field can contain embedded \r\n line breaks, so unlike
 // readRecordName() this only stops at a genuine NUL byte, not otherwise.
@@ -122,15 +136,31 @@ std::string readComment(const uint8_t* data, size_t songOff, size_t end) {
 
 SlotParams readSlotParams(const uint8_t* data, size_t songOff, size_t end) {
     SlotParams params;
-    if (songOff + kSbkVolumeOffset + 1 > end) return params;  // leaves found=false
+    if (songOff + kSbkFontTransposeOffset + 1 > end) return params;  // leaves found=false
 
     uint8_t typeColor = data[songOff + kSbkTypeColorOffset];
+    uint8_t bankByte = data[songOff + kSbkBankOffset];
+    uint8_t fontTransposeByte = data[songOff + kSbkFontTransposeOffset];
+
     params.isProgram = (typeColor & 0x01) != 0;
-    params.color = (typeColor >> 2) + 1;
-    params.bank = data[songOff + kSbkBankOffset];
+    params.color = ((typeColor & kSbkTypeColorMask) >> 2) + 1;
+    params.bank = bankByte & kSbkBankMask;
     params.number = data[songOff + kSbkNumberOffset];
     params.holdTime = static_cast<int>(data[songOff + kSbkHoldTimeOffset]) - 1;
     params.volume = data[songOff + kSbkVolumeOffset];
+
+    // Font size: 3 bits, low 2 in +12's top bits, high 1 in +17 bit 4 --
+    // see docs/README.md §4.4. Enum order (S,XS,M,L,XL) matches this
+    // value directly, no further lookup needed.
+    int fontSizeValue = ((fontTransposeByte & kSbkFontSizeHighMask) ? 4 : 0) |
+                         ((typeColor & 0x80) ? 2 : 0) | ((typeColor & 0x40) ? 1 : 0);
+    params.fontSize = static_cast<FontSize>(fontSizeValue);
+
+    // Transpose: 6-bit two's complement, high 3 bits in +13's top bits,
+    // low 3 bits in +17's top bits -- see docs/README.md §4.4.
+    int unsigned6 = ((bankByte & kSbkTransposeHighMask) >> 2) | ((fontTransposeByte & kSbkTransposeLowMask) >> 5);
+    params.transpose = unsigned6 >= 32 ? unsigned6 - 64 : unsigned6;
+
     params.found = true;
     return params;
 }

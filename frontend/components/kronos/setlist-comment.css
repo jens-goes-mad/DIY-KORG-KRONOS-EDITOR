@@ -1,0 +1,57 @@
+/* SetlistComment component styles. Self-contained (own fallback colors,
+   doesn't require ../../style.css to be loaded) so the standalone test
+   harness looks reasonable on its own -- but uses the same custom
+   property names as the main app's style.css, so it inherits the real
+   theme for free when actually wired into pane.js. */
+
+.setlist-comment-editor {
+  --scc-bg: var(--bg, #1e1f22);
+  --scc-panel: var(--panel, #2a2b2e);
+  --scc-border: var(--border, #3d3e42);
+  --scc-text: var(--text, #e4e4e6);
+  --scc-text-dim: var(--text-dim, #9a9ba0);
+  --scc-accent: var(--accent, #5b8def);
+
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--scc-text);
+}
+
+.setlist-comment-fontbar {
+  display: flex;
+  gap: 4px;
+}
+
+.setlist-comment-fontbar button {
+  background: var(--scc-panel);
+  color: var(--scc-text-dim);
+  border: 1px solid var(--scc-border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.setlist-comment-fontbar button:hover {
+  color: var(--scc-text);
+}
+
+.setlist-comment-fontbar button.active {
+  color: var(--scc-text);
+  background: var(--scc-accent);
+  border-color: var(--scc-accent);
+}
+
+.setlist-comment-textarea {
+  background: var(--scc-bg);
+  color: var(--scc-text);
+  border: 1px solid var(--scc-border);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  min-height: 160px;
+  resize: vertical;
+}

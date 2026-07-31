@@ -1,0 +1,187 @@
+<!doctype html>
+<!--
+  Standalone test/dev harness for setlist-comment.js -- no CHOC, no native
+  build, no mock_bridge.js, nothing from the rest of this app. Just this
+  component and its own CSS, fed one real 542-byte SBK1 record.
+
+  ES modules (`type="module"`) don't load over a bare file:// URL in most
+  browsers (CORS), so serve this directory with any static file server,
+  e.g. from the repo root:
+
+      python3 -m http.server 8000
+
+  then open http://localhost:8000/frontend/components/kronos/setlist-comment.test.html
+  -- that's not a "build," just a static file server; nothing gets compiled
+  or bundled.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SetlistComment -- standalone test</title>
+  <link rel="stylesheet" href="setlist-comment.css" />
+  <style>
+    body {
+      background: #1e1f22;
+      color: #e4e4e6;
+      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      max-width: 720px;
+    }
+    h1 { font-size: 18px; margin: 0; }
+    h2 { font-size: 14px; margin: 0 0 8px; color: #9a9ba0; }
+    section {
+      border: 1px solid #3d3e42;
+      border-radius: 6px;
+      padding: 16px;
+    }
+    pre {
+      background: #16171a;
+      border: 1px solid #3d3e42;
+      border-radius: 4px;
+      padding: 8px;
+      font-size: 11px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .check { font-family: ui-monospace, monospace; font-size: 13px; margin: 2px 0; }
+    .pass { color: #6bd66b; }
+    .fail { color: #e05c5c; }
+  </style>
+</head>
+<body>
+  <h1>SetlistComment -- standalone test harness</h1>
+  <p style="color:#9a9ba0; margin:0;">
+    No native app, no CHOC, no mock_bridge.js -- just <code>setlist-comment.js</code> fed one
+    real 542-byte SBK1 song record ("Rolling in the Deep", Set List "emergency exit").
+  </p>
+
+  <section>
+    <h2>Self-checks (pure decode/encode logic, no DOM)</h2>
+    <div id="checks"></div>
+  </section>
+
+  <section>
+    <h2>Live component (manual test -- type, click XS/S/M/L/XL)</h2>
+    <div id="editor"></div>
+  </section>
+
+  <section>
+    <h2>Current raw bytes (live, updates on every edit)</h2>
+    <pre id="bytes-out"></pre>
+  </section>
+
+  <script type="module">
+    import {
+      RECORD_SIZE,
+      FONT_SIZES,
+      decodeSetlistComment,
+      encodeSetlistComment,
+      createSetlistCommentEditor,
+    } from "./setlist-comment.js";
+
+    // Real SBK1 song record for "Rolling in the Deep" (Set List "emergency
+    // exit", song 0), extracted directly from a real backup -- see the
+    // conversation history / docs/README.md for how. Byte 13/14 (bank=7,
+    // number=9) match this Combi's independently-confirmed location.
+    const REAL_RECORD_HEX =
+      "686520446565700000000000c00709067f00496e74726f202831293a205b612c20652c20672c206520675d2e2e2e0d0a4272" +
+      "69646765202831293a205b662c20672c20652c20662c20672c20655c652d662d682c2023675c652d23672d682d645d0d0a52" +
+      "656672202832293a20616d204720462020202020202020202020202020202020202020202020202020202020202020202020" +
+      "5b7061645f5f5c43352f5f5f73796e74685d0d0a537472202831293a2077696520496e74726f0d0a42726964676520283129" +
+      "0d0a52656672202832290d0a6120636170656c6c612c204b6c6174736368656e2c207b617d0d0a5265667220283229000000" +
+      "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" +
+      "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" +
+      "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" +
+      "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" +
+      "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" +
+      "0000000000000000000000000000000000000000000000000000000000004920646f6e27742077616e6e";
+
+    function hexToBytes(hex) {
+      const clean = hex.replace(/\s+/g, "");
+      const out = new Uint8Array(clean.length / 2);
+      for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.substr(i * 2, 2), 16);
+      return out;
+    }
+
+    function bytesToHex(bytes) {
+      return Array.from(bytes)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join(" ");
+    }
+
+    const realRecord = hexToBytes(REAL_RECORD_HEX);
+
+    // --- Self-checks -------------------------------------------------
+    const checksEl = document.getElementById("checks");
+    function check(label, actual, expected) {
+      const pass = JSON.stringify(actual) === JSON.stringify(expected);
+      const div = document.createElement("div");
+      div.className = "check " + (pass ? "pass" : "fail");
+      div.textContent = `${pass ? "PASS" : "FAIL"} -- ${label}` + (pass ? "" : ` (got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)})`);
+      checksEl.appendChild(div);
+    }
+
+    check("record is the documented SBK1 stride", realRecord.length, RECORD_SIZE);
+
+    const decoded = decodeSetlistComment(realRecord);
+    check("comment starts with real text", decoded.comment.startsWith("Intro (1):"), true);
+    check("comment preserves embedded \\r\\n", decoded.comment.includes("\r\nBridge"), true);
+    // Confirmed via a dedicated isolated test file (docs/README.md §4.4) --
+    // this real record's font-size bits happen to decode as "L", matching
+    // the C++ parser (src/kronos/PcgFile.cpp) exactly on the same record.
+    check("fontSize decodes per the confirmed encoding (§4.4)", decoded.fontSize, "L");
+
+    const roundTripped = decodeSetlistComment(encodeSetlistComment(realRecord, decoded));
+    check("decode(encode(bytes)) round-trips the comment exactly", roundTripped.comment, decoded.comment);
+    check("decode(encode(bytes)) round-trips fontSize exactly", roundTripped.fontSize, decoded.fontSize);
+
+    for (const size of FONT_SIZES) {
+      const withSize = encodeSetlistComment(realRecord, { ...decoded, fontSize: size });
+      check(`setting fontSize=${size} round-trips through decode()`, decodeSetlistComment(withSize).fontSize, size);
+    }
+
+    // CRITICAL: Font size shares byte+12 with Type+Color and byte+17 with
+    // Transpose/unexplained bits (docs/README.md §4.3) -- a font-size edit
+    // must never clobber those other bits. Craft a record with arbitrary
+    // non-zero values in exactly the bits Font size does NOT own, then
+    // confirm they survive a font-size change untouched.
+    const crafted = new Uint8Array(realRecord);
+    crafted[12] = 0b00101101; // bits0-5 = arbitrary Type+Color, bits6-7 = 00 (S)
+    crafted[17] = 0b11101011; // bits5-7 = arbitrary Transpose-low, bit4 = 0 (S), bits0-2 = arbitrary unexplained
+    const craftedEdited = encodeSetlistComment(crafted, { ...decodeSetlistComment(crafted), fontSize: "XL" });
+    check("font-size edit preserves byte12's Type+Color bits (0-5)", craftedEdited[12] & 0x3f, crafted[12] & 0x3f);
+    check("font-size edit preserves byte17's Transpose-low bits (5-7)", craftedEdited[17] & 0xe0, crafted[17] & 0xe0);
+    check("font-size edit preserves byte17's unexplained bits (0-3)", craftedEdited[17] & 0x0f, crafted[17] & 0x0f);
+    check("font-size edit actually changed fontSize to XL", decodeSetlistComment(craftedEdited).fontSize, "XL");
+
+    const edited = encodeSetlistComment(realRecord, { ...decoded, comment: "short" });
+    check("edited record is still exactly RECORD_SIZE bytes", edited.length, RECORD_SIZE);
+    check("bytes 0-11 (before Type+Color) are untouched by a comment edit", Array.from(edited.slice(0, 12)), Array.from(realRecord.slice(0, 12)));
+    check("shortening the comment zero-fills the rest of the record", edited.slice(18 + 5).every((b) => b === 0), true);
+
+    let threw = false;
+    try {
+      decodeSetlistComment(new Uint8Array(10));
+    } catch {
+      threw = true;
+    }
+    check("decode() rejects a byte array of the wrong length", threw, true);
+
+    // --- Live interactive component -----------------------------------
+    const bytesOut = document.getElementById("bytes-out");
+    function renderBytes(bytes) {
+      bytesOut.textContent = bytesToHex(bytes);
+    }
+    renderBytes(realRecord);
+
+    createSetlistCommentEditor(document.getElementById("editor"), realRecord, {
+      onChange: renderBytes,
+    });
+  </script>
+</body>
+</html>
