@@ -1,12 +1,20 @@
 === STATE BLOCK — GOALS, ACHIEVEMENTS, BLIND SPOTS ===
-Date: 2026-07-30
-Status: Working prototype, now a git repo (github.com/jens-goes-mad/
-        DIY-KORG-KRONOS-EDITOR, `main` branch). Core file format (Set List
-        names + params + instrument-name cross-reference) is reverse-
-        engineered and wired into a real CHOC app with drag-and-drop open,
-        dual-pane browse/filter/swap/copy, an editable Comment field, and
-        (new) a read-only Program/Combi Library browser with byte-exact
-        duplicate detection -- see "PROGRAM/COMBI LIBRARY EDITOR" below.
+Date: 2026-08-01
+Status: Working prototype, git repo (github.com/jens-goes-mad/
+        DIY-KORG-KRONOS-EDITOR, `main` branch) with a public Hugo/GitHub
+        Pages docs site (jens-goes-mad.github.io/DIY-KORG-KRONOS-EDITOR)
+        and CI building all 4 platform targets on every relevant push.
+        Core file format (Set List names + params + instrument-name
+        cross-reference, now including Font size/Transpose/Combi Timbre
+        references) is reverse-engineered and wired into a real CHOC app
+        with drag-and-drop open, dual-pane browse/filter/swap/copy, an
+        editable Comment field, and a read-only Program/Combi Library
+        browser with byte-exact duplicate detection -- see "PROGRAM/COMBI
+        LIBRARY EDITOR" below. A componentized frontend pattern (small,
+        standalone, byte-level-tested UI pieces) and a matching backend
+        decoder/encoder architecture are now the deliberate direction --
+        see "ARCHITECTURE: DECODER/ENCODER REFACTOR" below, currently the
+        active thread of work.
 
 --- GOAL ---
 
@@ -59,13 +67,26 @@ shape, 128 Set List blocks of a 40-byte header + 128 song records on a
 542-byte stride. Confirmed record layout (all field offsets relative to
 record start):
 
-  +12  `4*(color-1) + type` -- type bit0 (1=Program, 0=Combi), color 1-based
-  +13  bank index
+  +12  `4*(color-1) + type` (bits0-5 only!) -- type bit0 (1=Program, 0=Combi),
+       color 1-based; bits6-7 of this SAME byte are Font size's low 2 bits
+  +13  bank index (bits0-4 only!); bits5-7 of this SAME byte are
+       Transpose's high 3 bits
   +14  program/combi number within that bank
   +15  Hold Time + 1
   +16  Volume, 0-127, no transform
-  +18  Comment (free ASCII text, can contain literal \r\n, NUL-terminated;
-       one still-unexplained reserved byte at +17 separates it from Volume)
+  +17  Font size's high bit (bit4) + Transpose's low 3 bits (bits5-7);
+       bit3 and bits0-2 still unexplained
+  +18  Comment (free ASCII text, can contain literal \r\n, NUL-terminated)
+
+  CONFIRMED (2026-08-01, via a properly isolated test file, test_1.PCG):
+  Font size = 3 bits (0=S the true baseline, 1=XS, 2=M, 3=L, 4=XL) and
+  Transpose = a 6-bit two's-complement value (-32..+31), each packed a
+  few bits at a time across the two bytes noted above -- full derivation
+  in docs/README.md §4.4. This was a real, actionable bug fix: Bank and
+  Color were being read as the FULL byte (unmasked) until this was found,
+  silently corrupted on any real slot that also had a non-default Font
+  size/Transpose set -- fixed in PcgFile.cpp, masks now applied to all
+  four fields.
 
 Instrument-name cross-reference (`CMB1 > CBK1` for Combi, `PRG1 > MBK1`/
 `PBK1` for Program): both use one shared record shape -- the same 12-byte
@@ -84,13 +105,13 @@ that one slot rather than a parsing issue. Across a full real-ish test
 file, 143/152 assigned slots resolved to a name; all 9 misses were
 out-of-range, zero were in-range failures.
 
-Deliberately NOT solved (see Blind Spots): Font size, Transpose, the
-`used`/count header field's meaning, the reserved byte at SBK1 record +17,
-the 4-byte chunk-header prefix field, and exactly which of the 20 PRG1
-banks maps to which *display label* (the name lookup mechanism itself is
-confirmed; the specific letter shown per bank index is a positional
-assumption modeled on the project owner's given naming order, not
-independently verified the way Combi's order was).
+Deliberately NOT solved (see Blind Spots): the `used`/count header
+field's meaning, SBK1 +17's bit3/bits0-2, the 4-byte chunk-header prefix
+field, and exactly which of the 20 PRG1 banks maps to which *display
+label* (the name lookup mechanism itself is confirmed; the specific
+letter shown per bank index is a positional assumption modeled on the
+project owner's given naming order, not independently verified the way
+Combi's order was).
 
 --- WHAT'S BUILT AND WORKING ---
 
@@ -128,6 +149,14 @@ independently verified the way Combi's order was).
     build -- cannot exercise real file parsing (browsers have no
     filesystem access at all, which is the whole reason Choc's native
     bridge exists).
+  - `frontend/components/kronos/setlist-comment.{js,css,test.html}`: the
+    first componentized piece (see "ARCHITECTURE" below) -- built,
+    self-tested standalone, not yet wired into `pane.js`.
+  - `docs/`: a public Hugo/GitHub Pages site
+    (jens-goes-mad.github.io/DIY-KORG-KRONOS-EDITOR) alongside the format
+    reference doc (`docs/README.md`, mirrored -- keep in sync by hand --
+    into `docs/content/format/`). Also has an Overview page, a Building-
+    the-app page, and an App Architecture & Components page.
   - Why drag-and-drop is the *only* open mechanism: a plain
     `<input type="file">` does trigger a real native NSOpenPanel inside the
     Choc-wrapped WKWebView, but the resulting sheet renders behind the app
@@ -206,23 +235,72 @@ three phases, only the first of which is built:
     untouched backup, since there's no way to run Korg's own file
     validator from here to confirm nothing broke.
 
+--- ARCHITECTURE: DECODER/ENCODER REFACTOR (decided 2026-08-01, in progress) ---
+
+A deliberate architectural direction, agreed with the project owner, for both the
+frontend and backend, growing out of building `frontend/components/kronos/
+setlist-comment.js` (Comment + Font size, see docs/content/components/index.md for the
+full rationale):
+
+  - **Frontend**: small, standalone UI pieces under `frontend/components/{kronos,
+    generic}/`, each split into a pure codec (`decode(bytes) -> state` / `encode(bytes,
+    state) -> newBytes`, no DOM), a component (owns the actual UI, operates only on
+    `state`), and a standalone `.test.html` harness with real committed self-checks --
+    no CHOC, no native build, just a static file server. `setlist-comment.js` is the
+    first and so far only one built this way; a generic reusable envelope/ADSR editor
+    (shared across every Kronos synth engine's envelope curves) was discussed as a strong
+    future candidate given how much of the Kronos reuses the same ADSR-shaped UI.
+  - **Backend (agreed, not yet started -- this is the active next task)**: `PcgFile`
+    currently parses the *whole* file eagerly into `setlists_`/`programs_`/`combis_` at
+    load time, and explicitly discards the raw file bytes afterward to avoid holding the
+    file twice in memory. That's flipping: raw bytes become the retained, canonical
+    state, and small per-record-type decoders (mirroring the frontend pattern) compute
+    just-enough structure on demand from them instead of a big eager pre-built copy.
+    This also happens to be the cleanest fix for a staleness class of bug the project
+    owner flagged before it was ever written: if a component/decoder holds a byte
+    snapshot captured once and something else changes the underlying record in the
+    meantime, a later write silently reverts that other change. With raw bytes as the
+    *one* retained copy (not a byte snapshot plus a separate structured shadow copy),
+    every decode always reads the current state -- there's nothing to go stale.
+  - **Sequencing (explicit, small-iterations-first)**: start with a **Program decoder
+    only** -- `{name, bank, number}` for table population, plus a `hash()` method
+    (bytes+position -> content hash, generalizing what `ProgramInfo::contentHash` already
+    does today) for `findDuplicatePrograms()`. Table rows deliberately keep *raw Kronos
+    fields* (name/bank/number, read straight off the bytes) and *our own derived data*
+    (the hash) conceptually separate -- the hash is not part of the Kronos format, it's
+    application-level bookkeeping computed once and cached. Once this passes tests and a
+    real UI pass, do the same for Combi, then Set List slot.
+  - **No encoder yet, deliberately**: every current use case (table population, dedup)
+    is read-only. An encoder gets built once there's an actual write feature driving its
+    real shape, same "don't build for hypothetical future needs" principle already
+    applied elsewhere in this project -- `setlist-comment.js`'s encoder is the one
+    exception, because Comment/Font-size editing already exists as a real (if not yet
+    wired into `pane.js`) use case. **Renaming Programs/Combis/Set Lists** was explicitly
+    named as a likely upcoming feature that would need a Program (and later Combi/
+    Set List) encoder -- not started, but the reason encoders aren't being ruled out
+    long-term, just deferred until a concrete need exists.
+  - **Explicitly not committed to being final**: both the project owner and this
+    assistant agreed to revisit/rethink this shape after the Program decoder proves
+    itself (or doesn't) against real tests and the real UI, rather than committing to it
+    across the whole codebase up front.
+
 --- BLIND SPOTS / NOT YET TOUCHED ---
 
 Format:
-  1. Font size and Transpose encodings in an SBK1 record -- tested with
-     real values but neither fits a clean pattern yet. Needs another
-     targeted test file with a wider/cleaner value spread.
+  1. SBK1 +17's bit3 and bits0-2 -- still unexplained now that bit4 and
+     bits5-7 are confirmed as Font size/Transpose (see above). Real files
+     show isolated non-zero values there independent of either confirmed
+     field, so something real is still unaccounted for.
   2. What the `used`/count header field (present in SDB1/SBK1/CBK1/MBK1/
      PBK1 alike) actually counts.
-  3. The reserved byte at SBK1 record offset +17.
-  4. The 4-byte prefix field preceding every chunk header throughout the
+  3. The 4-byte prefix field preceding every chunk header throughout the
      whole format.
-  5. Exactly which of the 20 PRG1 banks maps to which display label --
+  4. Exactly which of the 20 PRG1 banks maps to which display label --
      lookup mechanism confirmed, specific label-per-index is not.
-  6. DKT1 (Drum Kits), WSQ1 (Wave Sequences), GLB1, DPI1 -- entirely
+  5. DKT1 (Drum Kits), WSQ1 (Wave Sequences), GLB1, DPI1 -- entirely
      unexplored. Unknown whether Set List slots can reference these
      directly (if so, instrument-name lookup has a gap there too).
-  7. The older SoundQuest `.SQS` backup dialect (`LIST`/`FORM`/`BANK`
+  6. The older SoundQuest `.SQS` backup dialect (`LIST`/`FORM`/`BANK`
      wrapping) found under `~/Documents/Sound Quest/` -- structurally
      different from the `KORG`/`PCG1` dialect this parser targets; never
      tested against it.
@@ -246,10 +324,16 @@ App/UI:
   12. The sibling reference CHOC project (conventions, CI pipeline) still
       not linked in -- this scaffold's choices (no Bootstrap, plain CSS,
       specific file-open pattern) may get reconciled once it is.
-  13. No CI pipeline of any kind yet.
-  14. No automated test suite -- all verification so far has been ad hoc
-      standalone smoke-test binaries compiled during investigation, not
-      committed/repeatable tests.
+  13. (resolved) CI now exists: `.github/workflows/hugo.yml` (docs site)
+      and `.github/workflows/native-build.yml` (macOS arm64/Intel, Linux,
+      Windows, path-filtered to skip docs/frontend-only pushes).
+  14. Still no *committed* automated test suite for the C++ backend --
+      verification there is still ad hoc standalone smoke-test binaries,
+      same as before. Partially addressed on the frontend side: components
+      under `frontend/components/` (see "ARCHITECTURE" below) each ship
+      with a standalone `.test.html` harness with real, committed
+      self-check assertions -- the backend decoder/encoder refactor is
+      expected to bring the same rigor to `PcgFile.cpp`.
   15. No progress indicator while opening a large file -- the drag-and-drop
       open path (base64-encode in JS, decode + parse in C++) can take a
       moment on a 50-70MB file and currently just shows static "Loading..."

@@ -100,10 +100,21 @@ Debug builds read `frontend/` live off disk (edit-reload friendly). Release
 builds (`-DCMAKE_BUILD_TYPE=Release`, or `-DEDITOR_EMBED_RESOURCES=ON`)
 embed `frontend/` into the binary via `tools/embed_resources.py`.
 
+## Architecture direction
+
+Both the frontend and backend are moving toward small, focused
+decoder/encoder units instead of one big eager parse -- see
+**[docs/content/components](docs/content/components/index.md)** (also
+live at [the project site](https://jens-goes-mad.github.io/DIY-KORG-KRONOS-EDITOR/components/))
+for the rationale, and `STATE.md`'s "ARCHITECTURE: DECODER/ENCODER
+REFACTOR" section for the current decision and where it's headed next
+(Program decoder first, then Combi, then Set List slot).
+
 ## Layout
 
 ```
 docs/README.md                -- the full file-format internals reference
+docs/content/                 -- the public Hugo/GitHub Pages docs site (mirrors docs/README.md by hand)
 src/
   kronos/PcgFile.{h,cpp}     -- the file-format parser (implements docs/README.md)
   bridge/EditorBridge.{h,cpp} -- native functions exposed to the web UI
@@ -113,5 +124,6 @@ frontend/
   pane.js                      -- Set Lists dual-pane UI
   library.js                   -- Library view (Programs/Combis/Duplicates)
   mock_bridge.js              -- fake in-memory backend for plain-browser dev (no native build needed)
+  components/kronos/          -- standalone, byte-level-tested UI pieces (see Architecture direction above)
 third_party/choc/            -- vendored from DIY-MIDI-METRONOME/EDITOR
 ```
