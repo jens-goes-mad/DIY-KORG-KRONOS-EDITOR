@@ -263,14 +263,24 @@ full rationale):
     later write silently reverts that other change. With raw bytes as the *one* retained
     copy (not a byte snapshot plus a separate structured shadow copy), every decode
     always reads the current state -- there's nothing to go stale.
-  - **Sequencing (explicit, small-iterations-first)**: Program decoder done, scoped to
-    exactly `{name, bank, number}` for table population plus `hash()` for
-    `findDuplicatePrograms()` -- table rows deliberately keep *raw Kronos fields*
-    (name/bank/number) and *our own derived data* (the hash) conceptually separate, since
-    the hash isn't part of the Kronos format. **Test infrastructure landed next** (see
-    Blind Spot #14 -- was explicitly prioritized over continuing to Combi, now done);
-    Combi decoder is the next step, then Set List slot, each following the same pattern
-    once proven.
+  - **Backend (Combi decoder BUILT 2026-08-01, same day, covered by
+    `pcg_file_test`)**: `src/kronos/CombiDecoder.{h,cpp}` is the second per-record
+    decoder, same shape as ProgramDecoder -- `decodeCombiFields()` returns raw Kronos
+    fields (name) plus each Combi's 16 Timbre-to-Program references (`TimbreRef`, moved
+    out of `PcgFile.cpp`'s old inline `collectCombiRecords()`/`readCombiTimbres()`/
+    `decodeTimbreStatus()`, now dead code and removed). No `hash()` -- byte-exact
+    duplicate detection was only ever requested for Programs. `PcgFile::decodeCombi(bank,
+    number)` mirrors `decodeProgram()`, backed by a new `combiBankLocations_` (mirrors
+    `programBankLocations_`). `tests/pcg_file_test.cpp`'s synthetic fixture grew a CBK1
+    bank to cover this: a direct `decodeCombiFields()` unit test (name-padding trim,
+    truncated-record degrade), plus end-to-end `combis()`/`decodeCombi()` assertions
+    through `PcgFile::loadFromMemory()`. `timbreBankName()`/`isConfirmedTimbreProgramBank()`
+    stayed in `PcgFile.cpp` rather than moving, since `PcgFile.cpp` itself calls them (in
+    `combiUsagesForProgram()`/`combiUsageCounts()`), not just the decoder.
+  - **Sequencing (explicit, small-iterations-first)**: Program decoder done, test
+    infrastructure landed (Blind Spot #14), Combi decoder done -- **Set List slot decoder
+    is the next step**, following the same pattern once proven against tests + the real
+    UI.
   - **Chunk-based data flow for components (designed 2026-08-01, not yet implemented)**:
     two deliberately different tiers, not one architecture for everything --
     - *Bulk/list views* (Programs table, dedup, etc.) stay served by native decoders
@@ -393,15 +403,18 @@ App/UI:
   14. **RESOLVED (2026-08-01)**: committed test infrastructure now exists
       on both sides. C++: `tests/pcg_file_test.cpp` + a scoped
       `pcg_file_test` CMake/`ctest` target, depending on *only*
-      `PcgFile.cpp`/`ProgramDecoder.cpp` (not `main.cpp`/`EditorBridge.cpp`/
-      CHOC) -- builds a small synthetic `.PCG` byte buffer in memory
+      `PcgFile.cpp`/`ProgramDecoder.cpp`/`CombiDecoder.cpp` (not
+      `main.cpp`/`EditorBridge.cpp`/CHOC) -- builds a small synthetic
+      `.PCG` byte buffer in memory
       (real files are large and `.gitignore`'d) exercising
       `loadFromMemory()` end-to-end: Set List names, masked Font
       size/Transpose decoding (including deliberately-poked garbage bits
       in fields it doesn't own), Program bank cross-referencing,
       `findDuplicatePrograms()`, `programSetlistUsages()`, and
-      `decodeProgram()`'s on-demand re-decode. Runs via plain `ctest` in
-      ~0.01s. Frontend: `setlist-comment.js` now has a headless,
+      `decodeProgram()`'s on-demand re-decode; extended same-day to cover
+      the new Combi decoder too (`decodeCombiFields()` directly, plus
+      `combis()`/`decodeCombi()` through a synthetic CBK1 bank). Runs via
+      plain `ctest` in ~0.01s. Frontend: `setlist-comment.js` now has a headless,
       `node`-runnable `setlist-comment.test.js` alongside its existing
       `.test.html` browser harness, both importing the same real-byte
       fixture from a new shared `frontend/components/kronos/

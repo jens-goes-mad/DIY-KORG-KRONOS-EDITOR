@@ -238,6 +238,10 @@ public:
     // reflect the older eager-parse shape for everything else.
     std::optional<ProgramInfo> decodeProgram(int bank, int number) const;
 
+    // Same as decodeProgram(), for Combis -- see src/kronos/CombiDecoder.h,
+    // the second per-record decoder built this way.
+    std::optional<CombiInfo> decodeCombi(int bank, int number) const;
+
 private:
     // Where one PRG1 sub-bank's (MBK1 or PBK1) records live within data_
     // -- retained so decodeProgram() can locate and re-decode a specific
@@ -249,11 +253,20 @@ private:
         uint32_t bytesPerRecord = 0;
     };
 
+    // Same as ProgramBankLocation, for one CBK1 sub-bank -- retained so
+    // decodeCombi() can locate and re-decode a specific record on demand.
+    struct CombiBankLocation {
+        size_t recordsStart = 0;
+        uint32_t numRecords = 0;
+        uint32_t bytesPerRecord = 0;
+    };
+
     std::vector<Setlist> setlists_;
     std::vector<ProgramInfo> programs_;
     std::vector<CombiInfo> combis_;
     std::vector<uint8_t> data_;                          // the whole file's raw bytes, retained after load
     std::vector<ProgramBankLocation> programBankLocations_;  // index into data_, one entry per PRG1 sub-bank
+    std::vector<CombiBankLocation> combiBankLocations_;      // index into data_, one entry per CBK1 sub-bank
 };
 
 }  // namespace kronos

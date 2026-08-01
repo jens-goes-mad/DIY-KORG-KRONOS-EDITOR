@@ -57,6 +57,14 @@ independently reusable functions -- mirroring the frontend codec split. `PcgFile
 retains the whole loaded file's raw bytes instead of discarding them after an initial
 parse, so a decoder can be re-invoked on demand later, not just once at load time.
 
+[`CombiDecoder.h/.cpp`](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/blob/main/src/kronos/CombiDecoder.h)
+followed the same day: `decodeCombiFields()` returns a Combi's name plus its 16
+Timbre-to-Program references, replacing what used to be inline parsing logic in
+`PcgFile.cpp`. No hash function here -- byte-exact duplicate detection was only ever
+requested for Programs, not Combis. `PcgFile::decodeCombi(bank, number)` mirrors
+`decodeProgram()`, proving the same on-demand-re-decode property holds for a second
+record type, not just the first one.
+
 That said, not everything moves to per-chunk decoding -- there are deliberately two
 tiers:
 
@@ -124,11 +132,12 @@ needs, that a browser page alone can't give you.
 
 The backend side has the same split, one level up: a small, scoped `pcg_file_test`
 CMake/`ctest` target (`tests/pcg_file_test.cpp`) that depends on *only*
-`PcgFile.cpp`/`ProgramDecoder.cpp` -- deliberately not `main.cpp`, `EditorBridge.cpp`, or
-CHOC -- so it builds and runs in well under a second with no WebView toolchain at all.
-Since real `.PCG` files are large and `.gitignore`'d, this test builds a small synthetic
-file in memory, byte-for-byte matching the confirmed chunk/record layout, exercising the
-full `PcgFile::loadFromMemory()` path (Set List names, masked Font size/Transpose
+`PcgFile.cpp`/`ProgramDecoder.cpp`/`CombiDecoder.cpp` -- deliberately not `main.cpp`,
+`EditorBridge.cpp`, or CHOC -- so it builds and runs in well under a second with no
+WebView toolchain at all. Since real `.PCG` files are large and `.gitignore`'d, this test
+builds a small synthetic file in memory, byte-for-byte matching the confirmed
+chunk/record layout, exercising the full `PcgFile::loadFromMemory()` path (Set List
+names, masked Font size/Transpose
 decoding, Program bank cross-referencing, duplicate detection, and `decodeProgram()`'s
 on-demand re-decode) without ever touching a real backup on disk.
 

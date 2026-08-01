@@ -23,6 +23,7 @@ add_executable(kronos_editor
     src/bridge/EditorBridge.cpp
     src/kronos/PcgFile.cpp
     src/kronos/ProgramDecoder.cpp
+    src/kronos/CombiDecoder.cpp
 )
 
 target_include_directories(kronos_editor PRIVATE
@@ -74,17 +75,19 @@ elseif (WIN32)
     # and the OS-provided Evergreen runtime -- no extra link libraries needed.
 endif()
 
-# Scoped test target: only PcgFile.cpp/ProgramDecoder.cpp, no main.cpp, no
-# EditorBridge.cpp, no CHOC/WebView -- so `ctest` (or building this target
-# alone) stays fast and never needs a platform WebView toolchain. See
-# tests/pcg_file_test.cpp and STATE.md's "ARCHITECTURE: DECODER/ENCODER
-# REFACTOR" section for why this is kept separate from kronos_editor.
+# Scoped test target: only PcgFile.cpp/ProgramDecoder.cpp/CombiDecoder.cpp,
+# no main.cpp, no EditorBridge.cpp, no CHOC/WebView -- so `ctest` (or
+# building this target alone) stays fast and never needs a platform WebView
+# toolchain. See tests/pcg_file_test.cpp and STATE.md's "ARCHITECTURE:
+# DECODER/ENCODER REFACTOR" section for why this is kept separate from
+# kronos_editor.
 enable_testing()
 
 add_executable(pcg_file_test
     tests/pcg_file_test.cpp
     src/kronos/PcgFile.cpp
     src/kronos/ProgramDecoder.cpp
+    src/kronos/CombiDecoder.cpp
 )
 
 target_include_directories(pcg_file_test PRIVATE src)

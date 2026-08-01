@@ -7,6 +7,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include "CombiDecoder.h"
 #include "ProgramDecoder.h"
 
 namespace kronos {
@@ -167,106 +168,6 @@ SlotParams readSlotParams(const uint8_t* data, size_t songOff, size_t end) {
     return params;
 }
 
-// CBK1 (Combi banks, nested in CMB1) and MBK1/PBK1 (Program banks, nested
-// in PRG1) share this exact same record shape: a 12-byte header (unknown
-// count, numRecords=128, bytesPerRecord) -- same shape as SDB1/SBK1's
-// headers -- followed by numRecords fixed-size records, each starting with
-// a 24-byte name field 4 bytes in (space/NUL-padded, NOT NUL-terminated --
-// a full-length 24-character name has no terminator at all, so this trims
-// trailing NUL/space rather than searching for NUL).
-constexpr size_t kBankRecordNameOffset = 4;
-constexpr size_t kBankRecordNameLength = 24;
-
-std::string readBankRecordName(const uint8_t* data, size_t recordOff, size_t end) {
-    size_t nameOff = recordOff + kBankRecordNameOffset;
-    if (nameOff + kBankRecordNameLength > end) return {};
-    size_t len = kBankRecordNameLength;
-    while (len > 0) {
-        uint8_t c = data[nameOff + len - 1];
-        if (c != 0 && c != ' ') break;
-        --len;
-    }
-    return std::string(reinterpret_cast<const char*>(data + nameOff), len);
-}
-
-// A Combi's 16 Timbres each reference a Program at a fixed 188-byte stride
-// starting 4806 bytes into the Combi's own record, byte 0 = number, byte 1
-// = raw bank code. Confirmed by the project owner providing real Combis
-// (with known Timbre->Program assignments) to diff against -- see
-// docs/README.md's "Combi Timbre references" section. `recordEnd` bounds
-// the read so a truncated/malformed record just yields default TimbreRefs
-// past that point rather than reading out of range.
-constexpr size_t kCombiTimbreBaseOffset = 4806;
-constexpr size_t kCombiTimbreStride = 188;
-constexpr int kCombiTimbreCount = 16;
-
-// Top 3 bits of the status byte (offset+2 within a Timbre block) -- see
-// TimbreStatus's doc comment in PcgFile.h. The lower 5 bits are a separate,
-// unrelated field (the Timbre's own 0-based index) and are ignored here.
-TimbreStatus decodeTimbreStatus(uint8_t statusByte) {
-    switch ((statusByte >> 5) & 0x07) {
-        case 0: return TimbreStatus::Off;
-        case 1: return TimbreStatus::Internal;
-        case 3: return TimbreStatus::External;
-        case 4: return TimbreStatus::Ex2;
-        default: return TimbreStatus::Unknown;
-    }
-}
-
-std::vector<TimbreRef> readCombiTimbres(const uint8_t* data, size_t recordOff, size_t recordEnd) {
-    std::vector<TimbreRef> timbres;
-    timbres.reserve(kCombiTimbreCount);
-    for (int i = 0; i < kCombiTimbreCount; ++i) {
-        size_t h = recordOff + kCombiTimbreBaseOffset + static_cast<size_t>(i) * kCombiTimbreStride;
-        TimbreRef ref;
-        if (h + 2 < recordEnd) {
-            ref.number = data[h];
-            ref.rawBankCode = data[h + 1];
-            ref.status = decodeTimbreStatus(data[h + 2]);
-            ref.isDefault = (ref.number == 0 && ref.rawBankCode == 0);
-        }
-        timbres.push_back(ref);
-    }
-    return timbres;
-}
-
-// One record from a CBK1 (Combi) bank -- like BankRecord, but also carries
-// each Combi's 16 Timbre Program references (Programs have no equivalent,
-// hence a separate struct/collector rather than extending BankRecord).
-struct CombiRecord {
-    int bank = 0;
-    int number = 0;
-    std::string name;
-    std::vector<TimbreRef> timbres;
-};
-
-std::vector<CombiRecord> collectCombiRecords(const std::vector<uint8_t>& data, const std::vector<ChunkInfo>& chunks) {
-    std::vector<CombiRecord> records;
-    for (size_t bankIdx = 0; bankIdx < chunks.size(); ++bankIdx) {
-        const auto& chunk = chunks[bankIdx];
-        if (chunk.contentStart + 12 > chunk.contentEnd) continue;
-
-        readU32BE(&data[chunk.contentStart]);  // meaning not understood yet, unused here
-        uint32_t numRecords = readU32BE(&data[chunk.contentStart + 4]);
-        uint32_t bytesPerRecord = readU32BE(&data[chunk.contentStart + 8]);
-        size_t recordsStart = chunk.contentStart + 12;
-
-        if (bytesPerRecord == 0) continue;
-        if (recordsStart + static_cast<size_t>(bytesPerRecord) * numRecords > chunk.contentEnd) continue;
-
-        for (uint32_t i = 0; i < numRecords; ++i) {
-            size_t off = recordsStart + static_cast<size_t>(i) * bytesPerRecord;
-            CombiRecord rec;
-            rec.bank = static_cast<int>(bankIdx);
-            rec.number = static_cast<int>(i);
-            rec.name = readBankRecordName(data.data(), off, data.size());
-            rec.timbres = readCombiTimbres(data.data(), off, std::min(off + bytesPerRecord, data.size()));
-            records.push_back(std::move(rec));
-        }
-    }
-    return records;
-}
-
 }  // namespace
 
 // Confirmed via real Combi samples the project owner provided directly,
@@ -394,27 +295,52 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
         }
     }
 
-    // CBK1 (Combi banks, nested CMB1 > CBK1) and MBK1/PBK1 (Program banks,
-    // nested PRG1 > MBK1/PBK1, interleaved in file order) -- cross-
-    // referenced by each slot's bank/number to show the instrument's real
-    // name. Both confirmed against known real names the project owner
-    // pointed out directly (e.g. "Subdivisions"/"Perfect Kiss"/"Sirius" as
-    // three consecutive Program records; "Dont stop believin" as a Combi
-    // record matching its Set List slot exactly). Optional, same as SBK1:
-    // missing/malformed just leaves instrumentName empty rather than
-    // failing the whole load.
+    // CBK1 (Combi banks, nested CMB1 > CBK1) -- cross-referenced by each
+    // slot's bank/number to show the instrument's real name. Confirmed
+    // against known real names the project owner pointed out directly
+    // (e.g. "Dont stop believin" as a Combi record matching its Set List
+    // slot exactly). Optional, same as SBK1: missing/malformed just leaves
+    // instrumentName empty rather than failing the whole load.
+    //
+    // Decoded via a standalone per-record decoder
+    // (src/kronos/CombiDecoder.h), same pattern as Programs below --
+    // combiBankLocations_ records each bank's location so decodeCombi()
+    // can re-decode any single Combi on demand later, straight from the
+    // retained raw bytes (data_, set at the end of this function).
     std::vector<ChunkInfo> cbkChunks;
     collectChunks(data, 16, data.size(), "CBK1", cbkChunks, 0);
-    std::vector<CombiRecord> combiRecords = collectCombiRecords(data, cbkChunks);
-    std::vector<std::vector<std::string>> combiBankNames;  // [bank][number]
-    for (const auto& r : combiRecords) {
-        if (r.bank >= static_cast<int>(combiBankNames.size())) combiBankNames.resize(r.bank + 1);
-        if (r.number >= static_cast<int>(combiBankNames[r.bank].size())) combiBankNames[r.bank].resize(r.number + 1);
-        combiBankNames[r.bank][r.number] = r.name;
-    }
 
     combis_.clear();
-    for (const auto& r : combiRecords) combis_.push_back({r.bank, r.number, r.name, r.timbres});
+    combiBankLocations_.clear();
+    std::vector<std::vector<std::string>> combiBankNames;  // [bank][number]
+
+    for (size_t bankIdx = 0; bankIdx < cbkChunks.size(); ++bankIdx) {
+        const auto& chunk = cbkChunks[bankIdx];
+        if (chunk.contentStart + 12 > chunk.contentEnd) continue;
+
+        readU32BE(&data[chunk.contentStart]);  // meaning not understood yet, unused here
+        uint32_t numRecords = readU32BE(&data[chunk.contentStart + 4]);
+        uint32_t bytesPerRecord = readU32BE(&data[chunk.contentStart + 8]);
+        size_t recordsStart = chunk.contentStart + 12;
+
+        if (bytesPerRecord == 0) continue;
+        if (recordsStart + static_cast<size_t>(bytesPerRecord) * numRecords > chunk.contentEnd) continue;
+
+        combiBankLocations_.push_back({recordsStart, numRecords, bytesPerRecord});
+
+        for (uint32_t i = 0; i < numRecords; ++i) {
+            size_t off = recordsStart + static_cast<size_t>(i) * bytesPerRecord;
+            const uint8_t* record = &data[off];
+            CombiFields fields = decodeCombiFields(record, bytesPerRecord, static_cast<int>(bankIdx), static_cast<int>(i));
+            combis_.push_back({fields.bank, fields.number, fields.name, fields.timbres});
+
+            if (fields.bank >= static_cast<int>(combiBankNames.size())) combiBankNames.resize(fields.bank + 1);
+            if (fields.number >= static_cast<int>(combiBankNames[fields.bank].size())) {
+                combiBankNames[fields.bank].resize(fields.number + 1);
+            }
+            combiBankNames[fields.bank][fields.number] = fields.name;
+        }
+    }
 
     // Programs: the first field decoded via a standalone per-record
     // decoder (src/kronos/ProgramDecoder.h) instead of inline in a
@@ -590,6 +516,19 @@ std::optional<ProgramInfo> PcgFile::decodeProgram(int bank, int number) const {
     ProgramFields fields = decodeProgramFields(record, loc.bytesPerRecord, bank, number);
     uint64_t hash = hashProgramRecord(record, loc.bytesPerRecord);
     return ProgramInfo{fields.bank, fields.number, fields.name, hash};
+}
+
+std::optional<CombiInfo> PcgFile::decodeCombi(int bank, int number) const {
+    if (bank < 0 || bank >= static_cast<int>(combiBankLocations_.size())) return std::nullopt;
+    const auto& loc = combiBankLocations_[bank];
+    if (number < 0 || static_cast<uint32_t>(number) >= loc.numRecords) return std::nullopt;
+
+    size_t off = loc.recordsStart + static_cast<size_t>(number) * loc.bytesPerRecord;
+    if (off + loc.bytesPerRecord > data_.size()) return std::nullopt;
+
+    const uint8_t* record = &data_[off];
+    CombiFields fields = decodeCombiFields(record, loc.bytesPerRecord, bank, number);
+    return CombiInfo{fields.bank, fields.number, fields.name, fields.timbres};
 }
 
 }  // namespace kronos

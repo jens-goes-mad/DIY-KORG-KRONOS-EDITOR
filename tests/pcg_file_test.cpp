@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "kronos/CombiDecoder.h"
 #include "kronos/PcgFile.h"
 #include "kronos/ProgramDecoder.h"
 
@@ -59,6 +60,24 @@ void pushNameRecord(std::vector<uint8_t>& v, const std::string& name, size_t tot
     size_t start = v.size();
     pushZeros(v, totalSize);
     for (size_t i = 0; i < name.size() && i + 4 < totalSize; ++i) v[start + 4 + i] = static_cast<uint8_t>(name[i]);
+}
+
+// One CBK1 Combi record: name at offset+4 (same shape as PBK1), plus a
+// couple of Timbre-to-Program references at the confirmed fixed stride
+// (docs/README.md's "Combi Timbre references" section) -- byte0=number,
+// byte1=rawBankCode, byte2's top 3 bits=status. Only Timbre 0 is set here;
+// every other Timbre (1..15) stays all-zero, matching a genuinely
+// unassigned Timbre (isDefault=true).
+constexpr size_t kTimbreBaseOffset = 4806;
+constexpr size_t kTimbreStride = 188;
+
+std::vector<uint8_t> makeCbkCombiRecord(const std::string& name, size_t totalSize) {
+    std::vector<uint8_t> rec(totalSize, 0);
+    for (size_t i = 0; i < name.size() && 4 + i < totalSize; ++i) rec[4 + i] = static_cast<uint8_t>(name[i]);
+    rec[kTimbreBaseOffset] = 5;                                   // Timbre 0 -> Program number 5
+    rec[kTimbreBaseOffset + 1] = 1;                               // Timbre 0 -> raw bank code 1 (INT-B)
+    rec[kTimbreBaseOffset + 2] = static_cast<uint8_t>(1 << 5);     // status Internal
+    return rec;
 }
 
 void appendChunk(std::vector<uint8_t>& out, const char* tag, const std::vector<uint8_t>& content) {
@@ -168,6 +187,16 @@ std::vector<uint8_t> buildSyntheticPcgFile() {
     pushNameRecord(pbk1BankB, "Bank1 Program0", kBankRecordSize);
     pushNameRecord(pbk1BankB, "Bank1 Program1", kBankRecordSize);
 
+    // CBK1 bank 0: one Combi record with a real Timbre 0 (Program bank1/
+    // number5, status Internal) and 15 default/unassigned Timbres.
+    const size_t kCombiRecordSize = kTimbreBaseOffset + kTimbreStride * 16;
+    std::vector<uint8_t> cbk1BankA;
+    pushU32BE(cbk1BankA, 0);
+    pushU32BE(cbk1BankA, 1);  // numRecords
+    pushU32BE(cbk1BankA, static_cast<uint32_t>(kCombiRecordSize));
+    auto combi0 = makeCbkCombiRecord("Test Combi", kCombiRecordSize);
+    cbk1BankA.insert(cbk1BankA.end(), combi0.begin(), combi0.end());
+
     std::vector<uint8_t> data;
     data.insert(data.end(), {'K', 'O', 'R', 'G'});
     pushZeros(data, 12);  // pad to the 16-byte offset every chunk walk starts from
@@ -175,6 +204,7 @@ std::vector<uint8_t> buildSyntheticPcgFile() {
     appendChunk(data, "SBK1", sbk1);
     appendChunk(data, "PBK1", pbk1BankA);
     appendChunk(data, "PBK1", pbk1BankB);
+    appendChunk(data, "CBK1", cbk1BankA);
     return data;
 }
 
@@ -195,6 +225,33 @@ void testDecodeProgramFields() {
     std::vector<uint8_t> tooShort(10, 0);
     kronos::ProgramFields shortFields = kronos::decodeProgramFields(tooShort.data(), tooShort.size(), 0, 0);
     CHECK_EQ(shortFields.name, std::string(), "decodeProgramFields on a truncated record yields an empty name");
+}
+
+void testDecodeCombiFields() {
+    std::vector<uint8_t> record(kTimbreBaseOffset + kTimbreStride * 16, 0);
+    const std::string name = "Combi Name";
+    for (size_t i = 0; i < name.size(); ++i) record[4 + i] = static_cast<uint8_t>(name[i]);
+    record[kTimbreBaseOffset] = 42;                             // Timbre 0 -> Program number 42
+    record[kTimbreBaseOffset + 1] = 3;                          // Timbre 0 -> raw bank code 3
+    record[kTimbreBaseOffset + 2] = static_cast<uint8_t>(3 << 5);  // status External
+
+    kronos::CombiFields fields = kronos::decodeCombiFields(record.data(), record.size(), 2, 9);
+    CHECK_EQ(fields.bank, 2, "decodeCombiFields keeps the caller-supplied bank");
+    CHECK_EQ(fields.number, 9, "decodeCombiFields keeps the caller-supplied number");
+    CHECK_EQ(fields.name, name, "decodeCombiFields trims trailing NUL padding from the name");
+    CHECK_EQ(fields.timbres.size(), static_cast<size_t>(16), "always 16 Timbre entries");
+    CHECK_EQ(fields.timbres[0].number, 42, "Timbre 0 number");
+    CHECK_EQ(fields.timbres[0].rawBankCode, 3, "Timbre 0 rawBankCode");
+    CHECK(fields.timbres[0].status == kronos::TimbreStatus::External);
+    CHECK(!fields.timbres[0].isDefault);
+    CHECK(fields.timbres[1].isDefault);  // untouched -- genuinely unassigned
+
+    // Truncated record: shorter than even the Timbre area needs -- every
+    // Timbre degrades to a default (isDefault=true) rather than reading OOB.
+    std::vector<uint8_t> tooShort(100, 0);
+    kronos::CombiFields shortFields = kronos::decodeCombiFields(tooShort.data(), tooShort.size(), 0, 0);
+    CHECK_EQ(shortFields.name, std::string(), "decodeCombiFields on a truncated record yields an empty name");
+    CHECK(shortFields.timbres[0].isDefault);
 }
 
 void testHashProgramRecord() {
@@ -278,12 +335,36 @@ void testPcgFileEndToEnd() {
     }
     CHECK(!pcg.decodeProgram(99, 0).has_value());  // out-of-range bank
     CHECK(!pcg.decodeProgram(1, 99).has_value());  // out-of-range number
+
+    // Combis: one synthetic CBK1 record with a real Timbre 0 and 15
+    // default/unassigned Timbres.
+    CHECK_EQ(pcg.combis().size(), static_cast<size_t>(1), "combis() has one row for the synthetic CBK1 record");
+    const auto& combi0 = pcg.combis()[0];
+    CHECK_EQ(combi0.bank, 0, "Combi bank");
+    CHECK_EQ(combi0.number, 0, "Combi number");
+    CHECK_EQ(combi0.name, std::string("Test Combi"), "Combi name decoded");
+    CHECK_EQ(combi0.timbres.size(), static_cast<size_t>(16), "Combi always has 16 Timbre entries");
+    CHECK_EQ(combi0.timbres[0].number, 5, "Combi Timbre 0 number");
+    CHECK_EQ(combi0.timbres[0].rawBankCode, 1, "Combi Timbre 0 rawBankCode");
+    CHECK(combi0.timbres[0].status == kronos::TimbreStatus::Internal);
+    CHECK(!combi0.timbres[0].isDefault);
+    CHECK(combi0.timbres[1].isDefault);  // untouched -- genuinely unassigned
+
+    auto redecodedCombi = pcg.decodeCombi(0, 0);
+    CHECK(redecodedCombi.has_value());
+    if (redecodedCombi) {
+        CHECK_EQ(redecodedCombi->name, std::string("Test Combi"), "decodeCombi() re-decodes the right record");
+        CHECK_EQ(redecodedCombi->timbres[0].number, 5, "decodeCombi()'s Timbre 0 matches combis()'s cached entry");
+    }
+    CHECK(!pcg.decodeCombi(99, 0).has_value());  // out-of-range bank
+    CHECK(!pcg.decodeCombi(0, 99).has_value());  // out-of-range number
 }
 
 }  // namespace
 
 int main() {
     testDecodeProgramFields();
+    testDecodeCombiFields();
     testHashProgramRecord();
     testPcgFileEndToEnd();
 
