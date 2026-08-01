@@ -50,8 +50,10 @@ None of this is documented by Korg beyond the user manual's *behavior*. The on-d
   verified against real user-named lists and real song titles given directly as ground
   truth, not guessed.
 - **Per-slot parameters** (`SBK1`): Program-vs-Combi flag, bank, number, color, hold
-  time, volume, and a free-text comment, all at confirmed fixed offsets within a
-  542-byte-stride record.
+  time, volume, Font size, Transpose, and a free-text comment, all at confirmed fixed
+  offsets within a 542-byte-stride record -- Font size and Transpose are each a few bits
+  packed into bytes otherwise used by Color/Bank, confirmed via a purpose-built test file
+  that isolated each field one at a time.
 - **Instrument name cross-reference** (`CBK1`/`MBK1`/`PBK1`): every Set List slot's real
   Program/Combi name, resolved and shown inline -- confirmed against three independent
   named anchors.
@@ -68,10 +70,10 @@ None of this is documented by Korg beyond the user manual's *behavior*. The on-d
   project's own model (turned out to be a Combi sample whose remembered state didn't
   match what was actually saved in the file, not a parsing error).
 
-Deliberately **not** solved yet: Font size and Transpose encoding, a handful of reserved
-bytes whose purpose isn't known, Drum Kits/Wave Sequences/Global settings, and exactly
-which of the 20 Program banks corresponds to which on-screen label beyond the ones
-directly confirmed above.
+Deliberately **not** solved yet: a handful of reserved bytes whose purpose isn't known
+(byte +17 still has unexplained bits even after Font size/Transpose were found), Drum
+Kits/Wave Sequences/Global settings, and exactly which of the 20 Program banks
+corresponds to which on-screen label beyond the ones directly confirmed above.
 
 ## The editor
 

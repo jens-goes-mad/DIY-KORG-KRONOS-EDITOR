@@ -267,9 +267,10 @@ full rationale):
     exactly `{name, bank, number}` for table population plus `hash()` for
     `findDuplicatePrograms()` -- table rows deliberately keep *raw Kronos fields*
     (name/bank/number) and *our own derived data* (the hash) conceptually separate, since
-    the hash isn't part of the Kronos format. **Test infrastructure is next** (see below
-    -- explicitly prioritized over continuing to Combi), then Combi, then Set List slot,
-    each following the same pattern once proven.
+    the hash isn't part of the Kronos format. **Test infrastructure landed next** (see
+    Blind Spot #14 -- was explicitly prioritized over continuing to Combi, now done);
+    Combi decoder is the next step, then Set List slot, each following the same pattern
+    once proven.
   - **Chunk-based data flow for components (designed 2026-08-01, not yet implemented)**:
     two deliberately different tiers, not one architecture for everything --
     - *Bulk/list views* (Programs table, dedup, etc.) stay served by native decoders
@@ -389,22 +390,31 @@ App/UI:
   13. (resolved) CI now exists: `.github/workflows/hugo.yml` (docs site)
       and `.github/workflows/native-build.yml` (macOS arm64/Intel, Linux,
       Windows, path-filtered to skip docs/frontend-only pushes).
-  14. Still no *committed* automated test suite for the C++ backend --
-      verification there is still ad hoc standalone smoke-test binaries,
-      compiled and thrown away, same as before (including for the new
-      Program decoder). Partially addressed on the frontend side:
-      components under `frontend/components/` (see "ARCHITECTURE" below)
-      each ship with a standalone `.test.html` harness with real,
-      committed self-check assertions, though those only run when a
-      human opens the page in a browser -- no headless/CI runner either.
-      **Current top priority (2026-08-01, agreed explicitly with the
-      project owner: testing outranks new features right now)**: a real,
-      committed C++ test target (small, scoped to just the format-parsing
-      code -- not `main.cpp`/`EditorBridge.cpp`/CHOC, so it stays fast and
-      dependency-light -- wired into CMake via `ctest`), plus a headless
-      `node`-runnable `.test.js` per frontend component alongside its
-      existing browser harness. Not built yet -- this is the very next
-      task, before Combi or any further component wiring.
+  14. **RESOLVED (2026-08-01)**: committed test infrastructure now exists
+      on both sides. C++: `tests/pcg_file_test.cpp` + a scoped
+      `pcg_file_test` CMake/`ctest` target, depending on *only*
+      `PcgFile.cpp`/`ProgramDecoder.cpp` (not `main.cpp`/`EditorBridge.cpp`/
+      CHOC) -- builds a small synthetic `.PCG` byte buffer in memory
+      (real files are large and `.gitignore`'d) exercising
+      `loadFromMemory()` end-to-end: Set List names, masked Font
+      size/Transpose decoding (including deliberately-poked garbage bits
+      in fields it doesn't own), Program bank cross-referencing,
+      `findDuplicatePrograms()`, `programSetlistUsages()`, and
+      `decodeProgram()`'s on-demand re-decode. Runs via plain `ctest` in
+      ~0.01s. Frontend: `setlist-comment.js` now has a headless,
+      `node`-runnable `setlist-comment.test.js` alongside its existing
+      `.test.html` browser harness, both importing the same real-byte
+      fixture from a new shared `frontend/components/kronos/
+      test-fixtures.js` (so they can't drift into testing different
+      data) -- exits non-zero on any failed assertion, the shape
+      CI/`ctest`-style automation needs. (A `frontend/components/
+      package.json` with `"type": "module"` was also added -- without it
+      Node mis-parses genuine ES module `export`/`import` syntax in a
+      bare `.js` file and throws a confusing "does not provide an
+      export" error.) Both suites were spot-checked with a deliberately
+      broken assertion to confirm they fail loudly and non-zero, not just
+      pass trivially. Next: proceed to the Combi decoder, per the
+      already-agreed sequencing.
   15. No progress indicator while opening a large file -- the drag-and-drop
       open path (base64-encode in JS, decode + parse in C++) can take a
       moment on a 50-70MB file and currently just shows static "Loading..."

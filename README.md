@@ -100,6 +100,21 @@ Debug builds read `frontend/` live off disk (edit-reload friendly). Release
 builds (`-DCMAKE_BUILD_TYPE=Release`, or `-DEDITOR_EMBED_RESOURCES=ON`)
 embed `frontend/` into the binary via `tools/embed_resources.py`.
 
+## Testing
+
+```sh
+# C++: scoped to just the format-parsing code (no CHOC/WebView build needed)
+cmake --build build --target pcg_file_test
+ctest --test-dir build -R pcg_file_test
+
+# Frontend: headless, per-component
+node frontend/components/kronos/setlist-comment.test.js
+```
+
+See **[docs/content/components](docs/content/components/index.md)**'s "Committed,
+headless test suites" section for how these fit alongside each component's
+`.test.html` browser harness.
+
 ## Architecture direction
 
 Both the frontend and backend are moving toward small, focused

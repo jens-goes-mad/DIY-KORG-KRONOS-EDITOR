@@ -73,3 +73,20 @@ elseif (WIN32)
     # choc's WebView on Windows uses WebView2 via embedded COM interop headers
     # and the OS-provided Evergreen runtime -- no extra link libraries needed.
 endif()
+
+# Scoped test target: only PcgFile.cpp/ProgramDecoder.cpp, no main.cpp, no
+# EditorBridge.cpp, no CHOC/WebView -- so `ctest` (or building this target
+# alone) stays fast and never needs a platform WebView toolchain. See
+# tests/pcg_file_test.cpp and STATE.md's "ARCHITECTURE: DECODER/ENCODER
+# REFACTOR" section for why this is kept separate from kronos_editor.
+enable_testing()
+
+add_executable(pcg_file_test
+    tests/pcg_file_test.cpp
+    src/kronos/PcgFile.cpp
+    src/kronos/ProgramDecoder.cpp
+)
+
+target_include_directories(pcg_file_test PRIVATE src)
+
+add_test(NAME pcg_file_test COMMAND pcg_file_test)

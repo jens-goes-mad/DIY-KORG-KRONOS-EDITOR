@@ -1,0 +1,5 @@
+{
+  "type": "module",
+  "private": true,
+  "description": "Marks every .js file under frontend/components/ as an ES module for Node (only affects `node *.test.js` runs -- browsers already treat these as modules via <script type=\"module\">, ignoring this file entirely)."
+}

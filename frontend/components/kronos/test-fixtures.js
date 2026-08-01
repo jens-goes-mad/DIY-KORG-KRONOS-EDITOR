@@ -1,0 +1,36 @@
+// Shared real-data fixtures + small byte/hex helpers for this component's
+// test harnesses (both the browser .test.html and the headless
+// node-runnable .test.js) -- kept in one place so the same real bytes
+// back both, rather than two hand-copied hex strings that could drift
+// apart (a real, previously-hit problem: a hand-transcribed hex string
+// earlier in this project came out the wrong length by hand).
+
+// Real SBK1 song record for "Rolling in the Deep" (Set List "emergency
+// exit", song 0), extracted directly from a real backup -- see
+// docs/README.md and docs/content/format/index.md for how. Byte 13/14
+// (bank=7, number=9) match this Combi's independently-confirmed location.
+export const ROLLING_IN_THE_DEEP_RECORD_HEX =
+  "686520446565700000000000c00709067f00496e74726f202831293a205b612c20652c20672c206520675d2e2e2e0d0a4272" +
+  "69646765202831293a205b662c20672c20652c20662c20672c20655c652d662d682c2023675c652d23672d682d645d0d0a52" +
+  "656672202832293a20616d204720462020202020202020202020202020202020202020202020202020202020202020202020" +
+  "5b7061645f5f5c43352f5f5f73796e74685d0d0a537472202831293a2077696520496e74726f0d0a42726964676520283129" +
+  "0d0a52656672202832290d0a6120636170656c6c612c204b6c6174736368656e2c207b617d0d0a5265667220283229000000" +
+  "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" +
+  "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" +
+  "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" +
+  "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" +
+  "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" +
+  "0000000000000000000000000000000000000000000000000000000000004920646f6e27742077616e6e";
+
+export function hexToBytes(hex) {
+  const clean = hex.replace(/\s+/g, "");
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.substr(i * 2, 2), 16);
+  return out;
+}
+
+export function bytesToHex(bytes) {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join(" ");
+}

@@ -112,6 +112,26 @@ as this evolves.
   self-checks assert this directly: craft a record with arbitrary bits set in every field
   a given codec does *not* own, make an edit, and confirm those bits survive byte-for-byte.
 
+### Committed, headless test suites -- not just browser harnesses
+
+The `.test.html` harnesses above are for interactive/manual development, but they need a
+human to open a browser tab and eyeball pass/fail. Every component's codec also gets a
+plain, headless, `node`-runnable twin (`setlist-comment.test.js` alongside
+`setlist-comment.test.html`), importing the exact same real-byte fixture from a shared
+`test-fixtures.js` module (so the two never drift into testing subtly different data),
+and exiting non-zero on any failed assertion -- the shape CI/`ctest`-style automation
+needs, that a browser page alone can't give you.
+
+The backend side has the same split, one level up: a small, scoped `pcg_file_test`
+CMake/`ctest` target (`tests/pcg_file_test.cpp`) that depends on *only*
+`PcgFile.cpp`/`ProgramDecoder.cpp` -- deliberately not `main.cpp`, `EditorBridge.cpp`, or
+CHOC -- so it builds and runs in well under a second with no WebView toolchain at all.
+Since real `.PCG` files are large and `.gitignore`'d, this test builds a small synthetic
+file in memory, byte-for-byte matching the confirmed chunk/record layout, exercising the
+full `PcgFile::loadFromMemory()` path (Set List names, masked Font size/Transpose
+decoding, Program bank cross-referencing, duplicate detection, and `decodeProgram()`'s
+on-demand re-decode) without ever touching a real backup on disk.
+
 ## Case study: SetlistComment
 
 The first component built this way is
