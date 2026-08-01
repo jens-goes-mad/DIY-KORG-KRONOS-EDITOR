@@ -170,63 +170,83 @@ choc::value::Value EditorBridge::combiToValue(const kronos::CombiInfo& combi) {
     return v;
 }
 
-kronos::Setlist* EditorBridge::setlistOf(const std::string& paneId, int setlistIndex) {
-    auto it = m_panes.find(paneId);
-    if (it == m_panes.end()) return nullptr;
+kronos::Setlist* EditorBridge::setlistOf(int datasetId, int setlistIndex) {
+    auto it = m_datasets.find(datasetId);
+    if (it == m_datasets.end()) return nullptr;
     auto& setlists = it->second.file.setlists();
     if (setlistIndex < 0 || setlistIndex >= static_cast<int>(setlists.size())) return nullptr;
     return &setlists[static_cast<size_t>(setlistIndex)];
 }
 
-kronos::PcgFile* EditorBridge::fileOf(const std::string& paneId) {
-    auto it = m_panes.find(paneId);
-    if (it == m_panes.end()) return nullptr;
+kronos::PcgFile* EditorBridge::fileOf(int datasetId) {
+    auto it = m_datasets.find(datasetId);
+    if (it == m_datasets.end()) return nullptr;
     return &it->second.file;
 }
 
-choc::value::Value EditorBridge::finishOpen(const std::string& paneId, Pane pane) {
-    m_panes[paneId] = std::move(pane);
+choc::value::Value EditorBridge::finishOpen(Dataset dataset) {
+    const int datasetId = m_nextDatasetId++;
+    const std::string displayName = dataset.displayName;
+    const int setlistCount = static_cast<int>(dataset.file.setlists().size());
+    m_datasets[datasetId] = std::move(dataset);
 
-    auto& setlists = m_panes[paneId].file.setlists();
     auto result = makeOk();
-    result.setMember("setlistCount", static_cast<int>(setlists.size()));
+    result.setMember("datasetId", datasetId);
+    result.setMember("displayName", displayName);
+    result.setMember("setlistCount", setlistCount);
     return result;
 }
 
 choc::value::Value EditorBridge::openFile(const choc::value::ValueView& args) {
-    const std::string paneId = stringArg(args, 0);
-    const std::string path = stringArg(args, 1);
-    if (paneId.empty() || path.empty()) return makeError("openFile requires a pane id and a file path");
+    const std::string path = stringArg(args, 0);
+    if (path.empty()) return makeError("openFile requires a file path");
 
-    Pane pane;
-    pane.sourcePath = path;
+    Dataset dataset;
+    dataset.displayName = path;
     std::string error;
-    if (!pane.file.load(path, error)) return makeError(error);
+    if (!dataset.file.load(path, error)) return makeError(error);
 
-    return finishOpen(paneId, std::move(pane));
+    return finishOpen(std::move(dataset));
 }
 
 choc::value::Value EditorBridge::openFileBytes(const choc::value::ValueView& args) {
-    const std::string paneId = stringArg(args, 0);
-    const std::string base64Data = stringArg(args, 1);
-    const std::string displayName = stringArg(args, 2);
-    if (paneId.empty() || base64Data.empty()) return makeError("openFileBytes requires a pane id and file data");
+    const std::string base64Data = stringArg(args, 0);
+    const std::string displayName = stringArg(args, 1);
+    if (base64Data.empty()) return makeError("openFileBytes requires file data");
 
     std::vector<uint8_t> bytes;
     if (!decodeBase64(base64Data, bytes)) return makeError("Malformed file data (base64 decode failed)");
 
-    Pane pane;
-    pane.sourcePath = displayName.empty() ? "(dropped file)" : displayName;
+    Dataset dataset;
+    dataset.displayName = displayName.empty() ? "(dropped file)" : displayName;
     std::string error;
-    if (!pane.file.loadFromMemory(std::move(bytes), error)) return makeError(error);
+    if (!dataset.file.loadFromMemory(std::move(bytes), error)) return makeError(error);
 
-    return finishOpen(paneId, std::move(pane));
+    return finishOpen(std::move(dataset));
+}
+
+choc::value::Value EditorBridge::listDatasets(const choc::value::ValueView&) {
+    auto result = choc::value::createEmptyArray();
+    for (const auto& [datasetId, dataset] : m_datasets) {
+        auto v = choc::value::createObject("Dataset");
+        v.setMember("datasetId", datasetId);
+        v.setMember("displayName", dataset.displayName);
+        v.setMember("setlistCount", static_cast<int>(dataset.file.setlists().size()));
+        result.addArrayElement(v);
+    }
+    return result;
+}
+
+choc::value::Value EditorBridge::closeDataset(const choc::value::ValueView& args) {
+    const int datasetId = intArg(args, 0);
+    m_datasets.erase(datasetId);
+    return makeOk();
 }
 
 choc::value::Value EditorBridge::listSetlists(const choc::value::ValueView& args) {
-    const std::string paneId = stringArg(args, 0);
-    auto it = m_panes.find(paneId);
-    if (it == m_panes.end()) return choc::value::createEmptyArray();
+    const int datasetId = intArg(args, 0);
+    auto it = m_datasets.find(datasetId);
+    if (it == m_datasets.end()) return choc::value::createEmptyArray();
 
     auto result = choc::value::createEmptyArray();
     for (const auto& setlist : it->second.file.setlists()) {
@@ -239,10 +259,10 @@ choc::value::Value EditorBridge::listSetlists(const choc::value::ValueView& args
 }
 
 choc::value::Value EditorBridge::getEntries(const choc::value::ValueView& args) {
-    const std::string paneId = stringArg(args, 0);
+    const int datasetId = intArg(args, 0);
     const int setlistIndex = intArg(args, 1);
 
-    const auto* setlist = setlistOf(paneId, setlistIndex);
+    const auto* setlist = setlistOf(datasetId, setlistIndex);
     if (setlist == nullptr) return choc::value::createEmptyArray();
 
     auto result = choc::value::createEmptyArray();
@@ -251,13 +271,13 @@ choc::value::Value EditorBridge::getEntries(const choc::value::ValueView& args) 
 }
 
 choc::value::Value EditorBridge::moveEntry(const choc::value::ValueView& args) {
-    const std::string paneId = stringArg(args, 0);
+    const int datasetId = intArg(args, 0);
     const int setlistIndex = intArg(args, 1);
     const int fromIndex = intArg(args, 2);
     const int toIndex = intArg(args, 3);
 
-    auto* setlist = setlistOf(paneId, setlistIndex);
-    if (setlist == nullptr) return makeError("Pane '" + paneId + "' has no such Set List loaded");
+    auto* setlist = setlistOf(datasetId, setlistIndex);
+    if (setlist == nullptr) return makeError("Dataset " + std::to_string(datasetId) + " has no such Set List loaded");
 
     const int count = static_cast<int>(setlist->songs.size());
     if (fromIndex < 0 || fromIndex >= count || toIndex < 0 || toIndex >= count) {
@@ -272,15 +292,15 @@ choc::value::Value EditorBridge::moveEntry(const choc::value::ValueView& args) {
 }
 
 choc::value::Value EditorBridge::copyEntry(const choc::value::ValueView& args) {
-    const std::string srcPaneId = stringArg(args, 0);
+    const int srcDatasetId = intArg(args, 0);
     const int srcSetlistIndex = intArg(args, 1);
     const int srcIndex = intArg(args, 2);
-    const std::string dstPaneId = stringArg(args, 3);
+    const int dstDatasetId = intArg(args, 3);
     const int dstSetlistIndex = intArg(args, 4);
     const int dstIndex = intArg(args, 5);
 
-    auto* srcSetlist = setlistOf(srcPaneId, srcSetlistIndex);
-    auto* dstSetlist = setlistOf(dstPaneId, dstSetlistIndex);
+    auto* srcSetlist = setlistOf(srcDatasetId, srcSetlistIndex);
+    auto* dstSetlist = setlistOf(dstDatasetId, dstSetlistIndex);
     if (srcSetlist == nullptr || dstSetlist == nullptr) {
         return makeError("Source or destination Set List not loaded");
     }
@@ -299,13 +319,13 @@ choc::value::Value EditorBridge::copyEntry(const choc::value::ValueView& args) {
 }
 
 choc::value::Value EditorBridge::setComment(const choc::value::ValueView& args) {
-    const std::string paneId = stringArg(args, 0);
+    const int datasetId = intArg(args, 0);
     const int setlistIndex = intArg(args, 1);
     const int songIndex = intArg(args, 2);
     const std::string newComment = stringArg(args, 3);
 
-    auto* setlist = setlistOf(paneId, setlistIndex);
-    if (setlist == nullptr) return makeError("Pane '" + paneId + "' has no such Set List loaded");
+    auto* setlist = setlistOf(datasetId, setlistIndex);
+    if (setlist == nullptr) return makeError("Dataset " + std::to_string(datasetId) + " has no such Set List loaded");
 
     if (songIndex < 0 || songIndex >= static_cast<int>(setlist->songs.size())) {
         return makeError("Entry index out of range");
@@ -316,8 +336,8 @@ choc::value::Value EditorBridge::setComment(const choc::value::ValueView& args) 
 }
 
 choc::value::Value EditorBridge::listPrograms(const choc::value::ValueView& args) {
-    const std::string paneId = stringArg(args, 0);
-    auto* file = fileOf(paneId);
+    const int datasetId = intArg(args, 0);
+    auto* file = fileOf(datasetId);
     if (file == nullptr) return choc::value::createEmptyArray();
 
     // Computed once here rather than per-row (programSetlistUsages() per
@@ -342,8 +362,8 @@ choc::value::Value EditorBridge::listPrograms(const choc::value::ValueView& args
 }
 
 choc::value::Value EditorBridge::listCombis(const choc::value::ValueView& args) {
-    const std::string paneId = stringArg(args, 0);
-    auto* file = fileOf(paneId);
+    const int datasetId = intArg(args, 0);
+    auto* file = fileOf(datasetId);
     if (file == nullptr) return choc::value::createEmptyArray();
 
     auto setlistCounts = file->setlistUsageCounts(/*isProgram=*/false);
@@ -365,12 +385,12 @@ choc::value::Value EditorBridge::listCombis(const choc::value::ValueView& args) 
 }
 
 choc::value::Value EditorBridge::getProgramUsage(const choc::value::ValueView& args) {
-    const std::string paneId = stringArg(args, 0);
+    const int datasetId = intArg(args, 0);
     const int bank = intArg(args, 1);
     const int number = intArg(args, 2);
 
-    auto* file = fileOf(paneId);
-    if (file == nullptr) return makeError("Pane '" + paneId + "' has no file loaded");
+    auto* file = fileOf(datasetId);
+    if (file == nullptr) return makeError("Dataset " + std::to_string(datasetId) + " has no file loaded");
 
     auto result = makeOk();
     result.setMember("setlistUsages", setlistUsagesToValue(file->programSetlistUsages(bank, number)));
@@ -385,8 +405,8 @@ choc::value::Value EditorBridge::getProgramUsage(const choc::value::ValueView& a
 }
 
 choc::value::Value EditorBridge::findDuplicatePrograms(const choc::value::ValueView& args) {
-    const std::string paneId = stringArg(args, 0);
-    auto* file = fileOf(paneId);
+    const int datasetId = intArg(args, 0);
+    auto* file = fileOf(datasetId);
     if (file == nullptr) return choc::value::createEmptyArray();
 
     auto result = choc::value::createEmptyArray();

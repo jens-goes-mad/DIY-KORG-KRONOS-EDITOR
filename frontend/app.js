@@ -4,36 +4,45 @@ function setStatus(message) {
 
 const panes = {};
 
-// Dropping within the same pane swaps the two slots' contents (a reorder).
-// Dropping across panes copies the source slot's content onto the
-// destination slot, leaving the destination pane's slot positions
-// untouched -- this is the Norton-Commander-style "copy between lists"
-// interaction. Neither writes anything back to disk yet (see STATE.md).
+// Dropping within the same dataset+Set List swaps the two slots' contents (a
+// reorder). Dropping across a different dataset (or a different Set List in
+// the same dataset) copies the source slot's content onto the destination
+// slot, leaving the destination's slot positions untouched -- the Norton-
+// Commander-style "copy between lists" interaction. Comparing dataset
+// identity (not pane identity) is what makes two panes pointed at the same
+// dataset behave like one shared document: dragging between them still
+// resolves to the one underlying PcgFile. Neither writes anything back to
+// disk yet (see STATE.md).
 async function onDropEntry(source, target) {
-  const sameSetlist = source.pane === target.pane && source.setlistIndex === target.setlistIndex;
+  const sameList = source.datasetId === target.datasetId && source.setlistIndex === target.setlistIndex;
 
-  if (sameSetlist) {
+  let result;
+  if (sameList) {
     if (source.index === target.index) return;
-    const result = await window.moveEntry(target.pane, target.setlistIndex, source.index, target.index);
+    result = await window.moveEntry(target.datasetId, target.setlistIndex, source.index, target.index);
     if (!result.ok) {
       setStatus(`Swap failed: ${result.error}`);
       return;
     }
-    setStatus(`Swapped slots ${kronosNumber(source.index)} and ${kronosNumber(target.index)} in pane ${target.pane}.`);
-    await panes[target.pane].refreshEntries();
+    setStatus(`Swapped slots ${kronosNumber(source.index)} and ${kronosNumber(target.index)}.`);
   } else {
-    const result = await window.copyEntry(
-      source.pane, source.setlistIndex, source.index,
-      target.pane, target.setlistIndex, target.index
+    result = await window.copyEntry(
+      source.datasetId, source.setlistIndex, source.index,
+      target.datasetId, target.setlistIndex, target.index
     );
     if (!result.ok) {
       setStatus(`Copy failed: ${result.error}`);
       return;
     }
-    setStatus(
-      `Copied pane ${source.pane} slot ${kronosNumber(source.index)} -> pane ${target.pane} slot ${kronosNumber(target.index)}.`
-    );
-    await panes[target.pane].refreshEntries();
+    setStatus(`Copied slot ${kronosNumber(source.index)} -> slot ${kronosNumber(target.index)}.`);
+  }
+
+  // Refresh every pane currently showing either affected dataset -- could be
+  // 0, 1, or both panes (e.g. both pointed at the same dataset, exactly the
+  // "shared gig Set List" case this refactor exists for).
+  const affected = new Set([source.datasetId, target.datasetId]);
+  for (const pane of Object.values(panes)) {
+    if (affected.has(pane.getCurrentDatasetId())) await pane.refreshEntries();
   }
 }
 
@@ -42,7 +51,9 @@ document.querySelectorAll(".pane").forEach((root) => {
   panes[paneId] = createPane(paneId, root, { onDropEntry, log: setStatus });
 });
 
-const library = createLibrary(document.getElementById("libraryView"), { log: setStatus, panes });
+refreshDatasets();  // so every selector (both panes + Library) has data as soon as the bridge is ready
+
+const library = createLibrary(document.getElementById("libraryView"), { log: setStatus });
 
 const setlistsView = document.getElementById("setlistsView");
 const libraryView = document.getElementById("libraryView");
@@ -58,18 +69,15 @@ document.querySelectorAll(".top-tab").forEach((tab) => {
     libraryView.hidden = view !== "library";
 
     // Loaded lazily on first visit rather than at startup -- Programs/
-    // Combis lists only make sense once a file is loaded in some pane,
-    // and re-fetching on every tab switch would be wasteful busywork for
-    // data that doesn't change on its own.
-    if (view === "library") {
-      if (!libraryLoadedOnce) {
-        libraryLoadedOnce = true;
-        library.refresh();
-      } else {
-        // Cheap, no bridge calls -- just re-reads which Set List each pane
-        // currently has selected, in case it changed since the last visit.
-        library.updatePaneOptions();
-      }
+    // Combis lists only make sense once a dataset is selected, and
+    // re-fetching on every tab switch would be wasteful busywork for data
+    // that doesn't change on its own. Its own dataset selector stays in
+    // sync independently of tab visibility (see library.js's
+    // onDatasetsChanged subscription), so no extra work is needed here on
+    // subsequent visits.
+    if (view === "library" && !libraryLoadedOnce) {
+      libraryLoadedOnce = true;
+      library.refresh();
     }
   });
 });

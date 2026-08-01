@@ -281,6 +281,58 @@ full rationale):
     infrastructure landed (Blind Spot #14), Combi decoder done -- **Set List slot decoder
     is the next step**, following the same pattern once proven against tests + the real
     UI.
+  - **Datasets: decoupling "loaded file" from "pane" (BUILT 2026-08-01, human-verified
+    in the real app -- "works like a charm")**: the two-pane UI used to conflate two
+    different things a user wants to do -- (1) rearrange entries between Set Lists
+    *within the same backup* to build a new gig Set List, which needs both panes
+    looking at the *same* loaded file so an edit in one is visible in the other, vs.
+    (2) compare/merge two *different* backups side by side, which needs two genuinely
+    independent files. The old model (`EditorBridge`'s `m_panes`, keyed by the
+    frontend's own `paneId` string, one `PcgFile` per pane, 1:1) did neither correctly:
+    dropping the same file onto both panes silently forked it into two unrelated
+    in-memory copies. We agreed the fix: promote **dataset** (one loaded file) to a
+    first-class concept, identified by an id `EditorBridge` mints itself on open
+    (`m_datasets`, keyed by `int datasetId`, never a caller-supplied string), fully
+    decoupled from which pane displays it.
+    - `openFile`/`openFileBytes` no longer take a paneId -- they mint a new dataset
+      every call and return `{datasetId, displayName, setlistCount}`. New
+      `listDatasets()` (every open dataset, for any selector to populate itself) and
+      `closeDataset(datasetId)` (frees one, a harmless no-op if already gone). Every
+      other method (`getEntries`, `moveEntry`, `copyEntry`, `setComment`,
+      `listPrograms`, `listCombis`, `getProgramUsage`, `findDuplicatePrograms`) renamed
+      its paneId arg(s) to datasetId -- `copyEntry` needed **no logic change at all**,
+      since it already had no same-id special case; pointing both panes at one dataset
+      and dragging between them "just works" purely from this rename.
+    - `datasetId` is a plain `int` (not a string) specifically to avoid a real footgun:
+      `std::map<std::string, ...>` sorts "10" before "2" lexicographically, which would
+      silently scramble selector option order past the ninth open dataset. Matches how
+      `setlistIndex`/`songIndex` were already round-tripped as numbers through
+      `<select>` values elsewhere in this codebase.
+    - New `frontend/datasets.js` (no build step, plain script like every other
+      `frontend/*.js` file): `refreshDatasets()`/`onDatasetsChanged(listener)` (a small
+      pub/sub -- a listener fires immediately with whatever's cached, and again on
+      every future refresh from *any* pane or Library, so a file dropped anywhere shows
+      up as a selectable option everywhere) plus a shared `populateDatasetSelect()` DOM
+      helper used identically by `pane.js` and `library.js` so neither duplicates it.
+    - Both Set List panes and the Library view each got their own dataset-select
+      dropdown (Library's replaced its old hardcoded "Pane A"/"Pane B" `<option>`s --
+      the closest existing analog, but never actually generated from a registry).
+      Dropping a file always creates a *new* dataset (never silently overwrites); a
+      pane's own selector lets it switch to *any* already-open dataset, including one
+      another pane opened. `app.js`'s `onDropEntry` now compares dataset identity (not
+      pane identity) to decide reorder-vs-copy, and refreshes every pane whose
+      `getCurrentDatasetId()` matches either side of the move/copy -- this is the
+      concrete mechanism that makes "both panes on the same dataset" behave like one
+      shared document.
+    - `frontend/mock_bridge.js` mirrors the new shape (`datasets = {}` keyed by a local
+      counter) so the no-native-build frontend dev path stays usable.
+    - Verified: full app + `pcg_file_test` build clean, `ctest` passes (this refactor
+      doesn't touch `PcgFile`/decoders at all), all JS syntax-checked, `datasets.js`'s
+      actual pub/sub + selector-population logic passed a headless Node smoke test, and
+      a live click-through in the real app confirmed multi-dataset open, switching, and
+      shared-dataset drag/drop end to end -- "works like a charm."
+    - Two issues surfaced during that click-through, deliberately left unfixed for now
+      (see Blind Spots #17/#18) -- neither blocks using the feature.
   - **Chunk-based data flow for components (designed 2026-08-01, not yet implemented)**:
     two deliberately different tiers, not one architecture for everything --
     - *Bulk/list views* (Programs table, dedup, etc.) stay served by native decoders
@@ -316,17 +368,15 @@ full rationale):
       bytes, (3) update the corresponding `Song` in `setlists_` from that fresh decode --
       so the structured cache is always derived from canonical bytes right after a
       write, never hand-maintained separately.
-    - **Cross-pane refresh gap (existing, sharpens once more write paths land)**: the
-      two-pane UI can have the *same* Set List open in both panes (e.g. to move
-      Programs/Combis between positions easily). `onDropEntry` in `app.js` today only
-      refreshes the *target* pane after `moveEntry`/`copyEntry` -- if the other pane
-      happens to show the same Set List, it silently goes stale. **Decided**: no general
-      pub/sub/event-bus system yet -- that solves a more general problem than the one
-      concrete scenario that actually exists. Instead, extend the one place that already
-      coordinates both panes (`app.js`) to check whether the other pane currently shows
-      the same Set List (a small `getCurrentSetlistIndex()` on the pane object, mirroring
-      the existing `getCurrentSetlistName()`) and refresh it too if so. Revisit a real
-      pub/sub only if a second, genuinely different cross-component sync need shows up.
+    - **Cross-pane refresh gap -- RESOLVED (2026-08-01), superseded by the Datasets
+      refactor below**: the plan on this line used to be a narrow fix (a
+      `getCurrentSetlistIndex()` pane accessor, `app.js` checking "is the other pane on
+      the same Set List"). What actually got built is more general and solves the
+      problem at its root instead: "loaded file" became its own first-class concept
+      (a *dataset*) decoupled from "which pane shows it" -- see the Datasets subsection
+      below. `onDropEntry` now refreshes every pane whose `getCurrentDatasetId()` matches
+      either side of a move/copy, which handles "both panes on the same Set List" as one
+      case of the more general "both panes on the same dataset."
   - **Streaming/mmap for raw bytes -- considered, not applicable to the current data
     path**: retaining the whole file in `data_` isn't a preference for "native heap over
     streaming" -- it's a consequence of how bytes actually arrive. The app's only wired
@@ -435,9 +485,34 @@ App/UI:
       percentage bar needs the encode/transfer to happen in chunks with
       progress callbacks rather than as one monolithic step, which it
       isn't today.
-  16. The new Library view hasn't been clicked through by the project
-      owner yet in the real app -- built and smoke-tested at the C++
-      layer, syntax-checked at the JS layer, same as most UI work in this
-      project's history, but not yet human-verified end to end.
+  16. **RESOLVED (2026-08-01)**: the Library view has now been clicked
+      through end to end in the real app (see the Datasets entry in
+      "ARCHITECTURE" above) -- confirmed working.
+  17. Drag-and-drop file loading: a pane sometimes stays visually marked as
+      a drop target (the `.drag-over` highlight) even after a dataset has
+      already loaded successfully -- noticed during the Datasets
+      click-through above. Not yet root-caused with certainty, but the
+      likely mechanism: `dragleave`'s handler only clears the highlight
+      when `ev.target === root` (`pane.js`), and dragenter/dragleave fire
+      per-element as the pointer crosses into/out of *child* elements
+      (the table, the new dataset-select, etc.) -- if the pointer's last
+      `dragleave` before drop happens to target a child rather than
+      `root` itself, the class never clears. The standard fix is an
+      enter/leave depth counter instead of the `ev.target` check; not
+      applied yet since it needs to be tried against the real intermittent
+      repro before calling it fixed, per this project's "verify by
+      actually running it" norm -- flagged, not yet fixed.
+  18. Library's Duplicates tab shows "n/a" for a duplicate Program's Combi
+      reference count -- noticed during the same click-through. Reading
+      `EditorBridge::findDuplicatePrograms()` shows no logic difference
+      from the Programs tab's (also gated on
+      `isConfirmedTimbreProgramBank(program.bank)`, i.e. INT-A..D only, see
+      docs/README.md's Combi Timbre references section) -- so this may
+      simply be the same, already-documented caveat resurfacing because
+      real duplicate Programs (often "Init Program"-style placeholders)
+      tend to sit in banks outside INT-A..D, not a new bug. Not confirmed
+      either way against a concrete case yet -- if a duplicate group ever
+      shows "n/a" for a Program that IS in INT-A..D, that would indicate a
+      real, distinct bug worth re-investigating.
 
 === END STATE BLOCK ===

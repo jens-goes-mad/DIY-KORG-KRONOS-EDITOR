@@ -1,15 +1,14 @@
 // Read-only Program/Combi library browser: three sub-tabs (Programs,
-// Combis, Duplicates) over whichever pane's loaded file is selected.
-// Unlike pane.js's Set List view, nothing here is drag-and-drop-able or
-// editable -- this is a browser/reporting tool. See STATE.md's "Program/
-// Combi Library Editor" plan for the phased roadmap this is Phase 1 of.
-function createLibrary(root, { log, panes }) {
+// Combis, Duplicates) over whichever open dataset is selected -- its own
+// selector, independent of what either Set Lists pane is currently showing
+// (see docs/content/components/index.md's dataset section). Unlike
+// pane.js's Set List view, nothing here is drag-and-drop-able or editable --
+// this is a browser/reporting tool. See STATE.md's "Program/Combi Library
+// Editor" plan for the phased roadmap this is Phase 1 of.
+function createLibrary(root, { log }) {
   root.innerHTML = `
     <div class="library-header">
-      <select class="library-pane-select">
-        <option value="A">Pane A</option>
-        <option value="B">Pane B</option>
-      </select>
+      <select class="dataset-select"></select>
       <nav class="lib-tabs">
         <button class="lib-tab active" type="button" data-tab="programs">Programs</button>
         <button class="lib-tab" type="button" data-tab="combis">Combis</button>
@@ -24,7 +23,7 @@ function createLibrary(root, { log, panes }) {
     </div>
   `;
 
-  const paneSelect = root.querySelector(".library-pane-select");
+  const datasetSelect = root.querySelector(".dataset-select");
   const filterInput = root.querySelector(".library-filter");
   const tabs = root.querySelectorAll(".lib-tab");
   const panels = {
@@ -40,21 +39,10 @@ function createLibrary(root, { log, panes }) {
   let expandedProgramKey = null;  // `${bank}-${number}` of the one expanded usage row, if any
   let expandedCombiKey = null;    // `${bank}-${number}` of the one expanded Timbre row, if any
 
-  function currentPane() {
-    return paneSelect.value;
-  }
-
-  // Plain "Pane A"/"Pane B" doesn't say what's actually open there -- show
-  // the Set List currently selected in that pane's own Set Lists view
-  // instead, when there is one. Cheap (no bridge calls, just reads
-  // pane.js's own in-memory state), so this can be called on every tab
-  // activation, not just when Programs/Combis/Duplicates are (re)fetched.
-  function updatePaneOptions() {
-    root.querySelectorAll(".library-pane-select option").forEach((opt) => {
-      const pane = panes && panes[opt.value];
-      const setlistName = pane && pane.getCurrentSetlistName && pane.getCurrentSetlistName();
-      opt.textContent = setlistName || "";
-    });
+  // null when nothing's selected (the placeholder option) -- datasetId 0
+  // would collide with Number("") coercing to 0, so this is explicit instead.
+  function currentDataset() {
+    return datasetSelect.value ? Number(datasetSelect.value) : null;
   }
 
   function filterByName(rows, needle) {
@@ -115,7 +103,7 @@ function createLibrary(root, { log, panes }) {
     tr.appendChild(td);
 
     (async () => {
-      const usage = await window.getProgramUsage(currentPane(), program.bank, program.number);
+      const usage = await window.getProgramUsage(currentDataset(), program.bank, program.number);
       box.innerHTML = "";
       if (!usage.ok) {
         box.textContent = `Error: ${usage.error}`;
@@ -372,22 +360,43 @@ function createLibrary(root, { log, panes }) {
     });
   });
 
-  paneSelect.addEventListener("change", () => {
+  datasetSelect.addEventListener("change", () => {
     expandedProgramKey = null;
+    expandedCombiKey = null;
     load();
   });
 
   filterInput.addEventListener("input", () => renderCurrentTab());
 
+  // Fires immediately with whatever's already cached, and again whenever any
+  // pane opens/closes a dataset -- so a file dropped onto either pane shows
+  // up as a selectable option here too, without Library needing to poll or
+  // reach into pane.js's own state.
+  onDatasetsChanged((datasets) => {
+    const previousValue = datasetSelect.value;
+    populateDatasetSelect(datasetSelect, datasets, previousValue);
+    // Reload if the resolved selection actually changed -- e.g. the dataset
+    // this view was showing got closed elsewhere and populateDatasetSelect()
+    // fell back to the placeholder. A dataset merely being ADDED elsewhere
+    // doesn't change this view's own selection, so no reload in that case.
+    if (datasetSelect.value !== previousValue) load();
+  });
+
   async function load() {
-    updatePaneOptions();
-    const paneId = currentPane();
-    programs = await window.listPrograms(paneId);
-    combis = await window.listCombis(paneId);
-    duplicateGroups = await window.findDuplicatePrograms(paneId);
-    log(`[Library] Loaded pane ${paneId}: ${programs.length} Programs, ${combis.length} Combis, ${duplicateGroups.length} duplicate groups.`);
+    const datasetId = currentDataset();
+    if (datasetId == null) {
+      programs = [];
+      combis = [];
+      duplicateGroups = [];
+      renderCurrentTab();
+      return;
+    }
+    programs = await window.listPrograms(datasetId);
+    combis = await window.listCombis(datasetId);
+    duplicateGroups = await window.findDuplicatePrograms(datasetId);
+    log(`[Library] Loaded dataset ${datasetId}: ${programs.length} Programs, ${combis.length} Combis, ${duplicateGroups.length} duplicate groups.`);
     renderCurrentTab();
   }
 
-  return { refresh: load, updatePaneOptions };
+  return { refresh: load };
 }

@@ -7,8 +7,8 @@
 // gives the real app actual access to disk).
 //
 // When running inside the native app, choc's addInitScript() injects the
-// real window.openFileBytes/listSetlists/getEntries/moveEntry/copyEntry
-// *before* this script runs, so this file becomes a no-op there.
+// real window.openFileBytes/listDatasets/listSetlists/getEntries/moveEntry/
+// copyEntry *before* this script runs, so this file becomes a no-op there.
 (function () {
   if (window.openFileBytes) return;
 
@@ -25,7 +25,8 @@
     ["Pink Floyd"],
   ];
 
-  const panes = {};  // paneId -> { setlists: [{index, name}], songs: {setlistIndex: [{index, label}]} }
+  const datasets = {};  // datasetId -> { displayName, setlists: [{index, name}], songs: {setlistIndex: [{index, label}]}, programs, combis }
+  let nextDatasetId = 1;
 
   const ok = (extra) => Promise.resolve(Object.assign({ ok: true }, extra));
   const fail = (error) => Promise.resolve({ ok: false, error });
@@ -121,25 +122,39 @@
       const titles = mockSongsByList[i - 1] || [];
       songs[s.index] = Array.from({ length: 16 }, (_, k) => makeFakeSong(k, titles[k] || ""));
     });
-    return { setlists, songs, programs: makeFakePrograms(), combis: makeFakeCombis() };
+    return { displayName: fileName, setlists, songs, programs: makeFakePrograms(), combis: makeFakeCombis() };
   }
 
-  window.openFileBytes = (paneId, _base64Data, displayName) => {
-    if (!paneId) return fail("openFileBytes requires a pane id and file data");
-    panes[paneId] = makeFakeFile(displayName || "dropped-file");
-    return ok({ setlistCount: panes[paneId].setlists.length });
+  window.openFileBytes = (_base64Data, displayName) => {
+    const datasetId = nextDatasetId++;
+    datasets[datasetId] = makeFakeFile(displayName || "dropped-file");
+    return ok({ datasetId, displayName: datasets[datasetId].displayName, setlistCount: datasets[datasetId].setlists.length });
   };
 
-  window.listSetlists = (paneId) => Promise.resolve(panes[paneId] ? panes[paneId].setlists : []);
+  window.listDatasets = () =>
+    Promise.resolve(
+      Object.entries(datasets).map(([datasetId, d]) => ({
+        datasetId: Number(datasetId),
+        displayName: d.displayName,
+        setlistCount: d.setlists.length,
+      }))
+    );
 
-  window.getEntries = (paneId, setlistIndex) => {
-    const pane = panes[paneId];
-    return Promise.resolve(pane && pane.songs[setlistIndex] ? pane.songs[setlistIndex] : []);
+  window.closeDataset = (datasetId) => {
+    delete datasets[datasetId];
+    return ok();
   };
 
-  window.moveEntry = (paneId, setlistIndex, fromIndex, toIndex) => {
-    const list = panes[paneId] && panes[paneId].songs[setlistIndex];
-    if (!list) return fail(`Pane '${paneId}' has no such Set List loaded`);
+  window.listSetlists = (datasetId) => Promise.resolve(datasets[datasetId] ? datasets[datasetId].setlists : []);
+
+  window.getEntries = (datasetId, setlistIndex) => {
+    const dataset = datasets[datasetId];
+    return Promise.resolve(dataset && dataset.songs[setlistIndex] ? dataset.songs[setlistIndex] : []);
+  };
+
+  window.moveEntry = (datasetId, setlistIndex, fromIndex, toIndex) => {
+    const list = datasets[datasetId] && datasets[datasetId].songs[setlistIndex];
+    if (!list) return fail(`Dataset ${datasetId} has no such Set List loaded`);
     const fromIdx = list.findIndex((e) => e.index === fromIndex);
     const toIdx = list.findIndex((e) => e.index === toIndex);
     if (fromIdx < 0 || toIdx < 0) return fail("Entry index out of range");
@@ -151,9 +166,9 @@
     return ok();
   };
 
-  window.copyEntry = (srcPaneId, srcSetlistIndex, srcIndex, dstPaneId, dstSetlistIndex, dstIndex) => {
-    const srcList = panes[srcPaneId] && panes[srcPaneId].songs[srcSetlistIndex];
-    const dstList = panes[dstPaneId] && panes[dstPaneId].songs[dstSetlistIndex];
+  window.copyEntry = (srcDatasetId, srcSetlistIndex, srcIndex, dstDatasetId, dstSetlistIndex, dstIndex) => {
+    const srcList = datasets[srcDatasetId] && datasets[srcDatasetId].songs[srcSetlistIndex];
+    const dstList = datasets[dstDatasetId] && datasets[dstDatasetId].songs[dstSetlistIndex];
     if (!srcList || !dstList) return fail("Source or destination Set List not loaded");
     const srcIdx = srcList.findIndex((e) => e.index === srcIndex);
     const dstIdx = dstList.findIndex((e) => e.index === dstIndex);
@@ -163,26 +178,26 @@
     return ok();
   };
 
-  window.setComment = (paneId, setlistIndex, songIndex, newComment) => {
-    const list = panes[paneId] && panes[paneId].songs[setlistIndex];
-    if (!list) return fail(`Pane '${paneId}' has no such Set List loaded`);
+  window.setComment = (datasetId, setlistIndex, songIndex, newComment) => {
+    const list = datasets[datasetId] && datasets[datasetId].songs[setlistIndex];
+    if (!list) return fail(`Dataset ${datasetId} has no such Set List loaded`);
     const entry = list.find((e) => e.index === songIndex);
     if (!entry) return fail("Entry index out of range");
     entry.comment = newComment;
     return ok();
   };
 
-  window.listPrograms = (paneId) => Promise.resolve(panes[paneId] ? panes[paneId].programs : []);
+  window.listPrograms = (datasetId) => Promise.resolve(datasets[datasetId] ? datasets[datasetId].programs : []);
 
-  window.listCombis = (paneId) => Promise.resolve(panes[paneId] ? panes[paneId].combis : []);
+  window.listCombis = (datasetId) => Promise.resolve(datasets[datasetId] ? datasets[datasetId].combis : []);
 
-  window.getProgramUsage = (paneId, bank, number) => {
-    const pane = panes[paneId];
-    if (!pane) return fail(`Pane '${paneId}' has no file loaded`);
+  window.getProgramUsage = (datasetId, bank, number) => {
+    const dataset = datasets[datasetId];
+    if (!dataset) return fail(`Dataset ${datasetId} has no file loaded`);
 
     const setlistUsages = [];
-    for (const setlist of pane.setlists) {
-      const list = pane.songs[setlist.index] || [];
+    for (const setlist of dataset.setlists) {
+      const list = dataset.songs[setlist.index] || [];
       for (const song of list) {
         if (song.isProgram && song.bank === bank && song.number === number) {
           setlistUsages.push({ setlistIndex: setlist.index, setlistName: setlist.name, songIndex: song.index });
@@ -191,7 +206,7 @@
     }
     const combiUsagesAvailable = bank >= 0 && bank <= 3;
     const combiUsages = combiUsagesAvailable
-      ? pane.combis
+      ? dataset.combis
           .filter((c) => c.timbres.some((t) => !t.isDefault && t.rawBankCode === bank && t.number === number))
           .map((c) => ({
             bank: c.bank,
@@ -205,12 +220,12 @@
     return ok({ setlistUsages, combiUsagesAvailable, combiUsages });
   };
 
-  window.findDuplicatePrograms = (paneId) => {
-    const pane = panes[paneId];
-    if (!pane) return Promise.resolve([]);
+  window.findDuplicatePrograms = (datasetId) => {
+    const dataset = datasets[datasetId];
+    if (!dataset) return Promise.resolve([]);
 
     const byName = {};
-    for (const p of pane.programs) {
+    for (const p of dataset.programs) {
       (byName[p.name] = byName[p.name] || []).push(p);
     }
     const groups = Object.values(byName)

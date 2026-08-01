@@ -141,6 +141,36 @@ names, masked Font size/Transpose
 decoding, Program bank cross-referencing, duplicate detection, and `decodeProgram()`'s
 on-demand re-decode) without ever touching a real backup on disk.
 
+## Datasets: decoupling "loaded file" from "pane"
+
+The dual-pane UI used to conflate two different things a user wants to do:
+rearranging entries between Set Lists *within one backup* (which needs both
+panes looking at the *same* loaded file), and comparing/merging *two
+different* backups side by side (which needs two genuinely independent
+files). The old model -- one `PcgFile` per pane, keyed by the frontend's own
+`"A"`/`"B"` pane id -- did neither correctly: dropping the same file onto
+both panes silently forked it into two unrelated in-memory copies, with no
+way to point two panes at one shared file.
+
+The fix: promote **dataset** (one loaded file) to a first-class concept,
+identified by an id `EditorBridge` mints itself on open -- never a
+caller-supplied pane id -- and fully decoupled from which pane displays it.
+`openFile`/`openFileBytes` mint a new dataset every call and return
+`{datasetId, displayName, setlistCount}`; a new `listDatasets()` lets any
+selector populate itself from every currently open dataset, regardless of
+which pane originally opened it. Every pane -- both Set Lists panes and the
+Library view -- gets its own dropdown to pick which open dataset to display.
+Dropping a file always creates a *new* dataset; pointing two panes at the
+*same* one gives shared-view editing for free, since they're then both
+reading/writing the one underlying `PcgFile` -- dragging a row between them
+resolves to an ordinary same-dataset copy, no special-casing needed.
+
+A small shared frontend module, `datasets.js`, holds the last known list of
+open datasets and a tiny pub/sub (`onDatasetsChanged`) so opening a file from
+either pane immediately updates every selector, including Library's -- the
+same "small, focused, independently testable" shape as the codec modules
+above, just for UI registry state instead of byte decoding.
+
 ## Case study: SetlistComment
 
 The first component built this way is

@@ -96,6 +96,10 @@ int main() {
         view.bind("openFile", [&bridge](const choc::value::ValueView& args) { return bridge.openFile(args); });
         view.bind("openFileBytes",
                    [&bridge](const choc::value::ValueView& args) { return bridge.openFileBytes(args); });
+        view.bind("listDatasets",
+                   [&bridge](const choc::value::ValueView& args) { return bridge.listDatasets(args); });
+        view.bind("closeDataset",
+                   [&bridge](const choc::value::ValueView& args) { return bridge.closeDataset(args); });
         view.bind("listSetlists",
                    [&bridge](const choc::value::ValueView& args) { return bridge.listSetlists(args); });
         view.bind("getEntries", [&bridge](const choc::value::ValueView& args) { return bridge.getEntries(args); });

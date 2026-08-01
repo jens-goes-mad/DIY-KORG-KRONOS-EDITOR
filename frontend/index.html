@@ -15,7 +15,7 @@
   </header>
 
   <main class="view" id="setlistsView">
-    <div class="view-hint">Drag a .PCG file onto a pane to open it -- drag a row within a pane to swap, drag across panes to copy</div>
+    <div class="view-hint">Drag a .PCG file onto a pane to open it as a new dataset, or pick an already-open one from the selector above a pane -- both panes on the same dataset share edits; drag a row within a pane to swap, drag across panes to copy</div>
     <div class="panes">
       <section class="pane" data-pane="A"></section>
       <section class="pane" data-pane="B"></section>
@@ -26,6 +26,7 @@
 
   <footer class="statusbar" id="statusBar">Ready.</footer>
 
+  <script src="datasets.js"></script>
   <script src="pane.js"></script>
   <script src="library.js"></script>
   <script src="mock_bridge.js"></script>

@@ -10,14 +10,37 @@ backup files, built on [CHOC](https://github.com/Tracktion/choc)
 First iteration scope (see `STATE.md` for current status):
 
 1. Open a `.PCG` file (drag-and-drop) and extract all 128 Set Lists into
-   memory.
+   memory as a **dataset**.
 2. Pick one Set List per pane and show its 128 song slots, with filter/search.
-3. A Norton-Commander-style dual pane (open two files side by side) to copy
-   songs between Set Lists, and swap/reorder songs within one, both via drag
-   and drop.
+3. A Norton-Commander-style dual pane to copy songs between Set Lists, and
+   swap/reorder songs within one, both via drag and drop.
 
 Nothing is written back to disk yet -- this is a read/browse/rearrange-in-
 memory tool for now.
+
+## Datasets: one loaded file, decoupled from which pane shows it
+
+Each dropped `.PCG` file becomes its own **dataset**, identified by an id the
+native bridge mints on open (not by which pane received the drop). Every
+pane -- both Set Lists panes, and the Library view -- has its own selector to
+pick *which already-open dataset* to display, independent of the others.
+This covers two different workflows with one mechanism instead of two UI
+modes:
+
+- **Rearranging one backup** (e.g. building a new gig Set List from songs
+  spread across other Set Lists in the same file): point both panes at the
+  *same* dataset. Since they're then both reading/writing the one shared
+  in-memory file, an edit made via either pane is immediately visible in the
+  other.
+- **Merging/comparing two different backups**: drop a second file -- it
+  becomes a second, fully independent dataset -- and point each pane at a
+  different one. Dragging a row between them still works exactly the same
+  way, just copying across datasets instead of within one.
+
+Dropping a file always creates a *new* dataset; it never silently overwrites
+whatever a pane was already showing. See `docs/content/components`'s
+Datasets section and `STATE.md`'s "ARCHITECTURE" block for the full
+before/after and why this replaced the old one-file-per-pane model.
 
 ## Library view (Programs / Combis / Duplicates)
 
@@ -46,7 +69,8 @@ based on.
 The UI only exposes one mechanism: **drag a file from Finder/Explorer onto a
 pane.** The browser's File API hands the dropped file's bytes to JS directly
 (`File.arrayBuffer()`), no filesystem path involved at all; `pane.js`
-base64-encodes them and calls `openFileBytes` -> `PcgFile::loadFromMemory(bytes)`.
+base64-encodes them and calls `openFileBytes` -> `PcgFile::loadFromMemory(bytes)`,
+which mints a new dataset id and returns it -- see "Datasets" above.
 
 `EditorBridge`/`PcgFile` also still support opening `openFile(path)` ->
 `PcgFile::load(path)`, a plain `std::ifstream` read -- but the pane's typed-
@@ -136,6 +160,7 @@ src/
   main.cpp                   -- CHOC window/webview wiring
 frontend/
   index.html, app.js, style.css   -- top-level tab bar (Set Lists / Library) + shared wiring
+  datasets.js                  -- shared dataset registry (open files, decoupled from pane) -- see Datasets above
   pane.js                      -- Set Lists dual-pane UI
   library.js                   -- Library view (Programs/Combis/Duplicates)
   mock_bridge.js              -- fake in-memory backend for plain-browser dev (no native build needed)

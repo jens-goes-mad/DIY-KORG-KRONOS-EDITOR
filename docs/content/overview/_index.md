@@ -77,12 +77,17 @@ corresponds to which on-screen label beyond the ones directly confirmed above.
 
 ## The editor
 
-- A Norton-Commander-style dual pane: open two backup files side by side, browse any
-  Set List's 128 slots with filter/search, and drag entries to swap them within a list
-  or copy them across panes -- plus an editable Comment field per slot.
+- A Norton-Commander-style dual pane: each pane picks which already-open **dataset**
+  (loaded file) to show from its own selector, browse any Set List's 128 slots with
+  filter/search, and drag entries to swap them within a list or copy them across panes
+  -- plus an editable Comment field per slot. Point both panes at the same dataset to
+  rearrange one backup (edits show up in both immediately); point them at different
+  datasets to compare/merge two backups side by side -- see
+  [App architecture & components](/components) for how this is built.
 - A Library view: browse every Program and Combi on the unit directly (not just through
   Set List slots), see which Set List slots reference a given Program, and find Programs
-  that are byte-for-byte duplicates of each other (down to the raw record hash).
+  that are byte-for-byte duplicates of each other (down to the raw record hash). Has its
+  own dataset selector too, independent of either Set Lists pane.
 - Built on [CHOC](https://github.com/Tracktion/choc) (HTML/JS/CSS UI over a thin native
   C++ bridge) -- the same stack as the sibling `DIY-MIDI-METRONOME/EDITOR` project,
   reused rather than reinvented.
