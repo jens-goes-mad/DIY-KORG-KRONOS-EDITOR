@@ -1,0 +1,99 @@
+Source: KRONOS Parameter Guide (official Korg documentation), page 17-18
+  URL: https://cdn.korg.com/us/support/download/files/74a6c3cb0399c4d733d5730cd4c4e7f8.pdf
+       (filename: KRONOS_Param_Guide_E11.pdf)
+  Fetched: 2026-08-02
+  Section: "Program P0: Play" > "0-1a: Program Select" > "Program Bank Contents"
+
+Excerpt (text-extracted from the PDF, page 17):
+
+---
+
+Bank [INT-A...F, GM, g(1...9), g(d), USER-A...G and AA...GG]
+
+This is the Bank of the current Program. You can change the Bank either via
+the on-screen menu, or by using the front-panel Bank buttons.
+
+To select banks INT-A...G or USER-A...G, simply press and release the
+corresponding BANK button.
+
+To select banks USER-AA...GG, press and hold a pair of I and U BANK buttons
+together. For example, to select bank USER-CC, press and hold the I-C
+button, and then press the U-C button.
+
+Banks GM, g(1...9), and g(d): General MIDI
+
+The GM bank contains a full set of General MIDI 2 Programs, as well as
+variation sub-banks g(1)-g(9) (GM2 variation programs), and bank g(d)
+(drums). [...] You can edit GM Programs, but you must then save them to a
+different Bank; the GM Programs themselves cannot be over-written.
+
+Program Bank Contents
+
+As shipped from the factory, the contents of the Program Banks are as
+follows:
+
+* Bank contents may differ depending on the KRONOS model.
+
+Bank Type [HD-1, EXi]
+
+This shows whether the current Bank contains HD-1 Programs or EXi Programs.
+The two Program types can't be mixed in a single bank.
+  HD-1: The Bank contains HD-1 Programs.
+  EXi: The Bank contains EXi Programs.
+
+Changing the Program Bank Types
+
+Banks can contain either HD-1 Programs or EXi Programs, but not both. This
+assignment can be set separately for each bank. To do so:
+  1. Press the front-panel GLOBAL button to enter Global mode.
+  2. Select the Basic tab.
+  3. Press the page menu button, and select Set Program Bank Type.
+  4. Change the Type for the desired banks. Leave all of the other banks
+     set to "No Change." Setting a bank's type will erase all of the
+     Program data in the bank - so make sure that you're not erasing any
+     Programs you want to keep!
+  5. Press the OK button. An "are you sure?" dialog appears.
+  6. If you're certain of the change, press OK again. The selected banks
+     will now be initialized to use the new Program types.
+
+--- Factory bank contents table (verbatim) ---
+
+Bank            | Contents                          | Bank Type
+INT-A           | Featured EXi sounds                | Bank type can be set
+INT-B           | Featured HD-1 sounds                to either HD-1 or EXi
+INT-C           | SGX-2, EP-1, and "best of" other EXi
+INT-D           | AL-1
+INT-E           | AL-1 and CX-3
+INT-F           | STR-1
+GM (I-G)        | GM2 main Programs
+GMg(1)...g(9)   | GM2 variation Programs
+g(d)            | GM2 drum Programs
+USER-A          | MS-20EX & PolysixEX                | Bank type can be set
+USER-B          | MOD-7                                to either HD-1 or EXi
+USER-C...F      | HD-1
+USER-G          | Initialized HD-1 Programs
+USER-AA...BB    | HD-1
+USER-CC...EE    | Initialized EXi Programs *
+USER-FF...GG    | Initialized HD-1 Programs *
+
+---
+
+Notes for this project's own use of this table:
+- This is the FACTORY DEFAULT layout, and the same manual explicitly says
+  bank type (HD-1/EXi) -- and by extension, real-world usage of a bank --
+  is user-reconfigurable per bank via Global mode. A community document
+  already saved in this folder (Synthify's "no free banks" process doc)
+  independently confirms real long-used Kronos units routinely drift from
+  this factory layout. Treat this table as a strong DEFAULT/fallback label
+  set, never as guaranteed-true for an arbitrary real file.
+- Confirms this project's existing (previously unconfirmed, given directly
+  by the project owner rather than independently verified) PROGRAM_BANK_NAMES
+  list in frontend/pane.js is at least directionally correct in structure
+  (INT-A..G, USER-A..G, USER-AA..GG), though the exact enumeration here
+  (e.g. where GM/g(1..9)/g(d) fit as distinct banks vs. sub-views) hasn't
+  been reconciled field-by-field against that array yet -- a separate task,
+  not done as part of this bank-type classification work.
+- The AL-1/CX-3/STR-1/SGX-2/EP-1/MS-20EX/PolysixEX/MOD-7 engine names give
+  a real, specific answer to "which engine" beyond this project's current
+  Hd1/Exi binary classifyProgramBankType() -- not implemented yet (only the
+  HD-1/EXi split is built), kept here as ground truth for that follow-up.

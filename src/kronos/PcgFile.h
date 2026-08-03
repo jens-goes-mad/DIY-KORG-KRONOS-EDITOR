@@ -54,6 +54,24 @@ struct Setlist {
     std::vector<Song> songs;       // always 128 entries (a real Kronos Set List has exactly 128 slots)
 };
 
+// A Program bank's underlying storage/engine family. NOT fixed per bank
+// index -- Kronos OS 3.0+ lets a user reassign INT Program Banks between
+// HD-1 and EXi, so this is read per-file from data already parsed at load
+// time (the bank's own chunk tag, cross-checked against its declared
+// per-record byte stride), never a hardcoded per-bank-index table -- see
+// src/kronos/ProgramDecoder.h's classifyProgramBankType() and
+// docs/external/README.md for the sources this came from. Practically:
+// a Program can only be loaded into a bank of the matching type, and a
+// Combi's Timbre references only mean anything if the physical bank/number
+// they point at actually holds a Program (of the right type) -- relevant
+// to any future cross-dataset "move/merge patches" feature, not to
+// anything built yet.
+//
+// NOT YET independently verified against a real Kronos backup by this
+// project's own "no guessing" standard -- see docs/external/README.md's
+// caveat before trusting this for anything beyond its own unit test.
+enum class ProgramBankType { Hd1, Exi };
+
 // One Program's table row: `bank`/`name`/`number` are raw Kronos fields,
 // read directly off PRG1's MBK1/PBK1 banks (see docs/README.md §5.2) by
 // src/kronos/ProgramDecoder.h. `contentHash` is deliberately NOT a Kronos
@@ -62,11 +80,14 @@ struct Setlist {
 // detection), computed once and cached here rather than recomputed on
 // every use. See docs/content/components/index.md for why this
 // raw-field/derived-data split is kept explicit rather than blurred.
+// `bankType` is likewise derived bookkeeping, not a per-record Kronos field
+// -- see ProgramBankType's own doc comment above.
 struct ProgramInfo {
     int bank = 0;
     int number = 0;
     std::string name;
     uint64_t contentHash = 0;
+    ProgramBankType bankType = ProgramBankType::Hd1;
 };
 
 // A Timbre's on/off + source-engine status, read from the byte immediately
@@ -251,6 +272,7 @@ private:
         size_t recordsStart = 0;
         uint32_t numRecords = 0;
         uint32_t bytesPerRecord = 0;
+        ProgramBankType bankType = ProgramBankType::Hd1;  // classified once at load, see ProgramBankType's doc comment
     };
 
     // Same as ProgramBankLocation, for one CBK1 sub-bank -- retained so

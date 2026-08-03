@@ -1,21 +1,22 @@
-// Read-only Program/Combi library browser: three sub-tabs (Programs,
-// Combis, Duplicates) over whichever open dataset is selected -- its own
-// selector, independent of what either Set Lists pane is currently showing
-// (see docs/content/components/index.md's dataset section). Unlike
-// pane.js's Set List view, nothing here is drag-and-drop-able or editable --
-// this is a browser/reporting tool. See STATE.md's "Program/Combi Library
-// Editor" plan for the phased roadmap this is Phase 1 of.
-function createLibrary(root, { log }) {
+// Read-only Program/Combi library panels: Programs, Combis, and Duplicates,
+// embedded inside a pane shell (see pane.js's createPane()) as three of its
+// top-level categories (Setlist/Programs/Combis/Duplicates all live as peer
+// buttons in the shell's own nav -- this module doesn't render its own tab
+// bar, just whichever single panel the shell tells it to show via
+// showPanel()). Operates on whichever dataset the shell tells it via
+// getDatasetId(), not its own selector (the shell owns ONE dataset-select
+// shared by every category). Nothing here is drag-and-drop-able or
+// editable -- this is a browser/reporting tool, and Programs/Combis rows
+// are deliberately not draggable at all (moving/repointing Program content
+// across physical bank locations is the hard, explicitly-deferred problem
+// from the explore/sqlite-patch-datastore branch -- see STATE.md's
+// "EXPLORATION" section). Duplicates is (and stays) scoped to a single
+// selected dataset -- no cross-dataset dedup here, that's a real future
+// idea, not this pass. See STATE.md's "Program/Combi Library Editor" plan
+// for the phased roadmap this is Phase 1 of.
+function createLibraryPanels(root, { log, getDatasetId }) {
   root.innerHTML = `
-    <div class="library-header">
-      <select class="dataset-select"></select>
-      <nav class="lib-tabs">
-        <button class="lib-tab active" type="button" data-tab="programs">Programs</button>
-        <button class="lib-tab" type="button" data-tab="combis">Combis</button>
-        <button class="lib-tab" type="button" data-tab="duplicates">Duplicates</button>
-      </nav>
-      <input class="filter-input library-filter" type="text" placeholder="Filter / search..." />
-    </div>
+    <input class="filter-input library-filter" type="text" placeholder="Filter / search..." />
     <div class="library-body">
       <div class="lib-panel" data-panel="programs"></div>
       <div class="lib-panel" data-panel="combis" hidden></div>
@@ -23,9 +24,7 @@ function createLibrary(root, { log }) {
     </div>
   `;
 
-  const datasetSelect = root.querySelector(".dataset-select");
   const filterInput = root.querySelector(".library-filter");
-  const tabs = root.querySelectorAll(".lib-tab");
   const panels = {
     programs: root.querySelector('[data-panel="programs"]'),
     combis: root.querySelector('[data-panel="combis"]'),
@@ -38,12 +37,6 @@ function createLibrary(root, { log }) {
   let duplicateGroups = [];
   let expandedProgramKey = null;  // `${bank}-${number}` of the one expanded usage row, if any
   let expandedCombiKey = null;    // `${bank}-${number}` of the one expanded Timbre row, if any
-
-  // null when nothing's selected (the placeholder option) -- datasetId 0
-  // would collide with Number("") coercing to 0, so this is explicit instead.
-  function currentDataset() {
-    return datasetSelect.value ? Number(datasetSelect.value) : null;
-  }
 
   function filterByName(rows, needle) {
     if (!needle) return rows;
@@ -103,7 +96,7 @@ function createLibrary(root, { log }) {
     tr.appendChild(td);
 
     (async () => {
-      const usage = await window.getProgramUsage(currentDataset(), program.bank, program.number);
+      const usage = await window.getProgramUsage(getDatasetId(), program.bank, program.number);
       box.innerHTML = "";
       if (!usage.ok) {
         box.textContent = `Error: ${usage.error}`;
@@ -178,7 +171,8 @@ function createLibrary(root, { log }) {
     const table = document.createElement("table");
     table.className = "entries-table library-table";
     table.innerHTML =
-      "<thead><tr><th class=\"col-bank\">Bank</th><th>Name</th>" +
+      "<thead><tr><th class=\"col-bank\">Bank</th><th>Name</th><th class=\"col-narrow\" " +
+      "title=\"HD-1 or EXi -- not yet cross-checked against a real backup, see docs/external/README.md\">Type</th>" +
       "<th class=\"col-refs\">Setlist refs</th><th class=\"col-refs\">Combi refs</th></tr></thead><tbody></tbody>";
     const tbody = table.querySelector("tbody");
 
@@ -186,9 +180,13 @@ function createLibrary(root, { log }) {
       const tr = document.createElement("tr");
       const nameTd = document.createElement("td");
       nameTd.textContent = p.name || "(empty)";
+      const typeTd = document.createElement("td");
+      typeTd.className = "col-narrow";
+      typeTd.textContent = p.bankType || "";
       tr.append(
         bankCell(true, p.bank, p.number),
         nameTd,
+        typeTd,
         refCell(String(p.setlistReferenceCount), false),
         p.combiReferenceCountAvailable
           ? refCell(String(p.combiReferenceCount), false)
@@ -348,42 +346,20 @@ function createLibrary(root, { log }) {
     else renderDuplicatesPanel();
   }
 
-  tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      tabs.forEach((t) => t.classList.remove("active"));
-      tab.classList.add("active");
-      currentTab = tab.dataset.tab;
-      Object.entries(panels).forEach(([name, el]) => {
-        el.hidden = name !== currentTab;
-      });
-      renderCurrentTab();
+  // Called by the shell when its own "Programs"/"Combis"/"Duplicates"
+  // category button is clicked -- name is "programs"|"combis"|"duplicates".
+  function showPanel(name) {
+    currentTab = name;
+    Object.entries(panels).forEach(([panelName, el]) => {
+      el.hidden = panelName !== currentTab;
     });
-  });
-
-  datasetSelect.addEventListener("change", () => {
-    expandedProgramKey = null;
-    expandedCombiKey = null;
-    load();
-  });
+    renderCurrentTab();
+  }
 
   filterInput.addEventListener("input", () => renderCurrentTab());
 
-  // Fires immediately with whatever's already cached, and again whenever any
-  // pane opens/closes a dataset -- so a file dropped onto either pane shows
-  // up as a selectable option here too, without Library needing to poll or
-  // reach into pane.js's own state.
-  onDatasetsChanged((datasets) => {
-    const previousValue = datasetSelect.value;
-    populateDatasetSelect(datasetSelect, datasets, previousValue);
-    // Reload if the resolved selection actually changed -- e.g. the dataset
-    // this view was showing got closed elsewhere and populateDatasetSelect()
-    // fell back to the placeholder. A dataset merely being ADDED elsewhere
-    // doesn't change this view's own selection, so no reload in that case.
-    if (datasetSelect.value !== previousValue) load();
-  });
-
   async function load() {
-    const datasetId = currentDataset();
+    const datasetId = getDatasetId();
     if (datasetId == null) {
       programs = [];
       combis = [];
@@ -398,5 +374,15 @@ function createLibrary(root, { log }) {
     renderCurrentTab();
   }
 
-  return { refresh: load };
+  // Called by the shell (pane.js's createPane()) whenever its shared
+  // dataset-select changes -- either a fresh selection, or the dataset this
+  // pane was showing having been closed elsewhere (getDatasetId() will
+  // already reflect that by the time this is called).
+  function onDatasetChanged() {
+    expandedProgramKey = null;
+    expandedCombiKey = null;
+    load();
+  }
+
+  return { onDatasetChanged, showPanel };
 }

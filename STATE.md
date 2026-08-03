@@ -1,5 +1,5 @@
 === STATE BLOCK — GOALS, ACHIEVEMENTS, BLIND SPOTS ===
-Date: 2026-08-01
+Date: 2026-08-03
 Status: Working prototype, git repo (github.com/jens-goes-mad/
         DIY-KORG-KRONOS-EDITOR, `main` branch) with a public Hugo/GitHub
         Pages docs site (jens-goes-mad.github.io/DIY-KORG-KRONOS-EDITOR)
@@ -7,10 +7,12 @@ Status: Working prototype, git repo (github.com/jens-goes-mad/
         Core file format (Set List names + params + instrument-name
         cross-reference, now including Font size/Transpose/Combi Timbre
         references) is reverse-engineered and wired into a real CHOC app
-        with drag-and-drop open, dual-pane browse/filter/swap/copy, an
-        editable Comment field, and a read-only Program/Combi Library
-        browser with byte-exact duplicate detection -- see "PROGRAM/COMBI
-        LIBRARY EDITOR" below. A componentized frontend pattern (small,
+        with drag-and-drop open and two independent panes, each with its
+        own dataset selector and a Setlist/Programs/Combis/Duplicates
+        category navbar -- browse/filter/swap/copy Set Lists, an editable
+        Comment field, and a read-only Program/Combi library with
+        byte-exact duplicate detection -- see "PROGRAM/COMBI LIBRARY
+        EDITOR" below. A componentized frontend pattern (small,
         standalone, byte-level-tested UI pieces) and a matching backend
         decoder/encoder architecture are now the deliberate direction --
         see "ARCHITECTURE: DECODER/ENCODER REFACTOR" below, currently the
@@ -333,6 +335,35 @@ full rationale):
       shared-dataset drag/drop end to end -- "works like a charm."
     - Two issues surfaced during that click-through, deliberately left unfixed for now
       (see Blind Spots #17/#18) -- neither blocks using the feature.
+  - **Per-pane category navbar (BUILT 2026-08-03)**: the top-level "Set Lists" vs
+    "Library" split is gone -- each pane is now a shell with its own single dataset
+    selector plus a category navbar (Setlist / Programs / Combis / Duplicates; Global
+    later, once `GLB1` is ever parsed -- not added as a placeholder tab, since there's
+    nothing behind it yet). Motivation: the old split meant you couldn't put a Setlist
+    view and a Programs view side by side, or compare two datasets' Program banks
+    directly -- exactly the kind of comparison the `explore/sqlite-patch-datastore`
+    branch's physical-bank-placement work would want. Built by splitting both existing
+    factories into peer content renderers plus a thin shell:
+    - `frontend/pane.js`'s `createSetlistPanel()` -- the old `createPane()` body
+      (table/filter/comment-editor/drag-drop), now reading which dataset to show via a
+      `getDatasetId()` accessor instead of owning a dataset-select itself.
+    - `frontend/library.js`'s `createLibraryPanels()` (renamed from `createLibrary()`)
+      -- same idea: dropped its own dataset-select *and* its own internal
+      Programs/Combis/Duplicates tab bar (that nav is now the shell's, so all four
+      categories are true peers) -- exposes `showPanel(name)` for the shell to call
+      instead of handling its own tab clicks.
+    - `createPane()` (same entry point `app.js` already called) is now the shell:
+      owns the one dataset-select + category nav, notifies both renderers via
+      `onDatasetChanged()` on any dataset change (regardless of which category is
+      currently visible, so switching back to a hidden one later still shows fresh
+      data), and still returns `{ refreshEntries, getCurrentDatasetId }` unchanged --
+      `app.js`'s `onDropEntry` needed zero changes.
+    - **Deliberately deferred, per explicit agreement**: no drag-and-drop for
+      Programs/Combis rows (the hard physical-bank-placement problem from the
+      exploration branch -- Setlist row drag/copy is unaffected); Duplicates stays
+      scoped to the pane's single selected dataset, no cross-dataset dedup yet.
+    - No backend/bridge changes at all -- purely a frontend reorganization reusing
+      already-tested render logic; `pcg_file_test`/`ctest` untouched and still passing.
   - **Chunk-based data flow for components (designed 2026-08-01, not yet implemented)**:
     two deliberately different tiers, not one architecture for everything --
     - *Bulk/list views* (Programs table, dedup, etc.) stay served by native decoders
@@ -406,6 +437,113 @@ full rationale):
     assistant agreed to revisit/rethink this shape as each piece (Program decoder now
     done; chunk-based component wiring next) proves itself against real tests and the
     real UI, rather than committing to it across the whole codebase up front.
+
+--- EXPLORATION: SQLITE-BACKED PATCH DATA MODEL (branch: explore/sqlite-patch-datastore, 2026-08-02, NOT DECIDED) ---
+
+Lives on its own branch, deliberately kept separate from `main` -- this is a genuine
+architecture question, not yet a decision, and touches nothing that's currently
+shipped. Started from a real, practical concern (memory/perf with several large
+`.PCG` files open at once now that Datasets decouple "loaded file" from "pane," see
+the ARCHITECTURE section above) and evolved into something bigger worth recording
+even in its current unfinished state, so the reasoning isn't lost if this branch sits
+for a while.
+
+  - **Where the idea started**: instead of every open dataset holding its own
+    full ~50-70MB raw byte buffer in `PcgFile::data_`, back Program (and
+    potentially Combi/Set List) storage with SQLite -- an on-disk-backed file
+    (not `:memory:`, which wouldn't help RAM at all), so the OS page cache can
+    evict cold data instead of everything sitting permanently resident. Since
+    `decodeProgramFields()`/`hashProgramRecord()` already operate on a bare
+    byte pointer (not on `PcgFile` internals), swapping where that pointer's
+    bytes come from -- offset math into `data_` vs. a `SELECT raw FROM
+    programs WHERE bank=? AND number=?` -- is invisible to `EditorBridge`'s
+    public shape and to any future JS-side component. That property held up
+    well and isn't in question.
+  - **Where it got more ambitious**: a Program table that persists *across
+    sessions*, deduped globally by `content_hash` (not per-dataset) -- "every
+    unique Program the editor has ever seen" -- plus a Combi-Timbre table
+    modeled as an m:n join to Programs, plus Set List slots as private
+    per-row data with a foreign key to a Program/Combi instead of resolving
+    bank/number against array lookups by hand. Keeping the raw BLOB per row
+    (not just derived columns) keeps this compatible with the project's core
+    method -- derived fields stay honestly re-computable if a decoder's
+    understanding improves later, rather than becoming a second, driftable
+    source of truth.
+  - **Where it hit a real wall (the reason this is a branch, not a merged
+    change)**: Kronos Program/Combi data is NOT freely content-addressable
+    the way the hash-dedup model assumes. A Combi's Timbre reference isn't
+    "this Program's content" -- it's "whatever physically sits at raw bank
+    code X, number Y," and each sound engine (HD-1, AL-1, CX-3, ...) owns its
+    own dedicated bank ranges, so that physical slot has to both exist *and*
+    belong to the right engine for the reference to mean anything. Copying a
+    CMB bank without its dependent PRG bank(s) doesn't yield "a Combi with
+    unknown sounds" -- it yields a structurally broken Combi on the receiving
+    unit. (This matches why real commercial patch vendors ship one CMB bank
+    plus the one or two specific PRG banks it actually depends on, never an
+    arbitrary/whole-unit Program dump.) This is *the* mental block for
+    building any "patch manager" on top of a hash-deduped model: content
+    hash is a good *compatibility check* ("does bank X/number Y in the
+    destination already hold byte-identical content to what this Combi
+    expects?"), but it can't be the reference mechanism itself. Any real
+    move/merge feature has to solve a physical-placement problem --
+    allocating an engine-compatible bank slot in the destination and either
+    confirming it already matches or copying the dependency there -- not
+    just a content-copy-plus-FK-update problem.
+  - **A prerequisite this surfaced that wasn't obvious before, since partly
+    resolved (2026-08-02)**: safely moving/merging Combis depends on knowing
+    a Program bank's engine. Research (see `docs/external/README.md`)
+    turned up more than expected:
+    - **Officially confirmed by Korg's own KRONOS Parameter Guide**: a bank
+      is either HD-1 or EXi, never mixed -- "Banks can contain either HD-1
+      Programs or EXi Programs, but not both" -- and the manual's factory
+      table names the *specific* engine per bank by default (INT-D=AL-1,
+      INT-E=AL-1 and CX-3, INT-F=STR-1, USER-A=MS-20EX & PolysixEX,
+      USER-B=MOD-7, ...). Explicitly the factory *default* -- bank type (and
+      by extension real contents) is user-reconfigurable per bank via Global
+      mode, and a separately-found community document confirms real
+      long-used units routinely drift from this layout. A strong
+      default/fallback label set, not a per-file guarantee.
+    - **Built and tested (this branch)**: `classifyProgramBankType()`
+      (`src/kronos/ProgramDecoder.{h,cpp}`) derives the HD-1/EXi split from
+      two signals already parsed at load time -- the bank's own chunk tag
+      (`MBK1`=EXi/`PBK1`=HD-1, from `docs/references/PCG-Structure-Kronos-
+      DaBlick.txt`) cross-checked against its declared per-record byte
+      stride (HD-1=4960/EXi=3706 bytes, from a Synthify community
+      spreadsheet, see `docs/external/README.md`) -- deliberately not a
+      hardcoded per-bank-index table, since bank type is configurable.
+      `ProgramInfo`/`decodeProgram()` now carry a `bankType` field; covered
+      by a dedicated synthetic unit test (both match and mismatch cases) in
+      `tests/pcg_file_test.cpp`, spot-checked with a deliberately broken
+      assertion to confirm it fails loudly.
+    - **Still open**: the byte-level mechanism itself (chunk tag + the
+      4960/3706 stride figures) hasn't been cross-checked against a real
+      backup's actual bytes -- no `.PCG` file was available in the
+      environment this was built in. The underlying HD-1/EXi model is now
+      officially confirmed; this project's specific *detection* of it from
+      raw bytes is not, yet. Also still open: which *specific* EXi engine a
+      given EXi bank holds isn't decoded anywhere yet (only the HD-1/EXi
+      binary split is built) -- the Parameter Guide's factory table is real
+      ground truth for that follow-up, whenever it's wanted.
+  - **UI enforcement (BUILT 2026-08-03)**: the per-pane category navbar (see above)
+    made it easy to point two panes at two *different* datasets and drag a Setlist
+    slot between them -- which surfaced this problem concretely: `copyEntry` happily
+    copied a Song's bank/number as-is into the other dataset, even though that
+    bank/number is a physical-location reference meaningful only within its own
+    dataset's Program/Combi tables. `app.js`'s `onDropEntry` now rejects any
+    cross-dataset Setlist copy outright (same-dataset cross-Setlist-list copy, and
+    same-list reorder, are unaffected -- both stay within one `PcgFile`, safe).
+    `pane.js` also shows this during the drag itself (not just after dropping): a
+    shared `draggedFromDatasetId` variable (a plain JS side channel, since
+    DataTransfer's payload isn't readable during `dragover` for a same-page drag)
+    lets a row being hovered skip `preventDefault()` when the drag came from a
+    different dataset, so the browser shows its own "not allowed" cursor and no
+    `drop` event fires there at all. Revisit once the physical-bank-position
+    problem above is actually solved -- not before.
+  - **Not decided, not scheduled**: no schema has been written, no SQLite
+    dependency has been added, nothing here has touched `main`. This section
+    exists so the reasoning survives even if this branch is set aside for a
+    while -- update it in place as the exploration continues, rather than
+    letting the thread live only in chat history.
 
 --- BLIND SPOTS / NOT YET TOUCHED ---
 
@@ -488,20 +626,20 @@ App/UI:
   16. **RESOLVED (2026-08-01)**: the Library view has now been clicked
       through end to end in the real app (see the Datasets entry in
       "ARCHITECTURE" above) -- confirmed working.
-  17. Drag-and-drop file loading: a pane sometimes stays visually marked as
-      a drop target (the `.drag-over` highlight) even after a dataset has
-      already loaded successfully -- noticed during the Datasets
-      click-through above. Not yet root-caused with certainty, but the
-      likely mechanism: `dragleave`'s handler only clears the highlight
-      when `ev.target === root` (`pane.js`), and dragenter/dragleave fire
-      per-element as the pointer crosses into/out of *child* elements
-      (the table, the new dataset-select, etc.) -- if the pointer's last
-      `dragleave` before drop happens to target a child rather than
-      `root` itself, the class never clears. The standard fix is an
-      enter/leave depth counter instead of the `ev.target` check; not
-      applied yet since it needs to be tried against the real intermittent
-      repro before calling it fixed, per this project's "verify by
-      actually running it" norm -- flagged, not yet fixed.
+  17. **RESOLVED (2026-08-02)**: drag-and-drop file loading -- a pane (or
+      its sibling, if the drag passed over it on the way to the actual drop
+      target) could stay visually marked as a drop target after a dataset
+      had already loaded. Root cause confirmed as hypothesized: `pane.js`'s
+      old `dragleave` handler only cleared the highlight when `ev.target
+      === root`, but dragenter/dragleave fire per-element as the pointer
+      crosses into/out of *child* elements too (the table, the
+      dataset-select), so a `dragleave` targeting a child rather than
+      `root` itself left the class stuck. Fixed with the standard
+      enter/leave depth counter (immune to which descendant the event
+      targets), plus every pane's highlight is now explicitly cleared in
+      the `drop` handler (not just the pane that received the drop) to
+      cover the sibling-pane case directly, regardless of exact event
+      delivery order for a given drag session.
   18. Library's Duplicates tab shows "n/a" for a duplicate Program's Combi
       reference count -- noticed during the same click-through. Reading
       `EditorBridge::findDuplicatePrograms()` shows no logic difference

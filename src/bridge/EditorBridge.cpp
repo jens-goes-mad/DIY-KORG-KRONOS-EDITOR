@@ -41,6 +41,10 @@ std::string timbreStatusName(kronos::TimbreStatus status) {
     }
 }
 
+std::string programBankTypeName(kronos::ProgramBankType type) {
+    return type == kronos::ProgramBankType::Exi ? "EXi" : "HD-1";
+}
+
 choc::value::Value setlistUsagesToValue(const std::vector<kronos::SetlistUsage>& usages) {
     auto result = choc::value::createEmptyArray();
     for (const auto& usage : usages) {
@@ -140,6 +144,10 @@ choc::value::Value EditorBridge::programToValue(const kronos::ProgramInfo& progr
     v.setMember("bank", program.bank);
     v.setMember("number", program.number);
     v.setMember("name", program.name);
+    // "HD-1"/"EXi" -- see ProgramBankType's doc comment in PcgFile.h. Not
+    // yet cross-checked against a real backup's actual bytes, see
+    // docs/external/README.md's caveat before trusting this in the UI.
+    v.setMember("bankType", programBankTypeName(program.bankType));
     return v;
 }
 

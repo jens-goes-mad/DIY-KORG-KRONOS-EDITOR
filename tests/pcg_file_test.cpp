@@ -203,7 +203,14 @@ std::vector<uint8_t> buildSyntheticPcgFile() {
     appendChunk(data, "SDB1", sdb1);
     appendChunk(data, "SBK1", sbk1);
     appendChunk(data, "PBK1", pbk1BankA);
-    appendChunk(data, "PBK1", pbk1BankB);
+    // Tagged MBK1 (EXi), not PBK1, so the synthetic fixture exercises both
+    // classifyProgramBankType() paths end-to-end through loadFromMemory(),
+    // not just the standalone unit test below. The toy kBankRecordSize (32)
+    // deliberately doesn't match either real HD-1/EXi stride (4960/3706) --
+    // that's fine, tagMatchesStride is expected to be false for both banks
+    // in this synthetic fixture; only `type` (derived from the tag) matters
+    // for the end-to-end assertions.
+    appendChunk(data, "MBK1", pbk1BankB);
     appendChunk(data, "CBK1", cbk1BankA);
     return data;
 }
@@ -225,6 +232,35 @@ void testDecodeProgramFields() {
     std::vector<uint8_t> tooShort(10, 0);
     kronos::ProgramFields shortFields = kronos::decodeProgramFields(tooShort.data(), tooShort.size(), 0, 0);
     CHECK_EQ(shortFields.name, std::string(), "decodeProgramFields on a truncated record yields an empty name");
+}
+
+void testClassifyProgramBankType() {
+    // Tag is the primary signal -- PBK1=Hd1, MBK1=Exi -- independent of stride.
+    auto hd1Match = kronos::classifyProgramBankType("PBK1", 4960);
+    CHECK(hd1Match.type == kronos::ProgramBankType::Hd1);
+    CHECK_EQ(hd1Match.tagMatchesStride, true, "PBK1 tag with the expected HD-1 stride (4960) matches");
+
+    auto exiMatch = kronos::classifyProgramBankType("MBK1", 3706);
+    CHECK(exiMatch.type == kronos::ProgramBankType::Exi);
+    CHECK_EQ(exiMatch.tagMatchesStride, true, "MBK1 tag with the expected EXi stride (3706) matches");
+
+    // A stride that doesn't match the tag's expected value is a genuine
+    // anomaly worth flagging, not silently ignored -- `type` still follows
+    // the tag either way (the more authoritative signal), but the mismatch
+    // flag must go false.
+    auto hd1Mismatch = kronos::classifyProgramBankType("PBK1", 3706);
+    CHECK(hd1Mismatch.type == kronos::ProgramBankType::Hd1);
+    CHECK_EQ(hd1Mismatch.tagMatchesStride, false, "PBK1 tag with EXi's stride is flagged as a mismatch");
+
+    auto exiMismatch = kronos::classifyProgramBankType("MBK1", 4960);
+    CHECK(exiMismatch.type == kronos::ProgramBankType::Exi);
+    CHECK_EQ(exiMismatch.tagMatchesStride, false, "MBK1 tag with HD-1's stride is flagged as a mismatch");
+
+    // Any tag other than MBK1 defaults to Hd1 -- PBK1 is the only real
+    // HD-1 tag this format uses, but this keeps classification total rather
+    // than needing a third "unknown" state for a tag that shouldn't occur.
+    auto unknownTag = kronos::classifyProgramBankType("XBK1", 1234);
+    CHECK(unknownTag.type == kronos::ProgramBankType::Hd1);
 }
 
 void testDecodeCombiFields() {
@@ -309,6 +345,11 @@ void testPcgFileEndToEnd() {
     // Programs table: 3 (bank 0) + 2 (bank 1) = 5 rows.
     CHECK_EQ(pcg.programs().size(), static_cast<size_t>(5), "programs() has one row per PBK1 record");
 
+    // Bank type is classified from each bank's own chunk tag: bank 0 is
+    // tagged PBK1 (Hd1), bank 1 is tagged MBK1 (Exi) in this fixture.
+    CHECK(pcg.programs()[0].bankType == kronos::ProgramBankType::Hd1);
+    CHECK(pcg.programs()[3].bankType == kronos::ProgramBankType::Exi);
+
     // Duplicate detection: exactly one group, bank0/number0 + bank0/number1.
     auto dupGroups = pcg.findDuplicatePrograms();
     CHECK_EQ(dupGroups.size(), static_cast<size_t>(1), "exactly one duplicate group found");
@@ -332,6 +373,7 @@ void testPcgFileEndToEnd() {
         CHECK_EQ(redecoded->name, std::string("Bank1 Program0"), "decodeProgram() re-decodes the right record");
         CHECK_EQ(redecoded->contentHash, pcg.programs()[3].contentHash,
                  "decodeProgram()'s hash matches the same record's cached table entry");
+        CHECK(redecoded->bankType == kronos::ProgramBankType::Exi);
     }
     CHECK(!pcg.decodeProgram(99, 0).has_value());  // out-of-range bank
     CHECK(!pcg.decodeProgram(1, 99).has_value());  // out-of-range number
@@ -364,6 +406,7 @@ void testPcgFileEndToEnd() {
 
 int main() {
     testDecodeProgramFields();
+    testClassifyProgramBankType();
     testDecodeCombiFields();
     testHashProgramRecord();
     testPcgFileEndToEnd();

@@ -373,14 +373,19 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
         if (bytesPerRecord == 0) continue;
         if (recordsStart + static_cast<size_t>(bytesPerRecord) * numRecords > chunk.contentEnd) continue;
 
-        programBankLocations_.push_back({recordsStart, numRecords, bytesPerRecord});
+        // See ProgramBankType's doc comment in PcgFile.h -- bank type is
+        // read per-file from data already parsed here (the chunk's own tag,
+        // cross-checked against its declared stride), not looked up in a
+        // fixed table.
+        ProgramBankType bankType = classifyProgramBankType(chunk.tag, bytesPerRecord).type;
+        programBankLocations_.push_back({recordsStart, numRecords, bytesPerRecord, bankType});
 
         for (uint32_t i = 0; i < numRecords; ++i) {
             size_t off = recordsStart + static_cast<size_t>(i) * bytesPerRecord;
             const uint8_t* record = &data[off];
             ProgramFields fields = decodeProgramFields(record, bytesPerRecord, static_cast<int>(bankIdx), static_cast<int>(i));
             uint64_t hash = hashProgramRecord(record, bytesPerRecord);
-            programs_.push_back({fields.bank, fields.number, fields.name, hash});
+            programs_.push_back({fields.bank, fields.number, fields.name, hash, bankType});
 
             if (fields.bank >= static_cast<int>(programBankNames.size())) programBankNames.resize(fields.bank + 1);
             if (fields.number >= static_cast<int>(programBankNames[fields.bank].size())) {
@@ -515,7 +520,7 @@ std::optional<ProgramInfo> PcgFile::decodeProgram(int bank, int number) const {
     const uint8_t* record = &data_[off];
     ProgramFields fields = decodeProgramFields(record, loc.bytesPerRecord, bank, number);
     uint64_t hash = hashProgramRecord(record, loc.bytesPerRecord);
-    return ProgramInfo{fields.bank, fields.number, fields.name, hash};
+    return ProgramInfo{fields.bank, fields.number, fields.name, hash, loc.bankType};
 }
 
 std::optional<CombiInfo> PcgFile::decodeCombi(int bank, int number) const {

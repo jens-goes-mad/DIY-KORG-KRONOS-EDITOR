@@ -43,4 +43,22 @@ uint64_t hashProgramRecord(const uint8_t* record, size_t recordSize) {
     return hash;
 }
 
+// Expected per-record stride for each bank type -- see docs/external/README.md
+// (Synthify-Kronos-PCG-File-Structures.xlsx) for where these came from. Used
+// only as a cross-check against the chunk tag, never as the primary signal
+// -- that source's own caveat is that the file's declared stride for HD-1
+// banks specifically shouldn't be trusted as a fixed constant either, so
+// this project's parser always reads the real per-bank value from the file
+// (see PcgFile.cpp) rather than hardcoding either number as authoritative.
+constexpr uint32_t kHd1ProgramRecordSize = 4960;
+constexpr uint32_t kExiProgramRecordSize = 3706;
+
+ProgramBankTypeResult classifyProgramBankType(const std::string& chunkTag, uint32_t bytesPerRecord) {
+    ProgramBankTypeResult result;
+    result.type = (chunkTag == "MBK1") ? ProgramBankType::Exi : ProgramBankType::Hd1;
+    uint32_t expected = (result.type == ProgramBankType::Exi) ? kExiProgramRecordSize : kHd1ProgramRecordSize;
+    result.tagMatchesStride = (bytesPerRecord == expected);
+    return result;
+}
+
 }  // namespace kronos

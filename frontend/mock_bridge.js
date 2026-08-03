@@ -59,11 +59,15 @@
       names.forEach((name, number) =>
         // bank 0/1 are both within the confirmed INT-A..D range (see
         // kronos::isConfirmedTimbreProgramBank()), so mock mode marks
-        // Combi refs available too, mirroring the real bridge.
+        // Combi refs available too, mirroring the real bridge. bankType
+        // here is purely cosmetic (alternating HD-1/EXi by bank) -- mock
+        // mode has no real bytes to classify, see PcgFile.h's
+        // ProgramBankType doc comment for how the real bridge does this.
         programs.push({
           bank,
           number,
           name,
+          bankType: bank === 0 ? "HD-1" : "EXi",
           setlistReferenceCount: 0,
           combiReferenceCountAvailable: true,
           combiReferenceCount: 0,

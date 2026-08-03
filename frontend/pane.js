@@ -1,7 +1,10 @@
-// One Norton-Commander-style pane: a drag-and-drop file loader + a Set List
-// picker + a filterable, searchable, drag-and-drop-able table of that Set
-// List's 128 song slots. Two instances are created by app.js ("A" and "B")
-// so slots can be dragged between them.
+// One Norton-Commander-style pane: a thin shell (one dataset selector, one
+// category navbar -- Setlist/Programs/Combis/Duplicates, Global later once
+// GLB1 is ever parsed) around two content renderers -- createSetlistPanel()
+// below, and library.js's createLibraryPanels() -- so a pane can show any
+// category of any already-open dataset, independent of the other pane. Two
+// shells are created by app.js ("A" and "B") so Setlist slots can be
+// dragged between them.
 // Korg's own bank naming, from a song slot's raw `bank` byte. Combi (14
 // banks, 0-13) is mechanically confirmed -- cross-referencing CBK1 by this
 // exact order reproduces known real Combi names exactly (see README.md).
@@ -41,12 +44,28 @@ function formatBankNumber(entry) {
 
 const NO_DATASET_MESSAGE = "No dataset selected -- drag a .PCG file onto this pane, or pick an already-open one above.";
 
-function createPane(paneId, root, { onDropEntry, log }) {
-  root.innerHTML = `
-    <div class="pane-header">
-      <select class="dataset-select"></select>
-      <select class="setlist-select" disabled></select>
-    </div>
+// Shared across every pane's Setlist rows during a same-page row drag --
+// lets a row being dragged OVER (not just dropped on) know which dataset
+// the drag actually originated from, so a cross-dataset drop can be shown
+// as rejected during hover, not just after release. HTML5's DataTransfer
+// payload isn't readable during dragover for security reasons, but since
+// this is a same-page drag (not a file dragged in from Finder/Explorer), a
+// plain shared variable works fine as a side channel. The actual block
+// (app.js's onDropEntry) doesn't depend on this -- it's purely a visual
+// hint, see that function's own doc comment for why cross-dataset Setlist
+// copies are rejected at all.
+let draggedFromDatasetId = null;
+
+// The Setlist category's own content: a Set List picker + a filterable,
+// searchable, drag-and-drop-able table of that Set List's 128 song slots,
+// plus the per-slot Comment editor. Extracted out of the pane shell so it's
+// a peer of library.js's createLibraryPanels() -- both are just "renderers"
+// the shell mounts/hides depending on which category button is active.
+// Reads the dataset to show via getDatasetId() (owned by the shell) rather
+// than tracking it itself, matching createLibraryPanels()'s same contract.
+function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId }) {
+  container.innerHTML = `
+    <select class="setlist-select" disabled></select>
     <div class="setlist-info">${NO_DATASET_MESSAGE}</div>
     <input class="filter-input" type="text" placeholder="Filter / search..." disabled />
     <div class="entries-scroll">
@@ -67,14 +86,11 @@ function createPane(paneId, root, { onDropEntry, log }) {
     </div>
   `;
 
-  const datasetSelect = root.querySelector(".dataset-select");
-  const setlistSelect = root.querySelector(".setlist-select");
-  const infoEl = root.querySelector(".setlist-info");
-  const filterInput = root.querySelector(".filter-input");
-  const tbody = root.querySelector("tbody");
+  const setlistSelect = container.querySelector(".setlist-select");
+  const infoEl = container.querySelector(".setlist-info");
+  const filterInput = container.querySelector(".filter-input");
+  const tbody = container.querySelector("tbody");
 
-  let currentDatasetId = null;  // which loaded dataset this pane is showing, if any -- decoupled from paneId
-  let knownDatasets = [];       // last list from onDatasetsChanged(), so the dataset-select's change handler can resolve a displayName without a bridge round-trip
   let setlists = [];        // [{index, name}], as returned by listSetlists()
   let currentSetlistIndex = -1;
   let entries = [];         // [{index, label}], as returned by getEntries()
@@ -117,7 +133,7 @@ function createPane(paneId, root, { onDropEntry, log }) {
     applyBtn.type = "button";
     applyBtn.textContent = "Apply";
     applyBtn.addEventListener("click", async () => {
-      const result = await window.setComment(currentDatasetId, currentSetlistIndex, entry.index, textarea.value);
+      const result = await window.setComment(getDatasetId(), currentSetlistIndex, entry.index, textarea.value);
       if (!result.ok) {
         log(`[Pane ${paneId}] ${result.error}`);
         return;
@@ -164,13 +180,25 @@ function createPane(paneId, root, { onDropEntry, log }) {
       });
 
       tr.addEventListener("dragstart", (ev) => {
+        draggedFromDatasetId = getDatasetId();
         ev.dataTransfer.setData(
           "application/json",
-          JSON.stringify({ datasetId: currentDatasetId, setlistIndex: currentSetlistIndex, index: entry.index })
+          JSON.stringify({ datasetId: getDatasetId(), setlistIndex: currentSetlistIndex, index: entry.index })
         );
         ev.dataTransfer.effectAllowed = "copyMove";
       });
+      tr.addEventListener("dragend", () => {
+        draggedFromDatasetId = null;
+      });
       tr.addEventListener("dragover", (ev) => {
+        // Cross-dataset Setlist copies are rejected outright (see app.js's
+        // onDropEntry) -- don't even show this row as a valid drop target,
+        // and don't preventDefault() so the browser's own "not allowed"
+        // cursor takes over and no `drop` event fires here at all.
+        if (draggedFromDatasetId != null && draggedFromDatasetId !== getDatasetId()) {
+          tr.classList.remove("drop-target");
+          return;
+        }
         ev.preventDefault();
         ev.dataTransfer.dropEffect = "move";
         tr.classList.add("drop-target");
@@ -178,11 +206,11 @@ function createPane(paneId, root, { onDropEntry, log }) {
       tr.addEventListener("dragleave", () => tr.classList.remove("drop-target"));
       tr.addEventListener("drop", (ev) => {
         ev.preventDefault();
-        ev.stopPropagation();  // don't also trigger the pane's file-drop handler below
+        ev.stopPropagation();  // don't also trigger the pane's file-drop handler
         tr.classList.remove("drop-target");
         const raw = ev.dataTransfer.getData("application/json");
         if (!raw) return;
-        onDropEntry(JSON.parse(raw), { datasetId: currentDatasetId, setlistIndex: currentSetlistIndex, index: entry.index });
+        onDropEntry(JSON.parse(raw), { datasetId: getDatasetId(), setlistIndex: currentSetlistIndex, index: entry.index });
       });
 
       const idxTd = document.createElement("td");
@@ -252,10 +280,11 @@ function createPane(paneId, root, { onDropEntry, log }) {
   }
 
   async function refreshEntries() {
-    if (currentDatasetId == null || currentSetlistIndex < 0) {
+    const datasetId = getDatasetId();
+    if (datasetId == null || currentSetlistIndex < 0) {
       entries = [];
     } else {
-      entries = await window.getEntries(currentDatasetId, currentSetlistIndex);
+      entries = await window.getEntries(datasetId, currentSetlistIndex);
     }
     renderRows();
   }
@@ -284,12 +313,25 @@ function createPane(paneId, root, { onDropEntry, log }) {
     renderRows();
   });
 
-  // Displays an already-open dataset in this pane -- called both right after
-  // a fresh file drop (a new dataset) and when the dataset-select's change
-  // handler switches to a dataset another pane already opened.
-  async function loadDataset(datasetId, displayName) {
-    currentDatasetId = datasetId;
-    datasetSelect.value = String(datasetId);
+  // Called by the shell whenever its shared dataset selection changes --
+  // either a fresh dataset (displayName given) or the dataset this pane was
+  // showing having been closed elsewhere (displayName omitted/getDatasetId()
+  // already null by the time this runs).
+  async function onDatasetChanged(displayName) {
+    const datasetId = getDatasetId();
+    if (datasetId == null) {
+      setlists = [];
+      currentSetlistIndex = -1;
+      populateSetlistSelect();
+      entries = [];
+      filterText = "";
+      filterInput.value = "";
+      filterInput.disabled = true;
+      expandedIndices.clear();
+      infoEl.textContent = NO_DATASET_MESSAGE;
+      renderRows();
+      return;
+    }
 
     setlists = await window.listSetlists(datasetId);
     populateSetlistSelect();
@@ -304,33 +346,96 @@ function createPane(paneId, root, { onDropEntry, log }) {
     filterInput.value = "";
     expandedIndices.clear();
 
-    infoEl.textContent = `Showing ${displayName} -- ${setlists.length} Set Lists`;
+    infoEl.textContent = `Showing ${displayName}`;
     filterInput.disabled = setlists.length === 0;
     await refreshEntries();
     log(`[Pane ${paneId}] Showing ${displayName}`);
   }
 
+  return { refreshEntries, onDatasetChanged };
+}
+
+function createPane(paneId, root, { onDropEntry, log }) {
+  root.innerHTML = `
+    <div class="pane-header">
+      <select class="dataset-select"></select>
+      <nav class="lib-tabs pane-category-tabs">
+        <button class="lib-tab active" type="button" data-category="setlist">Setlist</button>
+        <button class="lib-tab" type="button" data-category="programs">Programs</button>
+        <button class="lib-tab" type="button" data-category="combis">Combis</button>
+        <button class="lib-tab" type="button" data-category="duplicates">Duplicates</button>
+      </nav>
+    </div>
+    <div class="pane-category-content" data-category-panel="setlist"></div>
+    <div class="pane-category-content" data-category-panel="library" hidden></div>
+  `;
+
+  const datasetSelect = root.querySelector(".dataset-select");
+  const categoryTabs = root.querySelectorAll(".pane-category-tabs .lib-tab");
+  const setlistContainer = root.querySelector('[data-category-panel="setlist"]');
+  const libraryContainer = root.querySelector('[data-category-panel="library"]');
+
+  let currentDatasetId = null;  // which loaded dataset this pane is showing, if any -- decoupled from paneId
+  let knownDatasets = [];       // last list from onDatasetsChanged(), so the dataset-select's change handler can resolve a displayName without a bridge round-trip
+  let currentCategory = "setlist";  // "setlist" | "programs" | "combis" | "duplicates"
+
+  function getCurrentDatasetId() {
+    return currentDatasetId;
+  }
+
+  const setlistPanel = createSetlistPanel(setlistContainer, {
+    paneId,
+    log,
+    onDropEntry,
+    getDatasetId: getCurrentDatasetId,
+  });
+  const libraryPanels = createLibraryPanels(libraryContainer, {
+    log,
+    getDatasetId: getCurrentDatasetId,
+  });
+
+  // Category switching just toggles which container is visible -- no data
+  // reload needed on its own, since both renderers already hold current
+  // data from the last dataset change (see onDatasetChanged() below).
+  categoryTabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      categoryTabs.forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      currentCategory = tab.dataset.category;
+
+      const isSetlist = currentCategory === "setlist";
+      setlistContainer.hidden = !isSetlist;
+      libraryContainer.hidden = isSetlist;
+      if (!isSetlist) libraryPanels.showPanel(currentCategory);
+    });
+  });
+
+  // Displays an already-open dataset in this pane -- called both right after
+  // a fresh file drop (a new dataset) and when the dataset-select's change
+  // handler switches to a dataset another pane already opened. Notifies
+  // BOTH content renderers regardless of which category is currently
+  // visible, so switching back to a hidden category later still shows
+  // fresh data instead of whatever was last loaded.
+  async function loadDataset(datasetId, displayName) {
+    currentDatasetId = datasetId;
+    datasetSelect.value = String(datasetId);
+    await setlistPanel.onDatasetChanged(displayName);
+    await libraryPanels.onDatasetChanged();
+  }
+
   // Back to the "nothing selected" state -- used both for the dataset-select's
   // own placeholder option and when the dataset this pane was showing gets
-  // closed from elsewhere (another pane, or Library).
-  function resetToEmpty() {
+  // closed from elsewhere (another pane).
+  async function resetToEmpty() {
     currentDatasetId = null;
-    setlists = [];
-    currentSetlistIndex = -1;
-    populateSetlistSelect();
-    entries = [];
-    filterText = "";
-    filterInput.value = "";
-    filterInput.disabled = true;
-    expandedIndices.clear();
-    infoEl.textContent = NO_DATASET_MESSAGE;
-    renderRows();
+    await setlistPanel.onDatasetChanged();
+    await libraryPanels.onDatasetChanged();
   }
 
   datasetSelect.addEventListener("change", async () => {
     const value = datasetSelect.value;
     if (!value) {
-      resetToEmpty();
+      await resetToEmpty();
       return;
     }
     const datasetId = Number(value);
@@ -339,9 +444,10 @@ function createPane(paneId, root, { onDropEntry, log }) {
   });
 
   // Fires immediately with whatever's already cached, and again whenever any
-  // pane (or Library) opens/closes a dataset -- keeps this pane's selector
-  // (and its own currently-shown dataset, if it just got closed elsewhere)
-  // in sync without needing a bespoke pub/sub per action.
+  // pane (or another pane's Library categories) opens/closes a dataset --
+  // keeps this pane's selector (and its own currently-shown dataset, if it
+  // just got closed elsewhere) in sync without needing a bespoke pub/sub
+  // per action.
   onDatasetsChanged((datasets) => {
     knownDatasets = datasets;
     populateDatasetSelect(datasetSelect, datasets, currentDatasetId != null ? String(currentDatasetId) : "");
@@ -357,38 +463,55 @@ function createPane(paneId, root, { onDropEntry, log }) {
   // and drop sidesteps it entirely, and also works without ever needing an
   // absolute filesystem path: the browser's File API hands over real file
   // bytes directly, which is why openFileBytes() exists alongside openFile().
-  root.addEventListener("dragover", (ev) => {
+  // Drag depth counter instead of a plain add/remove pair: dragenter/
+  // dragleave fire per-element as the pointer crosses into/out of CHILD
+  // elements too (the entries table, the dataset-select, ...), and since
+  // only root has a listener, a dragleave crossing into a child arrives
+  // with ev.target set to that child, not root -- the old `ev.target ===
+  // root` guard could then simply never fire again for the rest of that
+  // hover, leaving the highlight stuck. Counting enters/leaves is immune to
+  // that regardless of which descendant the event targets.
+  let dragDepth = 0;
+  root.addEventListener("dragenter", (ev) => {
     if (!ev.dataTransfer.types.includes("Files")) return;
     ev.preventDefault();
+    dragDepth++;
     root.classList.add("drag-over");
   });
-  root.addEventListener("dragleave", (ev) => {
-    if (ev.target === root) root.classList.remove("drag-over");
+  root.addEventListener("dragover", (ev) => {
+    if (!ev.dataTransfer.types.includes("Files")) return;
+    ev.preventDefault();  // still required on every dragover for drop to be allowed
+  });
+  root.addEventListener("dragleave", () => {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) root.classList.remove("drag-over");
   });
   root.addEventListener("drop", async (ev) => {
     if (!ev.dataTransfer.files || ev.dataTransfer.files.length === 0) return;
     ev.preventDefault();
-    root.classList.remove("drag-over");
+    dragDepth = 0;
+    // Clear EVERY pane's highlight, not just this one -- a drag that
+    // passed over a sibling pane on the way here can otherwise leave that
+    // pane's highlight stuck even after this drop lands somewhere else.
+    document.querySelectorAll(".pane").forEach((p) => p.classList.remove("drag-over"));
 
     const file = ev.dataTransfer.files[0];
-    infoEl.textContent = `Loading ${file.name}...`;
+    log(`[Pane ${paneId}] Loading ${file.name}...`);
     try {
       const base64 = await arrayBufferToBase64(await file.arrayBuffer());
       const result = await window.openFileBytes(base64, file.name);
       if (!result.ok) {
-        infoEl.textContent = `Failed: ${result.error}`;
         log(`[Pane ${paneId}] ${result.error}`);
         return;
       }
       // Dropping always creates a NEW dataset -- refresh the shared registry
-      // first so every selector (the other pane, Library) learns about it
-      // too, then show it in THIS pane specifically. The other pane keeps
-      // showing whatever it already had, unless the user picks this same
-      // dataset from its own selector.
+      // first so every selector (the other pane, this pane's own Library
+      // categories) learns about it too, then show it in THIS pane
+      // specifically. The other pane keeps showing whatever it already
+      // had, unless the user picks this same dataset from its own selector.
       await refreshDatasets();
       await loadDataset(result.datasetId, result.displayName);
     } catch (err) {
-      infoEl.textContent = `Failed: ${err}`;
       log(`[Pane ${paneId}] ${err}`);
     }
   });
@@ -396,11 +519,7 @@ function createPane(paneId, root, { onDropEntry, log }) {
   // Exposed so app.js's onDropEntry knows which pane(s) are currently
   // showing an affected dataset after a move/copy, and need refreshing --
   // could be 0, 1, or both panes, e.g. when both point at the same dataset.
-  function getCurrentDatasetId() {
-    return currentDatasetId;
-  }
-
-  return { refreshEntries, getCurrentDatasetId };
+  return { refreshEntries: setlistPanel.refreshEntries, getCurrentDatasetId };
 }
 
 // Chunked to avoid blowing the call-stack limit of String.fromCharCode.apply
