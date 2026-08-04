@@ -7,6 +7,8 @@ backup files, built on [CHOC](https://github.com/Tracktion/choc)
 (HTML/JS/CSS UI over a thin native C++ bridge) -- same stack as the sibling
 `DIY-MIDI-METRONOME/EDITOR` project, reused rather than reinvented.
 
+![DIY Kronos Editor main window: two independent panes, each with its own dataset selector and a Setlist/Programs/Combis/Duplicates category navbar](README-Main-Window.png)
+
 ## Why this exists
 
 Korg never published a spec for the Kronos's `.PCG`/`.SNG` backup format, and
@@ -43,6 +45,9 @@ anything), [Bulma](https://bulma.io) (vendored, CSS-only) for layout/styling,
 a scoped `ctest` target plus headless `node`-runnable tests for the
 byte-level parsing logic, and GitHub Actions CI building macOS
 (arm64+Intel), Linux, and Windows on every relevant push.
+
+Feel free to support the project by sending ideas, bug reports, or pull
+requests -- any of it helps.
 
 First iteration scope (see `STATE.md` for current status):
 
