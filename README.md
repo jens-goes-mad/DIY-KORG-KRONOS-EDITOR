@@ -107,6 +107,12 @@ between.
   (a Combi's internal Timbre-to-Program references) and a safe write-back
   mechanism this app has never had, so it's deliberately not built yet.
 
+![DIY Kronos Editor - Combi](README-Combi.png)
+
+![DIY Kronos Editor - Programs](README-Programs.png)
+
+![DIY Kronos Editor - Duplicates](README-Duplicates.png)
+
 ## The KORG PCG/SNG file format
 
 Everything about the file format -- container structure, the Set List
