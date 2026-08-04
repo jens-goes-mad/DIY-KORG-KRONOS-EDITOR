@@ -1,0 +1,111 @@
+Source: KRONOS Parameter Guide (official Korg documentation)
+  URL: https://cdn.korg.com/us/support/download/files/74a6c3cb0399c4d733d5730cd4c4e7f8.pdf
+       (filename: KRONOS_Param_Guide_E11.pdf)
+  Fetched: 2026-08-03
+  Sections: page 18 ("Program P0: Play" > "0-1a: Program Select" > "Category"),
+            page 811 ("Global mode" > "Global P3: Category Name")
+
+Why this was pulled: while researching the CMB/PRG physical-bank-placement
+problem (see STATE.md's EXPLORATION section), the project owner asked what's
+known about Category -- a per-Program/Combi attribute used for browsing sounds
+by type (Keyboard, Bass, Strings, etc.), independent of which bank/number a
+sound lives at. This turns out to be structurally the SAME kind of problem as
+Bank type (HD-1/EXi): a small per-record index whose *meaning* depends on a
+per-unit-customizable name table stored in Global settings (GLB1) -- directly
+relevant to "what has to be checked/reassigned when moving a Program or Combi
+between two different datasets."
+
+--- Excerpt (page 18, Program mode) ---
+
+Category [00...18, Name]
+All programs are classified into one of eighteen categories, such as
+Keyboard, Organ, Strings, etc. Each of these categories may also have up to
+eight sub-categories. Selecting by Category lets you search for a specific
+type of sound (like an electric bass, for example), without concern for what
+Banks the sounds are stored in.
+
+[...]
+
+All: All programs in the category will be shown. Choose this when you don't
+need to use sub-categories.
+0...7: The programs will be shown by sub-category.
+
+You can assign a category to a Program in the "Write Program" dialog.
+
+--- Excerpt (page 811, Global mode) ---
+
+Global P3: Category Name
+
+Programs, Combinations, and KARMA GEs are organized into categories and
+sub-categories. Categories make it easy to find a particular type of sound,
+such as keyboards, bass, or drums, or a specific type of KARMA GE, such as
+arpeggios or gated patterns. Each main category also has up to 8
+sub-categories, for finer degrees of organization.
+
+Anywhere that you can select Programs, Combinations, or KARMA GEs by bank and
+number, you can also select them from the category pop-up.
+
+When shipped from the factory, there are 16 preset Program and Combination
+categories, with 2 more left open for your use (initially named User16 and
+User17). There are also 12 preset KARMA GE categories.
+
+On these pages, you can:
+- Change the names of any of the categories and sub-categories, including
+  BOTH the factory and user categories
+- Add sub-categories to the factory categories (up to the limit of 8)
+
+You can assign a Program or Combination to a category and sub-category
+during the Write process.
+
+To save changes to category names, you'll need to write the Global
+settings, using the menu command "Write Global Setting."
+
+3-1: Program Category
+3-1a: Main Category
+  Main Category 00...17
+  Main Category Edit [(Text Editor)] -- rename any of the eighteen Main
+  Categories for Programs (up to 24 characters each).
+3-1b: Sub Category
+  Main Category select [00...17]
+  Sub Category 00...07
+  Sub Category Edit [(Text Editor)] -- rename any of the eight Sub
+  Categories within the selected Main Category.
+
+3-2: Combi Category
+3-3: KARMA Category
+  These pages let you assign the main category and sub-category names to
+  Combinations and KARMA -- same mechanism as 3-1 above, but a SEPARATE
+  table from the Program one. Note: you can rename existing KARMA
+  categories, but you CANNOT reassign which category a KARMA GE belongs to
+  (unlike Programs/Combis, which CAN be reassigned to a different category
+  during Write).
+
+--- What this confirms for this project ---
+
+- Category is a real, per-Program AND per-Combi attribute (two SEPARATE
+  18-main x 8-sub category tables, not shared) -- not yet located in either
+  record's raw bytes; not mentioned anywhere in the Synthify PCG File
+  Structures spreadsheet or DaBlick's reverse-engineering notes already in
+  this project, so the byte offset is genuinely unexplored, same status as
+  the rest of GLB1 (see docs/README.md's chunk tree, "GLB1 -- NOT explored").
+- The category NAME table (all 18 names + up to 8 sub-names each, for BOTH
+  the Program table and the separate Combi table) is stored in Global
+  settings and fully user-renameable -- including the 16 "factory" names,
+  not just the 2 open User slots. This table almost certainly lives inside
+  `GLB1`.
+- Direct implication for cross-dataset Program/Combi moves: a record's
+  Category is (presumably) just a small integer index, whose displayed
+  *meaning* depends on a per-unit-customizable name table -- structurally
+  identical to the Bank-type problem (see the other docs/external files).
+  Two datasets with differently-renamed categories could show a moved
+  Program's category as a misleading label in the destination. Confirms the
+  project owner's instinct that this may need explicit user confirmation/
+  reassignment when moving Programs/Combis between datasets whose category
+  tables don't match -- not solved or built, just confirmed as a real
+  question worth tracking (see STATE.md's EXPLORATION section).
+- Two concrete pieces of future reverse-engineering this points at, neither
+  started: (1) locate Category/Sub-Category's byte offset within a Program
+  record and (separately) a Combi record -- needs the same purpose-built
+  test file methodology already used for Font size/Transpose/Combi Timbre
+  refs; (2) parse GLB1 itself, at minimum enough to extract the category
+  name tables -- GLB1 has never been touched at all so far.

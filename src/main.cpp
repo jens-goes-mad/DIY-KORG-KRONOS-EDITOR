@@ -94,8 +94,8 @@ int main() {
 
     options.webviewIsReady = [&bridge](choc::ui::WebView& view) {
         view.bind("openFile", [&bridge](const choc::value::ValueView& args) { return bridge.openFile(args); });
-        view.bind("openFileBytes",
-                   [&bridge](const choc::value::ValueView& args) { return bridge.openFileBytes(args); });
+        view.bind("openFileDialog",
+                   [&bridge](const choc::value::ValueView& args) { return bridge.openFileDialog(args); });
         view.bind("listDatasets",
                    [&bridge](const choc::value::ValueView& args) { return bridge.listDatasets(args); });
         view.bind("closeDataset",

@@ -1,5 +1,7 @@
 #include "EditorBridge.h"
 
+#include "platform/NativeFileDialog.h"
+
 namespace {
 
 std::string stringArg(const choc::value::ValueView& args, size_t index) {
@@ -70,39 +72,6 @@ choc::value::Value combiUsagesToValue(const std::vector<kronos::CombiUsage>& usa
     return result;
 }
 
-// Standard base64 (RFC 4648), decoding whatever the browser's
-// FileReader/btoa-equivalent side produced. Returns false on malformed input
-// rather than throwing -- this is untrusted data from the UI.
-bool decodeBase64(const std::string& in, std::vector<uint8_t>& out) {
-    auto valueOf = [](char c) -> int {
-        if (c >= 'A' && c <= 'Z') return c - 'A';
-        if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-        if (c >= '0' && c <= '9') return c - '0' + 52;
-        if (c == '+') return 62;
-        if (c == '/') return 63;
-        return -1;
-    };
-
-    out.clear();
-    out.reserve(in.size() / 4 * 3);
-
-    int buffer = 0;
-    int bitsCollected = 0;
-    for (char c : in) {
-        if (c == '=' || c == '\n' || c == '\r') continue;
-        int v = valueOf(c);
-        if (v < 0) return false;
-
-        buffer = (buffer << 6) | v;
-        bitsCollected += 6;
-        if (bitsCollected >= 8) {
-            bitsCollected -= 8;
-            out.push_back(static_cast<uint8_t>((buffer >> bitsCollected) & 0xFF));
-        }
-    }
-    return true;
-}
-
 }  // namespace
 
 choc::value::Value EditorBridge::makeOk() {
@@ -115,6 +84,17 @@ choc::value::Value EditorBridge::makeError(const std::string& error) {
     auto v = choc::value::createObject("Result");
     v.setMember("ok", false);
     v.setMember("error", error);
+    return v;
+}
+
+// The user closing the dialog without picking a file is expected, everyday
+// behavior, not an error -- callers (openFileDialog()) shouldn't log or
+// display it as one. `datasetId` stays absent so the frontend's existing
+// `if (!result.ok)` error-handling path is never triggered by it.
+choc::value::Value EditorBridge::makeCancelled() {
+    auto v = choc::value::createObject("Result");
+    v.setMember("ok", true);
+    v.setMember("cancelled", true);
     return v;
 }
 
@@ -192,22 +172,35 @@ kronos::PcgFile* EditorBridge::fileOf(int datasetId) {
     return &it->second.file;
 }
 
-choc::value::Value EditorBridge::finishOpen(Dataset dataset) {
-    const int datasetId = m_nextDatasetId++;
-    const std::string displayName = dataset.displayName;
-    const int setlistCount = static_cast<int>(dataset.file.setlists().size());
-    m_datasets[datasetId] = std::move(dataset);
-
+choc::value::Value EditorBridge::datasetResultValue(int datasetId, const Dataset& dataset) {
     auto result = makeOk();
     result.setMember("datasetId", datasetId);
-    result.setMember("displayName", displayName);
-    result.setMember("setlistCount", setlistCount);
+    result.setMember("displayName", dataset.displayName);
+    result.setMember("setlistCount", static_cast<int>(dataset.file.setlists().size()));
     return result;
 }
 
-choc::value::Value EditorBridge::openFile(const choc::value::ValueView& args) {
-    const std::string path = stringArg(args, 0);
-    if (path.empty()) return makeError("openFile requires a file path");
+choc::value::Value EditorBridge::finishOpen(Dataset dataset) {
+    const int datasetId = m_nextDatasetId++;
+    auto result = datasetResultValue(datasetId, dataset);  // read before the move below
+    m_datasets[datasetId] = std::move(dataset);
+    return result;
+}
+
+choc::value::Value EditorBridge::openFileAtPath(const std::string& path) {
+    // Don't load the same file twice -- if a dataset opened from this exact
+    // path is already loaded, just return its existing info (with
+    // alreadyOpen:true) so the frontend shows/selects it instead of
+    // duplicating it in memory. Only meaningful now that every open path
+    // goes through a real filesystem path (openFileDialog()); drag-and-drop
+    // never had one to compare.
+    for (const auto& [datasetId, dataset] : m_datasets) {
+        if (dataset.displayName == path) {
+            auto result = datasetResultValue(datasetId, dataset);
+            result.setMember("alreadyOpen", true);
+            return result;
+        }
+    }
 
     Dataset dataset;
     dataset.displayName = path;
@@ -217,20 +210,19 @@ choc::value::Value EditorBridge::openFile(const choc::value::ValueView& args) {
     return finishOpen(std::move(dataset));
 }
 
-choc::value::Value EditorBridge::openFileBytes(const choc::value::ValueView& args) {
-    const std::string base64Data = stringArg(args, 0);
-    const std::string displayName = stringArg(args, 1);
-    if (base64Data.empty()) return makeError("openFileBytes requires file data");
+choc::value::Value EditorBridge::openFile(const choc::value::ValueView& args) {
+    const std::string path = stringArg(args, 0);
+    if (path.empty()) return makeError("openFile requires a file path");
+    return openFileAtPath(path);
+}
 
-    std::vector<uint8_t> bytes;
-    if (!decodeBase64(base64Data, bytes)) return makeError("Malformed file data (base64 decode failed)");
-
-    Dataset dataset;
-    dataset.displayName = displayName.empty() ? "(dropped file)" : displayName;
-    std::string error;
-    if (!dataset.file.loadFromMemory(std::move(bytes), error)) return makeError(error);
-
-    return finishOpen(std::move(dataset));
+choc::value::Value EditorBridge::openFileDialog(const choc::value::ValueView&) {
+    if (!kronos::isNativeFileDialogSupported()) {
+        return makeError("Native file dialogs aren't supported on this platform yet.");
+    }
+    auto path = kronos::showOpenFileDialog("Open a Korg Kronos .PCG/.SNG backup");
+    if (!path) return makeCancelled();
+    return openFileAtPath(*path);
 }
 
 choc::value::Value EditorBridge::listDatasets(const choc::value::ValueView&) {

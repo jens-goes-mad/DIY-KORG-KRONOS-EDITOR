@@ -21,6 +21,7 @@ endif()
 add_executable(kronos_editor
     src/main.cpp
     src/bridge/EditorBridge.cpp
+    src/platform/NativeFileDialog.cpp
     src/kronos/PcgFile.cpp
     src/kronos/ProgramDecoder.cpp
     src/kronos/CombiDecoder.cpp

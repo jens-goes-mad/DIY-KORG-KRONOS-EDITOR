@@ -2,6 +2,19 @@ function setStatus(message) {
   document.getElementById("statusBar").textContent = message;
 }
 
+// The native app (choc_DesktopWindow.h) has no menu bar at all, so there's
+// no OS-level Cmd+R/Ctrl+R reload the way a real browser tab gets for free
+// -- without this, the only way to pick up a frontend/ change while testing
+// (even a live-off-disk debug build, see main.cpp's loadFrontendResource())
+// is fully quitting and relaunching the whole process, which is easy to
+// forget and looks exactly like "my CSS/JS change isn't taking effect."
+window.addEventListener("keydown", (ev) => {
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "r") {
+    ev.preventDefault();
+    location.reload();
+  }
+});
+
 const panes = {};
 
 // Dropping within the same Set List (same dataset) swaps the two slots'
@@ -70,3 +83,47 @@ document.querySelectorAll(".pane").forEach((root) => {
 });
 
 refreshDatasets();  // so every pane's selectors have data as soon as the bridge is ready
+
+// A single, global Open button (topbar) rather than one per pane -- opening
+// a file isn't inherently "for" any particular pane (a dataset is decoupled
+// from panes, see EditorBridge.h), so one control is enough. Once opened, it
+// lands in the first empty pane (A checked before B) purely for convenience;
+// if both panes already show something, the dataset still becomes available
+// in either pane's selector via refreshDatasets() below, just not auto-shown.
+const openFileButton = document.querySelector(".open-file-button");
+const topbarLoading = document.querySelector(".topbar-loading");
+const topbarLoadingText = document.querySelector(".topbar-loading-text");
+
+openFileButton.addEventListener("click", async () => {
+  // Genuinely blocking today -- showOpenFileDialog()'s runModal() is
+  // native-modal (expected, normal dialog behavior), and once a path comes
+  // back the read itself is still the same synchronous PcgFile::load() as
+  // openFile() -- no chunking/progress reporting yet (see STATE.md's
+  // EXPLORATION section's Phase 2 for that). So this spinner is mostly
+  // cosmetic for now: the bridge call blocks the whole native side,
+  // including the JS engine, so there's no guarantee the browser gets to
+  // paint it before that block starts -- a real fix needs Phase 2's
+  // backgrounded read.
+  topbarLoadingText.textContent = "Loading...";
+  topbarLoading.hidden = false;
+  try {
+    const result = await window.openFileDialog();
+    if (result.cancelled) return;  // user closed the dialog -- not an error, nothing to log
+    if (!result.ok) {
+      setStatus(result.error);
+      return;
+    }
+    if (result.alreadyOpen) setStatus(`${result.displayName} is already open -- showing the existing dataset.`);
+    await refreshDatasets();  // every pane's selector learns about the (possibly new) dataset first
+    const targetPane = Object.values(panes).find((pane) => pane.isEmpty());
+    if (targetPane) {
+      await targetPane.loadDataset(result.datasetId, result.displayName);
+    } else if (!result.alreadyOpen) {
+      setStatus(`Opened ${result.displayName} -- pick it from a pane's dataset selector to view it (both panes already show something).`);
+    }
+  } catch (err) {
+    setStatus(String(err));
+  } finally {
+    topbarLoading.hidden = true;
+  }
+});

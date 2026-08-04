@@ -15,16 +15,30 @@
 // list, doesn't get a stored bank at all -- real slot data references it
 // via bank values >=20, which have no corresponding stored bank and are
 // deliberately left showing a raw index rather than a guessed label).
+// Shortened form ("I-A"/"U-A") of Korg's own "INT-A"/"USER-A" naming --
+// used everywhere in the UI to save column width (see STATE.md); the full
+// "INT-"/"USER-" form is what's actually verified against ground truth
+// (docs/README.md, PcgFile.cpp's confirmed Timbre bank codes), so only the
+// display layer abbreviates, never the underlying data.
 const COMBI_BANK_NAMES = [
-  "INT-A", "INT-B", "INT-C", "INT-D", "INT-E", "INT-F", "INT-G",
-  "USER-A", "USER-B", "USER-C", "USER-D", "USER-E", "USER-F", "USER-G",
+  "I-A", "I-B", "I-C", "I-D", "I-E", "I-F", "I-G",
+  "U-A", "U-B", "U-C", "U-D", "U-E", "U-F", "U-G",
 ];
 
 const PROGRAM_BANK_NAMES = [
-  "INT-A", "INT-B", "INT-C", "INT-D", "INT-E", "INT-F", "INT-G", "G(d)",
-  "USER-A", "USER-B", "USER-C", "USER-D", "USER-E", "USER-F",
-  "USER-AA", "USER-BB", "USER-CC", "USER-DD", "USER-EE", "USER-FF",
+  "I-A", "I-B", "I-C", "I-D", "I-E", "I-F", "I-G", "G(d)",
+  "U-A", "U-B", "U-C", "U-D", "U-E", "U-F",
+  "U-AA", "U-BB", "U-CC", "U-DD", "U-EE", "U-FF",
 ];
+
+// Applies the same "INT-"/"USER-" -> "I-"/"U-" shortening to a full bank
+// name coming straight from the bridge (e.g. a Timbre's confirmed
+// `bankName`, see library.js's formatTimbreRef()) -- so a ground-truth name
+// stored/logged in full still renders shortened, consistent with
+// COMBI_BANK_NAMES/PROGRAM_BANK_NAMES above.
+function abbreviateBankName(name) {
+  return name.replace(/^INT-/, "I-").replace(/^USER-/, "U-");
+}
 
 function kronosNumber(n) {
   return String(n).padStart(3, "0");
@@ -34,15 +48,36 @@ function formatBankNumber(entry) {
   const num = kronosNumber(entry.number);
   const names = entry.isProgram ? PROGRAM_BANK_NAMES : COMBI_BANK_NAMES;
   if (entry.bank >= 0 && entry.bank < names.length) {
-    return `${names[entry.bank]}-${num}`;
+    return `${names[entry.bank]} ${num}`;
   }
   // Beyond the stored bank list -- almost certainly a GM/GM2 reference
   // (fixed content, not stored per-file) or corrupt data. Show the raw
   // index rather than guess at a label.
-  return `${entry.bank}-${num}`;
+  return `${entry.bank} ${num}`;
 }
 
-const NO_DATASET_MESSAGE = "No dataset selected -- drag a .PCG file onto this pane, or pick an already-open one above.";
+// Builds a `grid-template-columns` value hard-locking each column's width in
+// px, used by every .entries-table (Setlist, Programs, Combis, Duplicates --
+// see style.css's `display: grid` + `display: contents` on thead/tbody/tr,
+// which is what actually makes th/td behave as grid cells). This replaced
+// two earlier attempts that both fought HTML's own table-layout algorithms
+// instead of sidestepping them: em widths directly on <th>/<td> under
+// `table-layout: fixed` (broke because <th>/<td> don't share a font-size
+// context, so the "locked" em width silently meant two different pixel
+// values depending on which cell the browser picked), then a <colgroup>
+// (fixed that specific bug, but table-layout's own quirks made zero
+// practical difference once it turned out the real remaining bug was an
+// unrelated flex/grid min-width: 0 gap further up the DOM -- by that point
+// plain CSS Grid, the same solid mechanism `.panes` already used, was the
+// more predictable choice going forward). Pass `null` for the one column
+// that should flex/absorb whatever space the fixed ones don't use (`1fr`) --
+// there must be exactly one, or multiple `1fr` columns split the remainder
+// evenly between them instead of one being "the" resizable column.
+function gridTemplateColumns(widthsPx) {
+  return widthsPx.map((w) => (w == null ? "1fr" : `${w}px`)).join(" ");
+}
+
+const NO_DATASET_MESSAGE = "No dataset selected -- use the Open... button above, or pick an already-open dataset from the selector.";
 
 // Shared across every pane's Setlist rows during a same-page row drag --
 // lets a row being dragged OVER (not just dropped on) know which dataset
@@ -63,22 +98,22 @@ let draggedFromDatasetId = null;
 // the shell mounts/hides depending on which category button is active.
 // Reads the dataset to show via getDatasetId() (owned by the shell) rather
 // than tracking it itself, matching createLibraryPanels()'s same contract.
-function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId }) {
+function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId, onJumpToInstrument }) {
   container.innerHTML = `
-    <select class="setlist-select" disabled></select>
-    <div class="setlist-info">${NO_DATASET_MESSAGE}</div>
-    <input class="filter-input" type="text" placeholder="Filter / search..." disabled />
+    <div class="select is-fullwidth is-small">
+      <select class="setlist-select" disabled></select>
+    </div>
+    <div class="setlist-info help">${NO_DATASET_MESSAGE}</div>
+    <input class="filter-input input is-small" type="text" placeholder="Filter / search..." disabled />
     <div class="entries-scroll">
-      <table class="entries-table">
+      <table class="entries-table" style="grid-template-columns: ${gridTemplateColumns([21, null, 38, 55, 38])}">
         <thead>
           <tr>
-            <th class="col-index">#</th>
-            <th>Song</th>
+            <th class="col-index" title="Slot number -- background shows the slot's Color">#</th>
+            <th class="col-song">Song</th>
             <th class="col-narrow" title="Program or Combi">Type</th>
             <th class="col-bank" title="Bank / number within bank">Bank</th>
             <th class="col-narrow">Vol</th>
-            <th class="col-narrow" title="Hold Time">Hold</th>
-            <th class="col-narrow">Color</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -115,12 +150,12 @@ function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId 
   // <textarea> is used (not contenteditable) so \r\n line breaks Just Work
   // via normal textarea semantics, no extra handling needed. Sized to show
   // at least 10 lines, growing to fit longer content instead of scrolling.
-  function buildCommentEditorRow(entry, columnCount) {
+  function buildCommentEditorRow(entry) {
     const editorTr = document.createElement("tr");
     editorTr.className = "comment-editor-row";
 
     const td = document.createElement("td");
-    td.colSpan = columnCount;
+    td.style.gridColumn = "1 / -1";  // span every column -- table is display:grid now, see style.css
 
     const textarea = document.createElement("textarea");
     textarea.className = "comment-editor";
@@ -161,7 +196,6 @@ function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId 
   function renderRows() {
     const needle = filterText.trim().toLowerCase();
     const visible = needle ? entries.filter((e) => e.label.toLowerCase().includes(needle)) : entries;
-    const columnCount = 7;
 
     tbody.innerHTML = "";
     for (const entry of visible) {
@@ -218,6 +252,7 @@ function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId 
       idxTd.textContent = kronosNumber(entry.index);  // 0-based, matching the Kronos's own 000-127 numbering
 
       const labelTd = document.createElement("td");
+      labelTd.className = "col-song";
       labelTd.textContent = entry.label || "(empty)";
       if (entry.comment) {
         labelTd.classList.add("has-comment");
@@ -251,30 +286,41 @@ function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId 
       bankTd.className = "col-bank";
       const volTd = document.createElement("td");
       volTd.className = "col-narrow";
-      const holdTd = document.createElement("td");
-      holdTd.className = "col-narrow";
-      const colorTd = document.createElement("td");
-      colorTd.className = "col-narrow";
 
       if (entry.paramsFound) {
         typeTd.textContent = entry.isProgram ? "Prog" : "Combi";
-        bankTd.textContent = formatBankNumber(entry);
+        // A button, not plain text: clicking it jumps to this exact
+        // Program/Combi in the pane's own Programs/Combis category instead
+        // of toggling this row's Comment editor (stopPropagation below
+        // keeps the row's own click handler from also firing).
+        const bankButton = document.createElement("button");
+        bankButton.type = "button";
+        bankButton.className = "button is-small bank-jump-button";  // Bulma button, same look as the topbar's Open button
+        bankButton.textContent = formatBankNumber(entry);
+        bankButton.title = `Show ${entry.isProgram ? "Program" : "Combi"} ${formatBankNumber(entry)} in this pane's Programs/Combis view`;
+        bankButton.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          onJumpToInstrument({ isProgram: entry.isProgram, bank: entry.bank, number: entry.number });
+        });
+        bankTd.appendChild(bankButton);
         volTd.textContent = String(entry.volume);
-        holdTd.textContent = String(entry.holdTime);
-        // Not Korg's actual color palette (unknown) -- just a stable,
-        // visually distinct swatch per color index for now.
-        const swatch = document.createElement("span");
-        swatch.className = "color-swatch";
-        swatch.style.background = `hsl(${(entry.color * 47) % 360}, 65%, 45%)`;
-        swatch.title = `Color ${entry.color}`;
-        colorTd.appendChild(swatch);
+        // Color used to be its own swatch column -- now shown as the "#"
+        // cell's own background instead, freeing up a whole column. Not
+        // Korg's actual color palette (unknown) -- just a stable, visually
+        // distinct hue per color index, same formula as before.
+        idxTd.style.background = `hsl(${(entry.color * 47) % 360}, 65%, 25%)`;
+        idxTd.title = `Color ${entry.color}`;
       }
 
-      tr.append(idxTd, labelTd, typeTd, bankTd, volTd, holdTd, colorTd);
+      // Hold Time dropped from this row (2026-08-04) -- moving to the
+      // Comment editor panel later rather than showing it here; entry.holdTime
+      // itself is untouched (still fetched/returned by getEntries()), just
+      // not rendered as its own column for now.
+      tr.append(idxTd, labelTd, typeTd, bankTd, volTd);
       tbody.appendChild(tr);
 
       if (expandedIndices.has(entry.index)) {
-        tbody.appendChild(buildCommentEditorRow(entry, columnCount));
+        tbody.appendChild(buildCommentEditorRow(entry));
       }
     }
   }
@@ -358,20 +404,24 @@ function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId 
 function createPane(paneId, root, { onDropEntry, log }) {
   root.innerHTML = `
     <div class="pane-header">
-      <select class="dataset-select"></select>
-      <nav class="lib-tabs pane-category-tabs">
-        <button class="lib-tab active" type="button" data-category="setlist">Setlist</button>
-        <button class="lib-tab" type="button" data-category="programs">Programs</button>
-        <button class="lib-tab" type="button" data-category="combis">Combis</button>
-        <button class="lib-tab" type="button" data-category="duplicates">Duplicates</button>
-      </nav>
+      <div class="select is-small dataset-select-wrap">
+        <select class="dataset-select"></select>
+      </div>
+      <div class="tabs is-boxed is-small pane-category-tabs">
+        <ul>
+          <li class="is-active" data-category="setlist"><a>Setlist</a></li>
+          <li data-category="programs"><a>Programs</a></li>
+          <li data-category="combis"><a>Combis</a></li>
+          <li data-category="duplicates"><a>Duplicates</a></li>
+        </ul>
+      </div>
     </div>
     <div class="pane-category-content" data-category-panel="setlist"></div>
     <div class="pane-category-content" data-category-panel="library" hidden></div>
   `;
 
   const datasetSelect = root.querySelector(".dataset-select");
-  const categoryTabs = root.querySelectorAll(".pane-category-tabs .lib-tab");
+  const categoryTabs = root.querySelectorAll(".pane-category-tabs li");
   const setlistContainer = root.querySelector('[data-category-panel="setlist"]');
   const libraryContainer = root.querySelector('[data-category-panel="library"]');
 
@@ -383,31 +433,50 @@ function createPane(paneId, root, { onDropEntry, log }) {
     return currentDatasetId;
   }
 
+  // Category switching just toggles which container is visible -- no data
+  // reload needed on its own, since both renderers already hold current
+  // data from the last dataset change (see onDatasetChanged() below).
+  // Shared between category-tab clicks and jumpToInstrument() below, so
+  // there's one place that keeps the tab-active state and container
+  // visibility in sync.
+  function switchCategory(category) {
+    // Bulma's tabs component puts "active" state on the <li> as `is-active`
+    // (not a plain custom class), see style.css's dark-theme override.
+    categoryTabs.forEach((t) => t.classList.toggle("is-active", t.dataset.category === category));
+    currentCategory = category;
+
+    const isSetlist = category === "setlist";
+    setlistContainer.hidden = !isSetlist;
+    libraryContainer.hidden = isSetlist;
+    if (!isSetlist) libraryPanels.showPanel(category);
+  }
+
+  categoryTabs.forEach((tab) => {
+    tab.addEventListener("click", () => switchCategory(tab.dataset.category));
+  });
+
+  // Called when a Setlist row's Bank button is clicked -- switches this
+  // pane to its Programs/Combis category and expands+scrolls to that exact
+  // entry, instead of just showing a bank/number label. (Note for later,
+  // per STATE.md's EXPLORATION section: once bank-filter buttons exist on
+  // the Programs/Combis panels, this needs to also make sure the target
+  // bank's filter is "pressed" first, or the jump could land on a filtered-
+  // out row.)
+  function jumpToInstrument({ isProgram, bank, number }) {
+    switchCategory(isProgram ? "programs" : "combis");
+    libraryPanels.jumpToEntry(isProgram, bank, number);
+  }
+
   const setlistPanel = createSetlistPanel(setlistContainer, {
     paneId,
     log,
     onDropEntry,
     getDatasetId: getCurrentDatasetId,
+    onJumpToInstrument: jumpToInstrument,
   });
   const libraryPanels = createLibraryPanels(libraryContainer, {
     log,
     getDatasetId: getCurrentDatasetId,
-  });
-
-  // Category switching just toggles which container is visible -- no data
-  // reload needed on its own, since both renderers already hold current
-  // data from the last dataset change (see onDatasetChanged() below).
-  categoryTabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      categoryTabs.forEach((t) => t.classList.remove("active"));
-      tab.classList.add("active");
-      currentCategory = tab.dataset.category;
-
-      const isSetlist = currentCategory === "setlist";
-      setlistContainer.hidden = !isSetlist;
-      libraryContainer.hidden = isSetlist;
-      if (!isSetlist) libraryPanels.showPanel(currentCategory);
-    });
   });
 
   // Displays an already-open dataset in this pane -- called both right after
@@ -455,81 +524,16 @@ function createPane(paneId, root, { onDropEntry, log }) {
     if (currentDatasetId != null && !stillOpen) resetToEmpty();
   });
 
-  // Drag-and-drop a file from Finder/Explorer straight onto the pane -- the
-  // native "Open File" dialog (triggered via a hidden <input type=file>)
-  // opens a real NSOpenPanel/GTK/Win32 picker but on macOS it currently
-  // appears behind the app window instead of in front (a choc/WKWebView
-  // z-order quirk, not something this app controls) -- see STATE.md. Drag
-  // and drop sidesteps it entirely, and also works without ever needing an
-  // absolute filesystem path: the browser's File API hands over real file
-  // bytes directly, which is why openFileBytes() exists alongside openFile().
-  // Drag depth counter instead of a plain add/remove pair: dragenter/
-  // dragleave fire per-element as the pointer crosses into/out of CHILD
-  // elements too (the entries table, the dataset-select, ...), and since
-  // only root has a listener, a dragleave crossing into a child arrives
-  // with ev.target set to that child, not root -- the old `ev.target ===
-  // root` guard could then simply never fire again for the rest of that
-  // hover, leaving the highlight stuck. Counting enters/leaves is immune to
-  // that regardless of which descendant the event targets.
-  let dragDepth = 0;
-  root.addEventListener("dragenter", (ev) => {
-    if (!ev.dataTransfer.types.includes("Files")) return;
-    ev.preventDefault();
-    dragDepth++;
-    root.classList.add("drag-over");
-  });
-  root.addEventListener("dragover", (ev) => {
-    if (!ev.dataTransfer.types.includes("Files")) return;
-    ev.preventDefault();  // still required on every dragover for drop to be allowed
-  });
-  root.addEventListener("dragleave", () => {
-    dragDepth = Math.max(0, dragDepth - 1);
-    if (dragDepth === 0) root.classList.remove("drag-over");
-  });
-  root.addEventListener("drop", async (ev) => {
-    if (!ev.dataTransfer.files || ev.dataTransfer.files.length === 0) return;
-    ev.preventDefault();
-    dragDepth = 0;
-    // Clear EVERY pane's highlight, not just this one -- a drag that
-    // passed over a sibling pane on the way here can otherwise leave that
-    // pane's highlight stuck even after this drop lands somewhere else.
-    document.querySelectorAll(".pane").forEach((p) => p.classList.remove("drag-over"));
-
-    const file = ev.dataTransfer.files[0];
-    log(`[Pane ${paneId}] Loading ${file.name}...`);
-    try {
-      const base64 = await arrayBufferToBase64(await file.arrayBuffer());
-      const result = await window.openFileBytes(base64, file.name);
-      if (!result.ok) {
-        log(`[Pane ${paneId}] ${result.error}`);
-        return;
-      }
-      // Dropping always creates a NEW dataset -- refresh the shared registry
-      // first so every selector (the other pane, this pane's own Library
-      // categories) learns about it too, then show it in THIS pane
-      // specifically. The other pane keeps showing whatever it already
-      // had, unless the user picks this same dataset from its own selector.
-      await refreshDatasets();
-      await loadDataset(result.datasetId, result.displayName);
-    } catch (err) {
-      log(`[Pane ${paneId}] ${err}`);
-    }
-  });
-
   // Exposed so app.js's onDropEntry knows which pane(s) are currently
   // showing an affected dataset after a move/copy, and need refreshing --
   // could be 0, 1, or both panes, e.g. when both point at the same dataset.
-  return { refreshEntries: setlistPanel.refreshEntries, getCurrentDatasetId };
-}
-
-// Chunked to avoid blowing the call-stack limit of String.fromCharCode.apply
-// on large files (Kronos backups run 50-70MB).
-async function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
+  // `loadDataset`/`isEmpty` are exposed for app.js's single, global Open
+  // button (see index.html's topbar) to pick a pane to land a newly-opened
+  // dataset in, now that opening is no longer a per-pane action.
+  return {
+    refreshEntries: setlistPanel.refreshEntries,
+    getCurrentDatasetId,
+    loadDataset,
+    isEmpty: () => currentDatasetId == null,
+  };
 }

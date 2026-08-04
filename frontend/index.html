@@ -1,20 +1,45 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <title>DIY Kronos Editor</title>
+  <!-- Vendored, not CDN-linked -- see frontend/vendor/BULMA_VERSION.txt.
+       This app has no general internet access assumption (fetchResource
+       serves everything from local disk, same as third_party/choc/), so a
+       CDN <link> would just fail. Loaded before style.css so our own rules
+       can override Bulma's where needed. data-theme="dark" above forces
+       Bulma's dark palette unconditionally (this app is always-dark, not
+       theme-togglable, so relying on the OS's prefers-color-scheme instead
+       would drift from our own hard-coded dark :root in style.css whenever
+       the OS itself isn't in dark mode).
+
+       `is-mobile` on .level/.columns below: Bulma is mobile-first --
+       .level/.columns only become row layouts (instead of stacking) past a
+       769px media-query breakpoint. This app enforces an 800px minimum
+       window width (main.cpp), which clears that, but relying on a 31px
+       margin above a breakpoint is exactly the kind of narrow-width edge
+       case that broke things repeatedly before this rewrite. `is-mobile`
+       forces row layout unconditionally, no breakpoint involved. -->
+  <link rel="stylesheet" href="vendor/bulma.min.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <h1>DIY Kronos Editor</h1>
+  <header class="topbar level is-mobile">
+    <div class="level-left">
+      <button class="button is-small mr-3 open-file-button" type="button" title="Open a .PCG/.SNG file via a native file picker -- lands in whichever pane is empty, or just becomes selectable from either pane's dropdown if both are occupied">Open...</button>
+      <h1 class="title is-5 mb-0">DIY Kronos Editor</h1>
+    </div>
+    <div class="level-right topbar-loading" hidden>
+      <div class="topbar-loading-spinner"></div>
+      <span class="topbar-loading-text">Loading...</span>
+    </div>
   </header>
 
   <main class="view" id="setlistsView">
-    <div class="view-hint">Drag a .PCG file onto a pane to open it as a new dataset, or pick an already-open one from the selector above a pane -- both panes on the same dataset share edits. Each pane's Setlist/Programs/Combis/Duplicates tabs browse whichever dataset it's showing; drag a Setlist row within a pane to swap, drag across panes to copy (Programs/Combis rows aren't draggable yet).</div>
-    <div class="panes">
-      <section class="pane" data-pane="A"></section>
-      <section class="pane" data-pane="B"></section>
+    <div class="view-hint">Click "Open..." above to load a .PCG/.SNG file as a new dataset, or pick an already-open one from a pane's selector -- both panes on the same dataset share edits. Each pane's Setlist/Programs/Combis/Duplicates tabs browse whichever dataset it's showing; drag a Setlist row within a pane to swap, drag across panes to copy (Programs/Combis rows aren't draggable yet).</div>
+    <div class="panes columns is-mobile">
+      <section class="pane column" data-pane="A"></section>
+      <section class="pane column" data-pane="B"></section>
     </div>
   </main>
 

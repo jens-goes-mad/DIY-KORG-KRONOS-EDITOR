@@ -1,16 +1,18 @@
 // Fallback bridge for plain-browser mode (open index.html directly, no
-// native app build). Fabricates fake Set List data so drag-and-drop file
-// loading, the Set List picker, filter/search, and drag-and-drop swap/copy
-// can all be exercised with real devtools -- but it CANNOT open real files:
-// a plain browser page has no filesystem access at all (that's a
-// web-platform restriction, not a Choc one -- Choc's native bridge is what
-// gives the real app actual access to disk).
+// native app build). Fabricates fake data so the "Open..." button, the Set
+// List picker, filter/search, and drag-and-drop swap/copy can all be
+// exercised with real devtools -- but it CANNOT open real files: a plain
+// browser page has no filesystem access at all (that's a web-platform
+// restriction, not a Choc one -- Choc's native bridge is what gives the
+// real app actual access to disk), so openFileDialog() below fakes a
+// picker via window.prompt() instead of a real one.
 //
 // When running inside the native app, choc's addInitScript() injects the
-// real window.openFileBytes/listDatasets/listSetlists/getEntries/moveEntry/
-// copyEntry *before* this script runs, so this file becomes a no-op there.
+// real window.openFileDialog/listDatasets/listSetlists/getEntries/
+// moveEntry/copyEntry *before* this script runs, so this file becomes a
+// no-op there.
 (function () {
-  if (window.openFileBytes) return;
+  if (window.openFileDialog) return;
 
   console.warn(
     "[mock_bridge] No native bridge detected -- running in plain-browser mode with fabricated " +
@@ -129,9 +131,23 @@
     return { displayName: fileName, setlists, songs, programs: makeFakePrograms(), combis: makeFakeCombis() };
   }
 
-  window.openFileBytes = (_base64Data, displayName) => {
+  // A plain browser tab can't show a real native file picker (or read an
+  // arbitrary local path at all) -- window.prompt() stands in for it here
+  // just so the "Open..." button has SOMETHING to do in mock mode.
+  window.openFileDialog = () => {
+    const displayName = window.prompt("Mock mode has no real file picker -- type a fake file name:", "mock-file.pcg");
+    if (!displayName) return Promise.resolve({ ok: true, cancelled: true });
+    // Mirrors the real bridge's dedup (EditorBridge::openFileAtPath): typing
+    // the same fake name twice reuses the existing mock dataset instead of
+    // creating a duplicate, so mock mode exercises the same "already open"
+    // behavior the native dialog does.
+    const existingId = Object.keys(datasets).find((id) => datasets[id].displayName === displayName);
+    if (existingId) {
+      const d = datasets[existingId];
+      return ok({ datasetId: Number(existingId), displayName: d.displayName, setlistCount: d.setlists.length, alreadyOpen: true });
+    }
     const datasetId = nextDatasetId++;
-    datasets[datasetId] = makeFakeFile(displayName || "dropped-file");
+    datasets[datasetId] = makeFakeFile(displayName);
     return ok({ datasetId, displayName: datasets[datasetId].displayName, setlistCount: datasets[datasetId].setlists.length });
   };
 

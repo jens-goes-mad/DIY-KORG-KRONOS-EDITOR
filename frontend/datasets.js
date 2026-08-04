@@ -40,7 +40,10 @@ function populateDatasetSelect(selectEl, datasets, currentValue) {
   for (const d of datasets) {
     const opt = document.createElement("option");
     opt.value = String(d.datasetId);
-    opt.textContent = d.displayName;
+    // Full path/name plus the dataset id, not a truncated/basename-only
+    // label -- makes it unambiguous which dataset is which when two panes
+    // (or several open files) could otherwise look similar at a glance.
+    opt.textContent = `#${d.datasetId} — ${d.displayName}`;
     selectEl.appendChild(opt);
   }
   selectEl.value = datasets.some((d) => String(d.datasetId) === currentValue) ? currentValue : "";

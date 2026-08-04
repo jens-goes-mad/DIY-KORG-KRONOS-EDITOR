@@ -1,0 +1,12 @@
+Bulma 1.0.2
+Source: https://cdn.jsdelivr.net/npm/bulma@1.0.2/css/bulma.min.css
+License: MIT (https://github.com/jgthms/bulma/blob/master/LICENSE)
+
+Vendored as a single CSS file, no JS -- Bulma has no JS component of its
+own (unlike Bootstrap, which needs Popper for dropdowns/tooltips). Every
+interactive behavior in this app (tabs switching, comment editor expand,
+drag-and-drop, ...) is still plain hand-written JS in frontend/*.js;
+Bulma only supplies the CSS classes/grid.
+
+To update: re-download bulma.min.css from the URL above at a newer
+version tag, replace this file, bump the version note here.

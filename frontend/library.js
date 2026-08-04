@@ -18,17 +18,35 @@ function createLibraryPanels(root, { log, getDatasetId }) {
   root.innerHTML = `
     <input class="filter-input library-filter" type="text" placeholder="Filter / search..." />
     <div class="library-body">
-      <div class="lib-panel" data-panel="programs"></div>
-      <div class="lib-panel" data-panel="combis" hidden></div>
+      <div class="lib-panel" data-panel="programs">
+        <div class="bank-filter-row" data-bank-filter="programs"></div>
+        <div class="lib-panel-table" data-panel-table="programs"></div>
+      </div>
+      <div class="lib-panel" data-panel="combis" hidden>
+        <div class="bank-filter-row" data-bank-filter="combis"></div>
+        <div class="lib-panel-table" data-panel-table="combis"></div>
+      </div>
       <div class="lib-panel" data-panel="duplicates" hidden></div>
     </div>
   `;
 
   const filterInput = root.querySelector(".library-filter");
+  // The outer per-category divs -- used only for show/hide (showPanel()).
   const panels = {
     programs: root.querySelector('[data-panel="programs"]'),
     combis: root.querySelector('[data-panel="combis"]'),
     duplicates: root.querySelector('[data-panel="duplicates"]'),
+  };
+  // Where each table actually gets (re)built -- separate from `panels` above
+  // so rebuilding a table on every render/filter keystroke doesn't also
+  // wipe out that category's bank-filter buttons.
+  const panelTables = {
+    programs: root.querySelector('[data-panel-table="programs"]'),
+    combis: root.querySelector('[data-panel-table="combis"]'),
+  };
+  const bankFilterRows = {
+    programs: root.querySelector('[data-bank-filter="programs"]'),
+    combis: root.querySelector('[data-bank-filter="combis"]'),
   };
 
   let currentTab = "programs";
@@ -37,6 +55,77 @@ function createLibraryPanels(root, { log, getDatasetId }) {
   let duplicateGroups = [];
   let expandedProgramKey = null;  // `${bank}-${number}` of the one expanded usage row, if any
   let expandedCombiKey = null;    // `${bank}-${number}` of the one expanded Timbre row, if any
+  // Bank-filter state, per category -- `present` is which bank indices
+  // actually have entries in the current dataset (recomputed on every
+  // load()), `filter` is which of those are currently "pressed" (shown),
+  // reset to match `present` (show everything) on every load() and then
+  // independently user-toggleable. Buttons for banks NOT in `present` are
+  // disabled, per explicit request -- there's nothing to show there.
+  let programPresentBanks = new Set();
+  let programBankFilter = new Set();
+  let combiPresentBanks = new Set();
+  let combiBankFilter = new Set();
+
+  // scrollIntoView({block:"center"}) can leave a row still partly hidden
+  // under the table's sticky <thead> (especially rows near the top of the
+  // list, which can't be centered past the header at all) -- this instead
+  // computes the exact scroll position so the row lands just below the
+  // header, using getBoundingClientRect() (robust regardless of the
+  // table/tbody nesting between the row and its scrolling ancestor).
+  function scrollRowBelowHeader(row) {
+    const scrollBox = row.closest(".library-body");
+    if (!scrollBox) return;
+    // row.closest("table"), not scrollBox.querySelector("thead") -- Programs'
+    // and Combis' tables can both exist in the DOM at once (one just
+    // hidden), so querying from scrollBox could grab the wrong table's
+    // header height entirely.
+    const table = row.closest("table");
+    const header = table ? table.querySelector("thead") : null;
+    const headerHeight = header ? header.getBoundingClientRect().height : 0;
+    const rowRect = row.getBoundingClientRect();
+    const boxRect = scrollBox.getBoundingClientRect();
+    const currentOffset = rowRect.top - boxRect.top;
+    const desiredOffset = headerHeight + 8;  // a small gap below the header
+    scrollBox.scrollTo({ top: scrollBox.scrollTop + currentOffset - desiredOffset, behavior: "smooth" });
+  }
+
+  // Draws one category's bank-filter button row: one toggle per bank name,
+  // enabled only if that bank actually has entries in the current dataset
+  // (`present`), pressed (.active) if currently in `filterSet`. Pure
+  // rendering -- only the click handler mutates `filterSet`, so calling
+  // this again (e.g. to reflect a programmatic change from jumpToEntry())
+  // never resets a user's existing choices on its own.
+  function renderBankFilterRow(container, bankNames, present, filterSet, onToggle) {
+    container.innerHTML = "";
+    bankNames.forEach((name, bank) => {
+      const isPresent = present.has(bank);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "lib-tab bank-filter-button";
+      btn.textContent = name;
+      btn.disabled = !isPresent;
+      if (isPresent && filterSet.has(bank)) btn.classList.add("active");
+      btn.addEventListener("click", () => {
+        if (filterSet.has(bank)) filterSet.delete(bank);
+        else filterSet.add(bank);
+        btn.classList.toggle("active");
+        onToggle();
+      });
+      container.appendChild(btn);
+    });
+  }
+
+  function refreshProgramBankButtons() {
+    renderBankFilterRow(bankFilterRows.programs, PROGRAM_BANK_NAMES, programPresentBanks, programBankFilter, () =>
+      renderProgramsPanel()
+    );
+  }
+
+  function refreshCombiBankButtons() {
+    renderBankFilterRow(bankFilterRows.combis, COMBI_BANK_NAMES, combiPresentBanks, combiBankFilter, () =>
+      renderCombisPanel()
+    );
+  }
 
   function filterByName(rows, needle) {
     if (!needle) return rows;
@@ -52,7 +141,7 @@ function createLibraryPanels(root, { log, getDatasetId }) {
 
   // Small pill per Set List reference (name + slot number) -- only shown
   // when there are few enough (<=10) to stay readable; above that, the
-  // "Setlist refs" count column still shows the total, just without the
+  // "#STL" count column still shows the total, just without the
   // per-reference breakdown.
   function badgesCell(setlistUsages) {
     const td = document.createElement("td");
@@ -88,7 +177,12 @@ function createLibraryPanels(root, { log, getDatasetId }) {
     const tr = document.createElement("tr");
     tr.className = "comment-editor-row";  // reuses the existing expand-row look from pane.js
     const td = document.createElement("td");
-    td.colSpan = 2;
+    // Span every column -- table is display:grid now (see style.css). Was
+    // `colSpan = 2` under the old <table> layout, a stale value from when
+    // the Programs table had fewer columns (it's had 5 for a while); fixed
+    // as part of the grid migration since grid-column: 1 / -1 always means
+    // "all of them," not a number that can silently drift out of sync.
+    td.style.gridColumn = "1 / -1";
 
     const box = document.createElement("div");
     box.textContent = "Loading usage...";
@@ -163,22 +257,25 @@ function createLibraryPanels(root, { log, getDatasetId }) {
   }
 
   function renderProgramsPanel() {
-    const panel = panels.programs;
+    const panel = panelTables.programs;
     const needle = filterInput.value.trim().toLowerCase();
-    const rows = filterByName(programs, needle);
+    const rows = filterByName(programs, needle).filter((p) => programBankFilter.has(p.bank));
 
     panel.innerHTML = "";
     const table = document.createElement("table");
     table.className = "entries-table library-table";
+    table.style.gridTemplateColumns = gridTemplateColumns([55, null, 38, 54, 54]);
     table.innerHTML =
-      "<thead><tr><th class=\"col-bank\">Bank</th><th>Name</th><th class=\"col-narrow\" " +
+      "<thead><tr><th class=\"col-bank\">Bank</th><th class=\"col-name\">Name</th><th class=\"col-narrow\" " +
       "title=\"HD-1 or EXi -- not yet cross-checked against a real backup, see docs/external/README.md\">Type</th>" +
-      "<th class=\"col-refs\">Setlist refs</th><th class=\"col-refs\">Combi refs</th></tr></thead><tbody></tbody>";
+      "<th class=\"col-refs\" title=\"Set List references\">#STL</th>" +
+      "<th class=\"col-refs\" title=\"Combi references\">#CMB</th></tr></thead><tbody></tbody>";
     const tbody = table.querySelector("tbody");
 
     for (const p of rows) {
       const tr = document.createElement("tr");
       const nameTd = document.createElement("td");
+      nameTd.className = "col-name";
       nameTd.textContent = p.name || "(empty)";
       const typeTd = document.createElement("td");
       typeTd.className = "col-narrow";
@@ -194,6 +291,7 @@ function createLibraryPanels(root, { log, getDatasetId }) {
       );
 
       const key = `${p.bank}-${p.number}`;
+      tr.dataset.entryKey = key;  // lets jumpToEntry() find this exact row after a re-render
       if (key === expandedProgramKey) tr.classList.add("expanded");
       tr.addEventListener("click", () => {
         expandedProgramKey = expandedProgramKey === key ? null : key;
@@ -217,8 +315,8 @@ function createLibraryPanels(root, { log, getDatasetId }) {
   // it still counts as "this Combi references that Program."
   function formatTimbreRef(t) {
     if (t.isDefault) return "--";
-    const bank = t.bankName || `code ${t.rawBankCode}`;
-    const ref = `${bank}-${kronosNumber(t.number)}`;
+    const bank = t.bankName ? abbreviateBankName(t.bankName) : `code ${t.rawBankCode}`;
+    const ref = `${bank} ${kronosNumber(t.number)}`;
     return t.status === "Off" ? `${ref} (off)` : ref;
   }
 
@@ -226,7 +324,7 @@ function createLibraryPanels(root, { log, getDatasetId }) {
     const tr = document.createElement("tr");
     tr.className = "comment-editor-row";
     const td = document.createElement("td");
-    td.colSpan = 4;
+    td.style.gridColumn = "1 / -1";  // span every column -- table is display:grid now, see style.css
 
     const heading = document.createElement("div");
     heading.className = "usage-heading";
@@ -255,16 +353,17 @@ function createLibraryPanels(root, { log, getDatasetId }) {
   }
 
   function renderCombisPanel() {
-    const panel = panels.combis;
+    const panel = panelTables.combis;
     const needle = filterInput.value.trim().toLowerCase();
-    const rows = filterByName(combis, needle);
+    const rows = filterByName(combis, needle).filter((c) => combiBankFilter.has(c.bank));
 
     panel.innerHTML = "";
     const table = document.createElement("table");
     table.className = "entries-table library-table";
+    table.style.gridTemplateColumns = gridTemplateColumns([55, null, 160, 54]);
     table.innerHTML =
       "<thead><tr><th class=\"col-bank\">Bank</th><th class=\"col-name\">Name</th><th class=\"col-badges\">Set Lists</th>" +
-      "<th class=\"col-refs\">Setlist refs</th></tr></thead><tbody></tbody>";
+      "<th class=\"col-refs\" title=\"Set List references\">#STL</th></tr></thead><tbody></tbody>";
     const tbody = table.querySelector("tbody");
 
     for (const c of rows) {
@@ -280,6 +379,7 @@ function createLibraryPanels(root, { log, getDatasetId }) {
       );
 
       const key = `${c.bank}-${c.number}`;
+      tr.dataset.entryKey = key;  // lets jumpToEntry() find this exact row after a re-render
       if (key === expandedCombiKey) tr.classList.add("expanded");
       tr.addEventListener("click", () => {
         expandedCombiKey = expandedCombiKey === key ? null : key;
@@ -320,9 +420,10 @@ function createLibraryPanels(root, { log, getDatasetId }) {
 
       const table = document.createElement("table");
       table.className = "entries-table library-table";
+      table.style.gridTemplateColumns = gridTemplateColumns([55, 54, 54]);
       table.innerHTML =
-        "<thead><tr><th class=\"col-bank\">Bank</th><th class=\"col-refs\">Setlist references</th>" +
-        "<th class=\"col-refs\">Combi references</th></tr></thead><tbody></tbody>";
+        "<thead><tr><th class=\"col-bank\">Bank</th><th class=\"col-refs\" title=\"Set List references\">#STL</th>" +
+        "<th class=\"col-refs\" title=\"Combi references\">#CMB</th></tr></thead><tbody></tbody>";
       const tbody = table.querySelector("tbody");
 
       for (const p of group) {
@@ -364,13 +465,21 @@ function createLibraryPanels(root, { log, getDatasetId }) {
       programs = [];
       combis = [];
       duplicateGroups = [];
-      renderCurrentTab();
-      return;
+    } else {
+      programs = await window.listPrograms(datasetId);
+      combis = await window.listCombis(datasetId);
+      duplicateGroups = await window.findDuplicatePrograms(datasetId);
+      log(`[Library] Loaded dataset ${datasetId}: ${programs.length} Programs, ${combis.length} Combis, ${duplicateGroups.length} duplicate groups.`);
     }
-    programs = await window.listPrograms(datasetId);
-    combis = await window.listCombis(datasetId);
-    duplicateGroups = await window.findDuplicatePrograms(datasetId);
-    log(`[Library] Loaded dataset ${datasetId}: ${programs.length} Programs, ${combis.length} Combis, ${duplicateGroups.length} duplicate groups.`);
+    // Reset both bank filters to "show every bank actually present" -- a
+    // fresh dataset's bank layout has nothing to do with whatever was
+    // toggled for a previous one.
+    programPresentBanks = new Set(programs.map((p) => p.bank));
+    programBankFilter = new Set(programPresentBanks);
+    combiPresentBanks = new Set(combis.map((c) => c.bank));
+    combiBankFilter = new Set(combiPresentBanks);
+    refreshProgramBankButtons();
+    refreshCombiBankButtons();
     renderCurrentTab();
   }
 
@@ -384,5 +493,27 @@ function createLibraryPanels(root, { log, getDatasetId }) {
     load();
   }
 
-  return { onDatasetChanged, showPanel };
+  // Called by the shell after it's already switched to this Program's/
+  // Combi's category (via showPanel()) -- expands that exact entry's usage/
+  // Timbre row and scrolls it into view, same as clicking the row directly.
+  // Clears any active text filter, and makes sure the target bank's filter
+  // button is "pressed," so neither can hide the entry being jumped to.
+  function jumpToEntry(isProgram, bank, number) {
+    filterInput.value = "";
+    const key = `${bank}-${number}`;
+    if (isProgram) {
+      expandedProgramKey = key;
+      programBankFilter.add(bank);
+      refreshProgramBankButtons();
+    } else {
+      expandedCombiKey = key;
+      combiBankFilter.add(bank);
+      refreshCombiBankButtons();
+    }
+    renderCurrentTab();
+    const row = root.querySelector(`[data-entry-key="${key}"]`);
+    if (row) scrollRowBelowHeader(row);
+  }
+
+  return { onDatasetChanged, showPanel, jumpToEntry };
 }

@@ -26,10 +26,19 @@ class EditorBridge {
 public:
     choc::value::Value openFile(const choc::value::ValueView& args);    // [path] -> {ok, datasetId, displayName, setlistCount}
 
-    // [base64Data, displayName] -- for files handed over by the browser's
-    // File API (e.g. dropped onto a pane), which has no filesystem path to
-    // give us. See README.md ("Open File").
-    choc::value::Value openFileBytes(const choc::value::ValueView& args);
+    // No args -- shows a native "Open" dialog (src/platform/NativeFileDialog.h),
+    // invoked directly rather than through CHOC's own WebView-triggered
+    // picker (see NativeFileDialog.cpp for why that distinction matters).
+    // This is the only UI-reachable way to open a file (drag-and-drop-to-
+    // open was removed once this worked -- see STATE.md). Returns the same
+    // shape as openFile(), or `{ok: true, cancelled: true}` if the user
+    // cancelled (not an error -- see makeCancelled()), or
+    // `{ok: true, ..., alreadyOpen: true}` if this exact path was already
+    // open (see openFileAtPath() -- opening the same file twice reuses the
+    // existing dataset rather than duplicating it in memory). Currently
+    // macOS-only; returns an error on platforms NativeFileDialog.cpp
+    // doesn't support yet.
+    choc::value::Value openFileDialog(const choc::value::ValueView& args);
 
     // No args -- every currently open dataset, so any UI selector (a pane, or
     // Library) can populate/refresh its options regardless of which pane (if
@@ -62,7 +71,7 @@ public:
 private:
     struct Dataset {
         kronos::PcgFile file;
-        std::string displayName;  // shown to the user; not necessarily a real filesystem path (see openFileBytes)
+        std::string displayName;  // the path it was opened from (both openFile() and openFileDialog() set this to the real path)
     };
 
     std::map<int, Dataset> m_datasets;
@@ -71,8 +80,17 @@ private:
     kronos::Setlist* setlistOf(int datasetId, int setlistIndex);
     kronos::PcgFile* fileOf(int datasetId);
     choc::value::Value finishOpen(Dataset dataset);
+    static choc::value::Value datasetResultValue(int datasetId, const Dataset& dataset);
+
+    // Shared by openFile() (JS supplies the path -- not currently reachable
+    // from any UI control) and openFileDialog() (path comes from the native
+    // dialog instead). If `path` is already open (an exact displayName
+    // match against an existing dataset), returns that dataset's info
+    // (with `alreadyOpen: true`) instead of loading a second copy.
+    choc::value::Value openFileAtPath(const std::string& path);
 
     static choc::value::Value makeOk();
+    static choc::value::Value makeCancelled();  // user closed the dialog without choosing a file -- not an error
     static choc::value::Value makeError(const std::string& error);
     static choc::value::Value songToValue(const kronos::Song& song);
     static choc::value::Value programToValue(const kronos::ProgramInfo& program);

@@ -66,22 +66,23 @@ based on.
 
 ## Opening a file
 
-The UI only exposes one mechanism: **drag a file from Finder/Explorer onto a
-pane.** The browser's File API hands the dropped file's bytes to JS directly
-(`File.arrayBuffer()`), no filesystem path involved at all; `pane.js`
-base64-encodes them and calls `openFileBytes` -> `PcgFile::loadFromMemory(bytes)`,
-which mints a new dataset id and returns it -- see "Datasets" above.
+Each pane has an **"Open..." button** next to its dataset selector. Clicking it
+calls `openFileDialog` -> a real native file picker (`NSOpenPanel` on macOS,
+via `src/platform/NativeFileDialog.cpp`), invoked *directly* rather than
+through Choc's own WebView-triggered picker (see the bug writeup below for why
+that distinction matters). Once a path is chosen, the bridge reads it with a
+plain `std::ifstream` (`PcgFile::load(path)`), mints a new dataset id, and
+returns it -- see "Datasets" above. Opening a path that's already open (exact
+match against the dataset's `displayName`) reuses the existing dataset instead
+of loading a second copy, and reports this back as `alreadyOpen: true`.
 
-`EditorBridge`/`PcgFile` also still support opening `openFile(path)` ->
-`PcgFile::load(path)`, a plain `std::ifstream` read -- but the pane's typed-
-path input and Open button were removed from the UI (the project owner
-found the resulting UI confusing next to drag-and-drop, and drag-and-drop
-alone covers real usage). The path-based method stays in the bridge/parser
-because it's simpler for future CLI/debug tooling and is what the automated
-smoke tests exercise; it's just not wired to any UI control right now.
+Drag-and-drop-to-open (an earlier workaround, described below) has since been
+**removed** now that the native dialog works. The Setlist table's own
+row-level drag-and-drop (dragging a song between panes to swap/copy entries)
+is a separate, unrelated feature and is unaffected.
 
-Drag-and-drop became the *only* UI mechanism because of a bug found in
-manual testing:
+The native dialog exists specifically because of a bug found in earlier manual
+testing, which is why drag-and-drop was the *only* UI mechanism for a while:
 
 **A plain HTML `<input type="file">` does trigger a real native file picker
 (NSOpenPanel on macOS) inside the Choc WebView** -- confirmed by adding one
@@ -89,21 +90,22 @@ directly to `index.html` for testing. `choc_WebView.h`'s
 `webView:runOpenPanelWithParameters:...` delegate method does the textbook-
 correct thing (`beginSheetModalForWindow:` attached to the WKWebView's own
 window), but in practice **the resulting sheet appears behind the main app
-window** rather than in front of it, making it unusable. Root cause not yet
-isolated -- plausibly related to the app window not reliably becoming
-key/frontmost (also observed independently while trying to script the app
-via `System Events`/`screencapture` during earlier debugging). Not something
-this project's code controls directly (it's inside choc's vendored
-Objective-C), so rather than fighting it, drag-and-drop sidesteps the whole
-problem -- no separate OS panel/window ever needs to appear or gain focus.
-`openFileBytes` was added specifically to support this (and is a strictly
-better long-term answer anyway: it works identically on every platform,
-whereas resolving an absolute path back out of a browser `File` object is
-inconsistent/impossible across WebKit/GTK-WebKit/WebView2).
+window** rather than in front of it, making it unusable. The fix: rather than
+going through that delegate at all, `NativeFileDialog.cpp` calls `NSOpenPanel`
+directly via `choc::objc` and uses `runModal` (app-modal, not attached to any
+window) instead of the sheet-based `beginSheetModalForWindow:` -- a genuinely
+different code path that sidesteps the z-order bug entirely. Confirmed working
+in the real app. See STATE.md's "NATIVE FILE DIALOG + PROGRESS" section and
+Blind Spot #11 for the full history.
 
-Known limitation: base64-encoding a 50-70MB file in JS and passing it
-through the bridge as one big JSON string is not fast -- fine for occasional
-loads, not something to build a "live reload on every drop" workflow around.
+Currently macOS-only; Windows/Linux `NativeFileDialog.cpp` is an honest stub
+returning "unsupported" rather than untested guesswork.
+
+Known limitation: the whole file is read into memory in one shot with no
+progress reporting yet -- fine for occasional loads, but there's no percentage
+indicator during a large import (only an indeterminate spinner). A
+chunked-read-with-progress design (background thread + `postMessage`/
+`evaluateJavascript` push events) is written up in STATE.md but not built yet.
 
 ## Build
 

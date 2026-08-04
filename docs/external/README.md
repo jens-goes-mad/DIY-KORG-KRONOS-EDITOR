@@ -27,6 +27,29 @@ that exploration doesn't live only in chat history.
   long-used units routinely drift from this layout. A strong default/fallback label set,
   not a guarantee for any specific real file.
 
+## Korg-Kronos-Parameter-Guide-Category-excerpt.txt
+
+- **Origin**: official Korg documentation -- the **KRONOS Parameter Guide**
+  (`KRONOS_Param_Guide_E11.pdf`, page 18 "Category" + page 811 "Global P3: Category
+  Name"), fetched 2026-08-03.
+- **Why it matters here**: found while researching what's known about Category (a
+  per-Program/Combi attribute for browsing sounds by type -- Keyboard, Bass, Strings,
+  etc. -- independent of bank/number). Turns out to be the SAME shape of problem as
+  Bank type: a small per-record index (Main Category 0-17, Sub Category 0-7, separate
+  tables for Programs vs. Combis) whose *name* comes from a per-unit-customizable table
+  in Global settings ("you can change the names of any of the categories... including
+  BOTH the factory and user categories") -- directly relevant to what has to be
+  checked/reassigned when moving a Program or Combi between two different datasets
+  whose category tables don't match.
+- **Not yet located in raw bytes at all**: unlike Bank type, no byte offset for
+  Category/Sub-Category is known in either a Program or Combi record -- not in this
+  project's own findings, not in the Synthify PCG File Structures spreadsheet, not in
+  DaBlick's reverse-engineering notes. Same status as `GLB1` overall (see
+  docs/README.md's chunk tree): entirely unexplored. Two concrete, not-yet-started
+  follow-ups this points at: locating Category's byte offset per record (needs the same
+  purpose-built test file approach used for Font size/Transpose/Combi Timbre refs), and
+  parsing `GLB1` itself, at minimum enough to extract the category name tables.
+
 ## Synthify-Process-for-loading-Kronos-programs-with-no-free-banks-2021.pdf
 
 - **Origin**: [synthify.com/Kronos_SW_dev](https://www.synthify.com/Kronos_SW_dev/),

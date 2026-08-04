@@ -17,6 +17,19 @@ html, body {
   color: var(--text);
   font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
+  /* NOT min-width: 800px here -- tried that, and it actively broke the native
+     app: it forces the PAGE to stay 800px wide no matter how narrow the
+     WebView's actual viewport gets, so the moment the real window (or its
+     content view, mid-resize) is even a little under that, the page
+     overflows its own viewport -- a horizontal scrollbar appears and
+     whatever's past the edge (the right pane) is genuinely off-screen, not
+     just visually squeezed. The real 800px floor is `main.cpp`'s
+     `window.setMinimumSize(800, 500)`, enforced by the OS at the window
+     level; the page itself needs to be able to shrink freely below that so
+     it's never wider than its actual viewport under any circumstances
+     (mid-resize, fractional/DPI rounding, etc). See `.pane`'s min-width: 0
+     and `.entries-table`'s table-layout: fixed below for the actual fix.
+     Everything now shrinks properly instead of relying on a floor. */
 }
 
 body {
@@ -42,6 +55,11 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* Same content-based-minimum trap as .pane/.pane-category-content further
+     down (see their comments) -- this is a flex item of body (column flex,
+     cross axis = width), so without this it alone would stop the whole
+     chain from ever shrinking, no matter what's fixed further in. */
+  min-width: 0;
 }
 
 .view[hidden] {
@@ -54,13 +72,25 @@ body {
   padding: 6px 16px 0;
 }
 
-.panes {
+/* Bulma's own real .columns/.column grid (index.html), not a hand-rolled
+   one -- this is the actual "row/col concept" request. Both the inter-
+   column gap AND each .column's own padding key off the single
+   --bulma-column-gap variable (see vendor/bulma.min.css); zeroing it here
+   and using our own gap/background instead (the same thin divider-line
+   trick from before) avoids fighting Bulma's spacing system, and avoids
+   double padding once .pane's own padding (below) is added on top. */
+.panes.columns {
   flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  --bulma-column-gap: 0px;
   gap: 1px;
   background: var(--border);
   min-height: 0;
+  /* This is a flex item of .view (column flex, cross axis = width) --
+     same content-based-minimum trap as everywhere else in this chain
+     (body -> .view -> .panes -> .pane -> .pane-category-content all need
+     this, or -- for .entries-scroll/.library-body -- get it for free from
+     their own non-visible overflow). */
+  min-width: 0;
 }
 
 .pane {
@@ -68,14 +98,55 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* The actual fix for "shrinking the window makes the right pane partly
+     invisible": a flex item's default min-width is `auto`, which resolves
+     to its CONTENT's min-content size, not 0 -- so `.pane` (a flex item of
+     Bulma's `.panes.columns`, see above) could never shrink below whatever
+     its content naturally needed, no matter how narrow the row was asked
+     to go. Bulma's own `.column` doesn't set this either (checked its
+     actual CSS before relying on it -- it's just flex-basis/grow/shrink),
+     so this is still needed even after adopting Bulma's grid. Once both
+     panes could get narrow enough that their content-based minimums no
+     longer both fit, the row just let the second one overflow off the
+     right edge instead of shrinking it. min-width: 0 opts out of that
+     default so the pane (and everything inside it) can actually shrink. */
+  min-width: 0;
   padding: 10px;
   gap: 8px;
-  border: 2px dashed transparent;
 }
 
-.pane.drag-over {
-  border-color: var(--accent);
-  background: rgba(91, 141, 239, 0.08);
+/* Global Open button's loading indicator, in the topbar -- genuinely
+   indeterminate (no byte-level progress callback exists yet, see STATE.md's
+   Blind Spot #15), so a spinner, not a percentage bar. */
+.topbar-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.topbar-loading[hidden] {
+  display: none;
+}
+
+.topbar-loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: pane-loading-spin 0.8s linear infinite;
+}
+
+@keyframes pane-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.topbar-loading-text {
+  color: var(--text-dim);
+  font-size: 13px;
 }
 
 .pane-header {
@@ -84,29 +155,23 @@ body {
   gap: 8px;
 }
 
-.setlist-select, .dataset-select, .filter-input {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 4px;
-  padding: 5px 8px;
-}
-
-.dataset-select {
+/* Visual styling (background/border/color/padding/disabled opacity) for
+   .setlist-select/.dataset-select/.filter-input now comes entirely from
+   Bulma's own .select/.input classes (index.html/pane.js) -- checked
+   Bulma's actual CSS before relying on it: .input is width:100% by
+   default, and .select.is-fullwidth (used for .setlist-select's wrapper)
+   sets both the wrapper AND the inner <select> to width:100%, so neither
+   needs anything from us. The one thing Bulma can't know on its own is
+   which flex item should GROW in a specific layout -- that's still ours: */
+.dataset-select-wrap {
   flex: 1;  /* .pane-header is a flex ROW -- grow horizontally alongside the category nav */
 }
 
-.setlist-select, .filter-input {
-  width: 100%;  /* .pane-category-content is a flex COLUMN -- these are standalone, full-width, natural-height items, not flex:1 (which would fight .entries-scroll for vertical space) */
-}
-
-.setlist-select:disabled, .dataset-select:disabled, .filter-input:disabled {
-  opacity: 0.5;
-}
-
 .setlist-info {
+  /* font-size comes from Bulma's .help class now (pane.js) -- just our own
+     dim color on top, since Bulma's default .help text color doesn't
+     necessarily match our palette. */
   color: var(--text-dim);
-  font-size: 12px;
 }
 
 /* Each pane's category content (Setlist, or the Programs/Combis/Duplicates
@@ -119,6 +184,12 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* Same content-based-minimum issue as .pane's min-width: 0 above, one
+     level deeper -- this is itself a flex item (in .pane's column flex
+     container) on its cross axis (width), so without this it would still
+     clamp to its content's min-content width even after .pane was allowed
+     to shrink, just re-introducing the exact same overflow one div down. */
+  min-width: 0;
   gap: 8px;
 }
 
@@ -129,13 +200,43 @@ body {
 .entries-scroll {
   flex: 1;
   overflow-y: auto;
+  /* Explicit, not left to default -- per spec, setting only overflow-y
+     makes overflow-x compute to `auto` too (not `visible`), which is what
+     was producing a horizontal scrollbar whenever the table's column
+     widths added up to more than the pane's actual width. The column
+     widths below are now sized to fit at the app's 800px minimum window
+     width (see html/body's min-width above) instead of relying on a
+     scrollbar to paper over an overflow. */
+  overflow-x: hidden;
   border: 1px solid var(--border);
   border-radius: 4px;
 }
 
+/* Genuinely a CSS Grid now, not an HTML table layout -- <table>/<thead>/
+   <tbody>/<tr> are kept purely as DOM structure (event handling, existing
+   JS untouched) via `display: contents`, which removes them from the box
+   tree entirely so their <th>/<td> children become direct grid items of
+   .entries-table itself. This replaces two separate failed attempts
+   (em widths directly on th/td with table-layout: fixed, then a <colgroup>)
+   -- both fought against how HTML table layout algorithms resolve column
+   widths (first-row-only, inconsistent font-size contexts, engine-specific
+   quirks). Grid has none of that: `grid-template-columns` (set inline per
+   table, see pane.js's gridTemplateColumns()) is a single, explicit,
+   unambiguous column spec, the same solid mechanism `.panes` (the two-pane
+   split) has used from the start without any of these problems. */
 .entries-table {
+  display: grid;
   width: 100%;
-  border-collapse: collapse;
+}
+
+.entries-table thead,
+.entries-table tbody,
+.entries-table tr {
+  /* Invisible to layout -- their th/td children become direct grid items,
+     but the elements themselves (and any class/state on them, e.g.
+     tr.expanded/.drop-target below) stay in the DOM exactly as before, so
+     existing event handlers/drag-and-drop keep working unchanged. */
+  display: contents;
 }
 
 .entries-table th {
@@ -154,29 +255,71 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+/* A `display: contents` <tr> has no box of its own to paint a background
+   on, so row-level state (hover/drop-target/expanded) now targets the
+   row's actual cells directly instead of the row -- the class still lives
+   on the <tr> (untouched in JS), these selectors just reach through it. */
+.entries-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.entries-table tbody tr.drop-target td {
+  background: rgba(91, 141, 239, 0.25);
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
+.entries-table tbody tr.expanded td {
+  background: rgba(91, 141, 239, 0.12);
+}
+
+/* Sizing now lives entirely in each table's inline grid-template-columns
+   (pane.js's gridTemplateColumns()) -- these are cosmetic only: color,
+   number alignment, font-size, text wrapping. */
+
 .entries-table .col-index {
-  width: 3.5em;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
+  border-radius: 3px;  /* the slot's Color now lives here as a background (see pane.js) -- rounded so it doesn't butt up against the row border */
+}
+
+/* Song name -- the one resizable column in the Setlist table (the colgroup
+   leaves it width-less). Wraps rather than ellipsis-truncates (unlike
+   .col-name) because this cell can also hold a second line -- the
+   cross-referenced instrument name -- that a hard truncate would clip
+   along with it. */
+.entries-table .col-song {
+  word-break: break-word;
 }
 
 .entries-table .col-narrow {
-  width: 4.5em;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
 }
 
 .entries-table .col-bank {
-  width: 9em;  /* double col-narrow -- "USER-A-009" style labels were wrapping at 4.5em */
-  white-space: nowrap;
+  /* white-space: nowrap deliberately not set -- a label like "U-AA 009"
+     needs to be allowed to wrap onto a second line rather than forcing the
+     row wider than the column's colgroup-locked width. */
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
 }
 
+/* The Setlist table's Bank cell is a button (jumps to that exact Program/
+   Combi in this pane's own Programs/Combis category) -- a Bulma `.button
+   .is-small` (index.html/pane.js), just sized down further to fit a table
+   cell, and stretched to fill it so every row's button lines up at the
+   same width instead of hugging its own label's length. */
+.bank-jump-button {
+  width: 100%;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 .entries-table .col-refs {
-  width: 10em;
   white-space: nowrap;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
@@ -188,19 +331,21 @@ body {
   font-style: italic;
 }
 
+/* Name -- the one resizable column in the Programs/Combis library tables
+   (no width set -- see .entries-table's table-layout: fixed comment
+   above). Still ellipsis-truncates on a single line (unlike .col-song),
+   since this cell never holds a second line of its own. */
 .entries-table .col-name {
-  width: 15em;  /* Combi/Program names are a fixed 24-char field -- no need for more */
-  max-width: 15em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Deliberately no fixed width -- Bank/Setlist refs/Combi refs all have
-   fixed widths, so this column naturally absorbs whatever's left. */
-.entries-table .col-badges {
-  width: auto;
-}
+/* No cosmetic rules needed beyond .badge-list below -- width comes from the
+   Combis table's colgroup (160px, see library.js). Used to be "deliberately
+   no fixed width" so it'd soak up leftover space, but that made it a
+   second resizable column alongside .col-name -- per explicit request,
+   .col-name should be the only one that grows/shrinks. */
 
 .badge-list {
   display: flex;
@@ -219,30 +364,12 @@ body {
   white-space: nowrap;
 }
 
-.color-swatch {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  vertical-align: middle;
-}
-
 .entries-table tbody tr {
+  /* `cursor` is inherited, so this still reaches the row's td children even
+     though the row itself (`display: contents`) has no box of its own --
+     unlike background/outline (not inherited), which is why those live as
+     `tr.state td` rules further up instead of here. */
   cursor: grab;
-}
-
-.entries-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.entries-table tbody tr.drop-target {
-  background: rgba(91, 141, 239, 0.25);
-  outline: 1px dashed var(--accent);
-  outline-offset: -1px;
-}
-
-.entries-table tbody tr.expanded {
-  background: rgba(91, 141, 239, 0.12);
 }
 
 .instrument-name {
@@ -306,15 +433,12 @@ body {
   font-size: 12px;
 }
 
-/* Library panels (Programs/Combis/Duplicates), embedded per-pane -- see
-   pane.js's createPane()/.pane-category-tabs for the shared tab styling
-   these categories use alongside Setlist. */
-
-.lib-tabs {
-  display: flex;
-  gap: 4px;
-}
-
+/* Library panels (Programs/Combis/Duplicates), embedded per-pane. The
+   category nav itself (Setlist/Programs/Combis/Duplicates) is now Bulma's
+   own `.tabs.is-boxed` (pane.js's createPane()) -- `.lib-tab` below is only
+   still used by library.js's bank-filter-row buttons, not yet converted
+   (per explicit scope: Bulma integration is landing pane/Setlist-table
+   first, library.js is next). */
 .lib-tab {
   background: transparent;
   color: var(--text-dim);
@@ -324,6 +448,7 @@ body {
   cursor: pointer;
   font: inherit;
   font-size: 13px;
+  text-align: center;
 }
 
 .lib-tab:hover {
@@ -336,9 +461,36 @@ body {
   border-color: var(--accent);
 }
 
+/* One toggle button per bank on the Programs/Combis panels, between the
+   Name search and the table -- reuses .lib-tab's look via bank-filter-
+   button also carrying that class. Wraps since there can be up to 20. */
+.bank-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+/* Fixed, equal width -- since bank names are now uniformly short ("I-A".."I-G",
+   "G(d)", "U-A".."U-FF", see pane.js's PROGRAM_BANK_NAMES/COMBI_BANK_NAMES),
+   a shared width keeps the whole row's buttons aligned instead of each one
+   sizing to its own label. */
+.bank-filter-button {
+  width: 3.6em;
+  padding: 3px 4px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.bank-filter-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .library-body {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;  /* same reasoning as .entries-scroll above -- no horizontal scrollbar, ever */
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 8px;

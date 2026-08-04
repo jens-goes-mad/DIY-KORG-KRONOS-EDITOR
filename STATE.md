@@ -539,11 +539,395 @@ for a while.
     different dataset, so the browser shows its own "not allowed" cursor and no
     `drop` event fires there at all. Revisit once the physical-bank-position
     problem above is actually solved -- not before.
+  - **Category: a second, parallel physical-reference problem (researched 2026-08-03,
+    not built)**: prompted by wanting to know what has to be checked/reassigned when
+    moving a Program or Combi between datasets. Category (Keyboard/Bass/Strings/etc.,
+    used to browse sounds by type regardless of bank/number) turns out to be the SAME
+    shape of problem as Bank type -- confirmed via the official Kronos Parameter Guide
+    (see `docs/external/Korg-Kronos-Parameter-Guide-Category-excerpt.txt`): each
+    Program and Combi (two SEPARATE 18-main x 8-sub-category tables, not shared) is
+    assigned a small Main Category (0-17) + Sub Category (0-7) index, but the *names*
+    for those indices -- including all 16 "factory" names, not just the 2 open User
+    slots -- live in a per-unit-customizable table in Global settings ("Global P3:
+    Category Name"), saved via "Write Global Setting." So a Program's category index
+    is portable, but its *meaning* isn't guaranteed to match between two datasets whose
+    category tables have been renamed differently -- confirms the project owner's
+    instinct that moving Programs/Combis between datasets may need explicit user
+    confirmation/reassignment when category tables don't match. Not solved, not built
+    -- two concrete, not-yet-started follow-ups: (1) locate Category/Sub-Category's
+    byte offset in a Program record and (separately) a Combi record -- not in this
+    project's own findings, the Synthify spreadsheet, or DaBlick's notes, so genuinely
+    unexplored, same as the rest of `GLB1`; needs the same purpose-built test file
+    approach already used for Font size/Transpose/Combi Timbre refs. (2) Parse `GLB1`
+    itself, at minimum enough to extract both category name tables -- `GLB1` has never
+    been touched at all (see Blind Spot #5).
+  - **Setlist Bank-jump button, refined (BUILT 2026-08-03)**: a Setlist row's Bank cell
+    is a button (`frontend/pane.js`'s `.bank-jump-button`, `stopPropagation()`-ed so it
+    doesn't also toggle that row's Comment editor), styled with the same `.lib-tab`
+    class as the category nav itself (not a text link) per explicit feedback. Clicking
+    it switches this pane to its Programs/Combis category and expands+scrolls to that
+    exact entry (`createLibraryPanels()`'s `jumpToEntry()`, found via a `data-entry-key`
+    attribute added to each rendered row). `createPane()`'s category-tab-click logic was
+    factored into a shared `switchCategory()` so both the tab buttons and this jump
+    action stay in sync through one place. The scroll itself computes an exact target
+    position (`scrollRowBelowHeader()`, via `getBoundingClientRect()`) so the row always
+    lands just below the table's sticky header instead of `scrollIntoView({block:
+    "center"})`, which could leave a row (especially one near the top of the list) still
+    partly hidden behind it.
+  - **Bank-filter buttons (BUILT 2026-08-03)**: the Programs and Combis panels each get
+    a row of toggle buttons (one per bank name, between the Name search and the table)
+    reusing the bank-name arrays `pane.js` already has. Only buttons for banks actually
+    present in the current dataset are enabled; all enabled banks start "pressed"
+    (shown) on every fresh dataset load, independently toggleable per category after
+    that -- an inclusive multi-select filter, not a single-bank picker. `jumpToEntry()`
+    (above) force-presses the target bank before rendering, so a Bank-jump can never
+    land on a row its own filter has hidden.
+  - **Bank names shortened + button/column widths equalized (BUILT 2026-08-04,
+    frontend-only)**: `pane.js`'s `PROGRAM_BANK_NAMES`/`COMBI_BANK_NAMES` now hold
+    "I-A".."I-G"/"U-A".."U-FF" (was "INT-A"/"USER-AA" etc.) -- purely a UI-layer
+    shortening, not a change to the ground-truth naming: `PcgFile.cpp`'s confirmed
+    Timbre bank-code table (`INT-A`=0, `USER-D`=20, ...) and the docs are untouched, a
+    new `abbreviateBankName()` helper in `pane.js` shortens a bridge-provided full name
+    (e.g. a Timbre's `bankName`) only at render time (`library.js`'s
+    `formatTimbreRef()`). `formatBankNumber()` also switched from `"I-C-000"` to
+    `"I-C 000"` (space, not dash). Freed-up width let `.col-bank` shrink 9em -> 6.5em
+    and `.col-refs` 10em -> 4.5em (paired with renaming the "Setlist refs"/"Combi refs"/
+    "Setlist references"/"Combi references" column headers, inconsistent across the
+    Programs/Combis/Duplicates tables, to a uniform `#STL`/`#CMB` with a title tooltip
+    spelling out the full meaning). Buttons that used to size to their own label's
+    length (bank-filter buttons, the Setlist Bank-jump button, the Setlist/Programs/
+    Combis/Duplicates category tabs) now share a fixed width per group
+    (`.bank-filter-button` 3.6em, `.bank-jump-button` 100% of its now-narrower table
+    cell, `.pane-category-tabs .lib-tab` 6.5em) so each row of buttons lines up evenly
+    instead of looking ragged.
+  - **Setlist row columns trimmed (BUILT 2026-08-04, frontend-only)**: Hold Time
+    dropped from the row entirely (still fetched/returned by `getEntries()` --
+    `entry.holdTime` is just not rendered here -- planned to resurface in the Comment
+    editor panel later, not lost). The separate Color column (a small swatch) is gone
+    too -- its color now paints the "#" slot-number cell's own background instead
+    (`idxTd.style.background`, same unverified-placeholder hue formula as before, see
+    the code comment -- **not** Korg's real color palette, no ground truth for that
+    exists yet). Song name column narrowed 15em -> 10.5em (`.col-song`, a 30% cut from
+    the same 15em/24-char baseline `.col-name` uses for Program/Combi names -- Set List
+    slot names are confirmed the same 24-byte field, docs/README.md §3) -- wraps rather
+    than ellipsis-truncates, since this cell can also hold a second line (the
+    cross-referenced instrument name) that a hard truncate would clip along with it.
+  - **Horizontal scrollbar bug fixed + columns shrunk to fit 800px (BUILT 2026-08-04,
+    frontend-only)**: root cause -- `.entries-scroll`/`.library-body` only set
+    `overflow-y: auto`, and per spec, leaving `overflow-x` at its default `visible`
+    while the other axis is non-`visible` makes it compute to `auto` too, not stay
+    `visible`. With two panes side by side, the Setlist table's column widths summed to
+    more than a pane's actual width at the app's own 800px minimum (`main.cpp:81`'s
+    `setMinimumSize(800, 500)`, unchanged/already correct), so that implicit `auto`
+    kicked in as a real horizontal scrollbar. Fixed both properly (`overflow-x: hidden`
+    is now explicit on both, so a scrollbar can never reappear by accident) and by
+    actually shrinking columns to fit: `.col-index` (`#`) 3.5em -> 1.75em (50%),
+    `.col-narrow` (Type/Vol) 4.5em -> 3.15em and `.col-bank` 6.5em -> 4.55em (30% each,
+    shared classes so this also affects the Programs/Combis library tables' Type/Bank
+    columns, not just Setlist). `.col-bank`'s `white-space: nowrap` was removed too --
+    at the new width a label like "U-AA 009" needs to wrap onto a second line rather
+    than force the column wider than its declared width. Also added `min-width: 800px`
+    to `html, body` -- mirrors the native window's own floor so a plain browser tab
+    (mock_bridge.js's no-native-app testing mode) can't be resized narrower than what
+    the real app ever allows, which is exactly the width this bug only showed up at.
+  - **Real fix for the shrink-layout bugs (BUILT 2026-08-04, supersedes the previous
+    attempt, frontend-only)**: the previous pass (`overflow-x: hidden` + `min-width:
+    800px` on `html`/`body`) didn't actually work -- reported back as three symptoms:
+    the native window's own 800px minimum appearing not to be respected, the right
+    pane going partly invisible when shrinking, and columns not visibly shrinking at
+    all. Root causes, actually isolated this time:
+    - `min-width: 800px` on `html, body` was actively harmful, not just insufficient --
+      it forces the PAGE to stay 800px wide regardless of the WebView's real viewport
+      width, so the instant the actual window (or content view, mid-resize) is even
+      slightly under that, the page overflows its own viewport: a scrollbar appears and
+      whatever's past the edge (the right pane) is genuinely off-screen, not just
+      visually squeezed. This is almost certainly what made the OS-level
+      `setMinimumSize(800, 500)` (`main.cpp:81`, itself unchanged and believed correct
+      -- a plain, standard `NSWindow setContentMinSize:` call, no custom resize delegate
+      overriding it) look like it wasn't being respected. **Removed** -- the page must
+      be able to shrink freely below 800px so it's never wider than its actual viewport
+      under any circumstance.
+    - The real cause of the right pane vanishing: `.panes` is a CSS grid, and a grid
+      item's default `min-width` is `auto`, which resolves to its CONTENT's min-content
+      size, not 0 -- so `.pane` (the grid item) could never shrink below whatever its
+      content naturally needed, no matter how narrow the `1fr` track was asked to go.
+      Same underlying issue one level deeper too: `.pane-category-content` is a flex
+      item (in `.pane`'s column flex container) on its cross axis, subject to the exact
+      same content-based-minimum default. Fixed by adding `min-width: 0` to both --
+      `.entries-scroll`/`.library-body` already got this for free from their own
+      `overflow-x: hidden` (per spec, non-visible overflow on an element makes ITS OWN
+      automatic minimum resolve to 0), but that never helped the ANCESTOR grid/flex
+      items further up the chain, which needed the same treatment explicitly.
+    - Why columns weren't visibly shrinking: `.entries-table` never set `table-layout`,
+      so it defaulted to `auto` -- in auto layout, a CSS `width` on a `<td>`/`<th>` is
+      only a *hint* the browser can still override to fit content (a button's own
+      minimum size, an unbroken label, ...), not a hard constraint. Switched to
+      `table-layout: fixed`, which makes the first row's declared widths authoritative;
+      content now wraps/clips to fit instead of pushing the column wider.
+    - **Per explicit request, redesigned as "hard-locked narrow columns + exactly one
+      resizable column"**, rather than the previous percentage-shrink pass: `.col-index`,
+      `.col-narrow`, `.col-bank`, `.col-refs`, and (new) `.col-badges` now all set
+      `width`/`min-width`/`max-width` to the identical value (a genuine lock, not a
+      hint, now that layout is `fixed`) -- `.col-song` (Setlist) and `.col-name`
+      (Programs/Combis) are the only columns left with no width at all, so they're the
+      sole ones that grow/shrink with the pane. `.col-badges` used to be the
+      Combis table's own "soaks up leftover space" column (`width: auto`); now fixed at
+      10em so `.col-name` is unambiguously the only resizable one there too.
+  - **Column widths redone via <colgroup> (BUILT 2026-08-04, supersedes the em-on-
+    th/td attempt above, frontend-only)**: the `table-layout: fixed` + hard-locked
+    em-width `.col-*` classes pass looked reasonable but was reported completely
+    broken in practice (the `#` column rendering far smaller than declared, every
+    fixed column refusing to actually resize, Name blowing out). Root cause: `table-
+    layout: fixed` only takes each column's width from cells in the table's first
+    row, and `.entries-table th` sets `font-size: 12px` while most `<td>`s inherit
+    14px (or their own 12px override, inconsistently) -- so an `em`-based width meant
+    two different pixel values depending on whether the browser happened to key off
+    the `<th>` or a `<td>`, silently producing widths nothing close to intended.
+    **Fixed properly with `<colgroup>`**: a new `colgroupHtml(widthsPx)` helper in
+    `pane.js` builds `<col style="width:Npx">` per column (absolute px, `null` for
+    the one column meant to flex) -- `<col>` width is font-size-independent, shared
+    identically by every cell in that column, and is what `table-layout: fixed`
+    actually expects to key off. Every `.entries-table` (Setlist in `pane.js`,
+    Programs/Combis/Duplicates in `library.js`) now opens with a `colgroupHtml(...)`
+    call; the `.col-*` CSS classes are cosmetic-only now (color, font-size, text
+    wrapping) -- no width/min-width/max-width left on any of them. Widths chosen
+    (px): Setlist `[21, flex, 38, 55, 38]` for #/Song/Type/Bank/Vol; Programs `[55,
+    flex, 38, 54, 54]` for Bank/Name/Type/#STL/#CMB (also gave Programs' Name cell
+    the `.col-name` class it was missing before, so it gets the same ellipsis
+    treatment Combis' always had); Combis `[55, flex, 160, 54]` for Bank/Name/Set
+    Lists/#STL (Set Lists -- `.col-badges` -- used to be the "soaks up leftover
+    space" column here too, which meant TWO resizable columns competing for the same
+    space; now fixed at 160px so Name is unambiguously the only one); Duplicates
+    `[55, 54, 54]`, no flexible column (matches its original design -- the group name
+    is shown above the table, not in a column).
+  - **Missing links in the min-width: 0 chain (BUILT 2026-08-04, supersedes the
+    <colgroup> pass above -- that pass was reported as making zero visible
+    difference)**: after the <colgroup> fix still tested as completely unchanged,
+    re-audited the full flex/grid ancestor chain from `body` down to the table and
+    found it was fixed at the wrong end. `.pane` and `.pane-category-content` had
+    `min-width: 0` (the previous round's fix), but `.view` (a flex item of `body`,
+    column flex, cross axis = width) and `.panes` (a flex item of `.view`, same
+    trap) did NOT -- and since a flex/grid item's content-based auto-minimum applies
+    at EVERY level independently, leaving even one un-fixed level upstream stops the
+    whole chain from ever reaching the levels that were already fixed. The window
+    could never actually get narrow enough for the colgroup's px widths to matter,
+    which is exactly why that pass changed nothing observable. Added `min-width: 0`
+    to both `.view` and `.panes`, completing the chain: `body -> .view -> .panes ->
+    .pane -> .pane-category-content` all now either set `min-width: 0` explicitly or
+    (`.entries-scroll`/`.library-body`) get the same effect for free from their own
+    `overflow-x: hidden`.
+  - **Tables rebuilt as CSS Grid, not HTML table layout (BUILT 2026-08-04, supersedes
+    both the em/th-td and <colgroup> attempts above -- per explicit "the layout is
+    beyond repair, kick in a real grid system" request)**: after the min-width: 0 chain
+    was completed and STILL reported as no better ("same"), decided to stop fighting
+    HTML table-layout algorithms entirely rather than keep patching around their
+    quirks (first-row-only column sizing, th/td font-size context mismatches, engine-
+    specific auto/fixed differences). Every `.entries-table` (Setlist in `pane.js`,
+    Programs/Combis/Duplicates in `library.js`) is now a genuine CSS Grid: `display:
+    grid` on the `<table>`, `display: contents` on `<thead>`/`<tbody>`/`<tr>` (removes
+    them from the box tree so their `<th>`/`<td>` children become direct grid items,
+    while leaving them in the DOM untouched -- existing click/drag handlers on `<tr>`
+    still work exactly as before). Column widths are one `grid-template-columns` value
+    set as an inline style directly on each `<table>` (`pane.js`'s new
+    `gridTemplateColumns(widthsPx)`, replacing the `<colgroup>` helper) -- the same
+    solid, explicit mechanism `.panes` (the two-pane split) has used from the start
+    without any of these problems. Two knock-on fixes this forced: (1) `colSpan`
+    doesn't work under `display: grid` (it's a table-rendering feature), so the three
+    full-width expandable rows (`pane.js`'s Comment editor, `library.js`'s Program
+    usage panel and Combi Timbre list) now use `td.style.gridColumn = "1 / -1"`
+    instead -- while fixing this, found the Program usage row's old `colSpan = 2` was
+    stale (Programs has had 5 columns for a while, so it was only ever spanning 2 of
+    them), a real pre-existing bug now moot since `1 / -1` always means "all of them."
+    (2) `display: contents` rows have no box of their own to paint a background on, so
+    row-level hover/drop-target/expanded state (`tbody tr:hover`, `tr.drop-target`,
+    `tr.expanded`) now targets each row's `td` children directly instead (`tr:hover
+    td`, etc.) -- the state still lives as a class on the `<tr>` in the DOM, unchanged
+    in JS, these are just CSS selector adjustments to reach through it. `cursor: grab`
+    stayed on `tr` itself since `cursor` inherits through `display: contents` fine
+    (only non-inherited properties like background/outline needed moving).
+  - **Adopted Bulma for layout/components (STARTED 2026-08-04, pane shell + Setlist
+    table done, library.js/Programs/Combis/Duplicates intentionally NOT converted yet)
+    -- supersedes hand-rolling our own grid**: after the CSS-Grid-tables rewrite still
+    didn't fix things, we asked directly why not use an established framework instead
+    of continuing to hand-roll layout primitives. Landed on Bulma over Bootstrap: CSS-
+    only (no JS/Popper dependency, fits this app's all-vanilla-JS interaction model --
+    we still hand-write every behavior, Bulma only supplies CSS classes), ~24KB
+    gzipped, MIT, vendored as one file (`frontend/vendor/bulma.min.css` + a
+    `BULMA_VERSION.txt` note, same pattern as `third_party/CHOC_VERSION.txt`) rather
+    than CDN-linked, since this app has no general-internet-access assumption
+    (`fetchResource` serves everything from local disk). `index.html` sets
+    `data-theme="dark"` on `<html>` to force Bulma's dark palette unconditionally
+    (checked the CSS -- Bulma auto-dark-mode is keyed off `prefers-color-scheme` by
+    default, which would drift from our own hard-coded dark `:root` whenever the OS
+    itself isn't in dark mode; `[data-theme=dark]` is a real, explicit override Bulma
+    ships for exactly this).
+    - **Corrected a wrong assumption before it shipped**: initially claimed Bulma's
+      `.column` bakes in the `min-width: 0` fix this whole saga kept needing --
+      actually checked the vendored CSS and it does NOT (`.column{flex-basis:0;
+      flex-grow:1;flex-shrink:1}`, no min-width). Bulma doesn't make that bug go away
+      for free; `.pane`'s own `min-width: 0` (already in style.css) is still what's
+      doing the work, just now on an element that also carries Bulma's `.column`
+      class. Surfaced this to the project owner mid-task rather than building on the
+      wrong premise -- confirmed to proceed anyway, for the grid pattern + component
+      value, not because it's automatic.
+    - **`.panes`/`.pane` -> Bulma's real `.columns`/`.column`** (`index.html`), not a
+      hand-rolled grid -- this was the actual "we need a row/col concept" ask. Both
+      Bulma's inter-column gap and each `.column`'s own padding key off one CSS
+      variable (`--bulma-column-gap`); zeroed it on `.panes.columns` and kept our own
+      `gap: 1px` + `background: var(--border)` (the existing thin divider-line look)
+      instead of fighting Bulma's spacing system or duplicating padding.
+    - **`is-mobile` on both `.topbar.level` and `.panes.columns`**: Bulma is mobile-
+      first -- `.level`/`.columns` only become row layouts past a 769px breakpoint,
+      stacking below it. This app's window has an 800px floor (`main.cpp`), which
+      clears that breakpoint, but relying on a 31px margin above a breakpoint is
+      exactly the class of narrow-width edge case that broke things repeatedly before
+      this rewrite -- `is-mobile` forces row layout unconditionally, no breakpoint.
+    - **Topbar**: `.level`/`.level-left`/`.level-right` for the Open button + title +
+      loading indicator row; Open button and the Setlist table's Bank-jump button are
+      now real Bulma `.button.is-small` (was a hand-rolled `.lib-tab` class).
+    - **Category nav (Setlist/Programs/Combis/Duplicates)**: Bulma's real
+      `.tabs.is-boxed` component (`<ul><li><a>`, active state as `is-active` on the
+      `<li>`), replacing the hand-rolled `.lib-tabs`/`.lib-tab` buttons entirely for
+      this nav specifically -- `switchCategory()` updated to toggle `is-active`.
+      `.lib-tab` itself is NOT deleted -- library.js's bank-filter-row buttons still
+      use it, unconverted on purpose (explicit scope: pane/Setlist-table first).
+    - **Form controls**: `.setlist-select`/`.dataset-select` wrapped in Bulma's
+      `.select` (`.is-fullwidth` for the Setlist one), `.filter-input` gained Bulma's
+      `.input` class, `.setlist-info` gained `.help`. Checked Bulma's actual CSS before
+      deleting our own hand-rolled background/border/padding/disabled-opacity rules
+      for these -- confirmed `.input`/`.select.is-fullwidth` already handle
+      width:100% and disabled state on their own, so that hand-rolled CSS was dead
+      weight once removed; the one thing Bulma can't infer on its own (which flex item
+      should grow in a specific layout) stayed as a small `.dataset-select-wrap{flex:1}`
+      rule.
+    - **Explicitly deferred, not forgotten**: library.js's Programs/Combis/Duplicates
+      panels (bank-filter-row buttons, the data tables themselves) are UNCONVERTED --
+      still `.lib-tab`-styled buttons and the CSS-Grid-based `.entries-table` mechanism
+      from the previous pass. Per explicit instruction, Bulma adoption lands here next,
+      once the pane shell + Setlist table are confirmed working.
+  - **Indeterminate loading spinner (BUILT 2026-08-03)**: a pane-wide overlay
+    (`.pane-loading`) shown for the duration of a file drop's base64-encode/decode+parse
+    -- genuinely indeterminate, since no byte-level progress callback exists for that
+    path yet (a real percentage bar would need the transfer itself restructured into
+    chunks with progress events, a bigger follow-up, see Blind Spot #15).
+  - **Global mode scope, when it's picked up (not started)**: intentionally narrow --
+    for now, just pull the category name tables (Program's and Combi's, separately), not
+    a general `GLB1` parse. Matches this project's "only extract what's currently
+    needed" convention (see `docs/content/components/index.md`) -- other Global
+    settings stay unparsed until something concrete needs them.
   - **Not decided, not scheduled**: no schema has been written, no SQLite
     dependency has been added, nothing here has touched `main`. This section
     exists so the reasoning survives even if this branch is set aside for a
     while -- update it in place as the exploration continues, rather than
     letting the thread live only in chat history.
+
+--- NATIVE FILE DIALOG + PROGRESS (branch: explore/sqlite-patch-datastore, 2026-08-03, Phase 1 built) ---
+
+A distinct thread of work from the SQLite exploration above (just landed on the same
+branch) -- prompted by asking how the native side actually reads a file today, which
+surfaced two real gaps: no working native Open/Save dialog (drag-and-drop is the only
+mechanism, specifically *because* the native one is broken -- see Blind Spots), and no
+real progress reporting (the loading spinner we built is necessarily indeterminate,
+since the whole current pipeline is one monolithic base64-encode-in-JS /
+base64-decode-and-parse-in-C++ step with no chunking at all).
+
+  - **Root cause of the broken native dialog, confirmed by reading CHOC's own source**:
+    `choc_WebView.h`'s `runOpenPanelWithParameters` delegate (triggered by an
+    `<input type="file">` from inside the page) opens `NSOpenPanel` via
+    `beginSheetModalForWindow:completionHandler:` -- a *sheet*, attached to the
+    WKWebView's own window. That's the documented z-order bug. A directly-invoked,
+    **app-modal** `runModal` call is a genuinely different code path -- not attached to
+    any window at all, so there's no window for it to end up behind.
+  - **BUILT (Phase 1)**: `src/platform/NativeFileDialog.h`/`.cpp` (new) -- macOS-only for
+    now, calls `NSOpenPanel`/`NSSavePanel` directly via `choc::objc` (CHOC's own reusable
+    Objective-C call helpers, `third_party/choc/choc/platform/choc_ObjectiveCHelpers.h`
+    -- safe to include unconditionally, the whole file is `#if CHOC_APPLE`-guarded) and
+    `runModal`, bypassing CHOC's own broken delegate entirely. `isNativeFileDialogSupported()`
+    lets callers distinguish "not supported on this platform" from "user cancelled" (both
+    would otherwise look like an empty result) -- Windows/Linux stub returns `false`/
+    `nullopt` rather than untested `IFileOpenDialog`/`GtkFileChooserNative` code with no
+    way to verify it here.
+  - **BUILT (Phase 1)**: `EditorBridge::openFile()`'s body refactored into a shared
+    private `openFileAtPath()`, reused by both the pre-existing `openFile(path)` (JS
+    supplies the path -- still not wired to any UI control) and the new
+    `openFileDialog()` (no args, calls `kronos::showOpenFileDialog()` then the same
+    helper). Bound in `main.cpp`, and `pane.js` gets an "Open..." button next to each
+    pane's dataset-select (opens into that specific pane, mirroring drag-and-drop).
+    `mock_bridge.js` mirrors it with a `window.prompt()` stand-in, same spirit as its
+    existing fabricated-data approach.
+  - **Save dialog built but deliberately not wired to any UI yet**: `showSaveFileDialog()`
+    exists (same mechanism, proven once Open works) but nothing calls it -- there's
+    nothing meaningful to write yet. `moveEntry`/`copyEntry`/`setComment` only mutate the
+    in-memory `setlists_` structs, never `data_` (no `putRecordBytes()`/encoder exists).
+    Wiring a Save button now would either silently discard every edit (writing back
+    unmodified original bytes) or need to be disabled/misleading -- worse than waiting.
+  - **CONFIRMED WORKING in the real app (2026-08-03)**: the `runModal` fix does resolve
+    the z-order bug -- the panel appears in front and a dataset loads successfully via
+    "Open...". Blind Spot #11 updated accordingly. This was the actual gate for
+    everything below.
+  - **Drag-and-drop-to-open REMOVED (2026-08-03), now that "Open..." works**: the
+    file-drop listeners (`dragenter`/`dragover`/`dragleave`/`drop` for *files*, as
+    opposed to the still-present Setlist row drag-and-drop, which is unrelated and
+    untouched) are gone from `pane.js`, along with `arrayBufferToBase64()`, the
+    `EditorBridge::openFileBytes()` bridge method, its `main.cpp` binding, and the
+    hand-rolled `decodeBase64()` helper -- all fully unreachable once "Open..." is the
+    only way in, removed rather than left as dead code (per this project's usual
+    convention). `mock_bridge.js`'s fake `openFileBytes` removed too; its
+    no-native-bridge-detected check now looks for `window.openFileDialog` instead.
+    `.pane.drag-over` (and the now-pointless `border: 2px dashed transparent` on `.pane`
+    that only existed to support it) removed from `style.css`. The `.view-hint` text and
+    this bridge's own doc comments updated to stop describing a mechanism that no longer
+    exists.
+  - **Can't open the same dataset twice (BUILT 2026-08-03)**: `openFileAtPath()` now
+    checks `m_datasets` for an existing entry whose `displayName` (which, for every path-
+    based open, *is* the real path) exactly matches before loading anything -- if found,
+    returns that dataset's existing info (`alreadyOpen: true`) instead of loading a
+    second redundant copy. This was only feasible once every open went through a real,
+    stable path (drag-and-drop never had one to compare against, which is exactly why
+    this wasn't attempted before). `pane.js` logs a distinct "already open" message when
+    this happens, but otherwise needs no special handling -- `loadDataset()` just shows
+    whichever `datasetId` came back either way. `finishOpen()` and this new check share
+    a `datasetResultValue()` helper so the `{datasetId, displayName, setlistCount}` shape
+    is built in exactly one place.
+  - **Verified**: compiles and links clean (confirms `choc::objc` + the existing
+    `-framework Cocoa`/`-framework WebKit` link flags are sufficient, no new link step
+    needed), app launches without crashing, `ctest` unaffected (no `PcgFile`/decoder
+    changes in Phase 1), all JS syntax-checked, a full grep swept for any leftover
+    reference to the removed drag-and-drop/`openFileBytes` code (none found).
+  - **"Open..." moved from per-pane to a single topbar button (2026-08-03,
+    frontend-only, no C++ changes)**: opening a dataset was never really "for" a
+    specific pane (a dataset is decoupled from panes -- see `EditorBridge.h`), so having
+    two identical buttons was redundant. `index.html`'s `.topbar` now holds the one
+    `.open-file-button` (left side, `h1` flows after it) plus a `.topbar-loading`
+    spinner; `pane.js`'s per-pane button/spinner markup and click handler are gone,
+    replaced by two small exports (`loadDataset`, `isEmpty`) that `app.js`'s new global
+    click handler uses to land a freshly-opened dataset in the first empty pane (A
+    checked before B); if both panes already show something, the dataset still becomes
+    selectable from either dropdown via the usual `refreshDatasets()` broadcast, just
+    not auto-shown. The same-path dedup (`alreadyOpen`) already existed in
+    `EditorBridge::openFileAtPath()` from the change above -- confusion about "still
+    being able to open the same file twice" turned out to be testing against a stale
+    already-running process (native code had changed but the process hadn't been
+    relaunched), not a real gap; `mock_bridge.js`'s fake `openFileDialog()` now mirrors
+    the same dedup-by-displayName behavior for consistency in plain-browser mode.
+    `datasets.js`'s `populateDatasetSelect()` now labels each option `#<id> — <full
+    path>` instead of just the bare path, so the id and the complete name are both
+    always visible, not just whichever was picked out via truncation/CSS ellipsis.
+  - **Phase 2, designed but not built -- only once Phase 1's dialog fix is confirmed
+    working**: chunked reading with real progress, reported natively -- `PcgFile::load()`
+    gains an optional `std::function<void(size_t,size_t)>` progress callback (seek for
+    total size upfront, read in fixed chunks, e.g. 4MB, invoking the callback after
+    each). The read runs on a background `std::thread` (so it can't block the WebView);
+    progress and the final result both cross back to the main thread via
+    `choc::messageloop::postMessage()` (confirmed thread-safe for exactly this use, see
+    `choc_MessageLoop.h:67`), which then calls `WebView::evaluateJavascript()` to push a
+    `window.__onImportProgress(percent)` / `window.__onImportComplete(result)` call into
+    the page -- the first *native-initiated* event this bridge will have used, versus
+    every existing method's JS-initiated request/response shape. Only the final
+    `m_datasets` insert happens on the main thread -- the read/parse itself touches no
+    shared state, so it's safe to run in the background. `openFileDialog()`'s bound call
+    becomes fire-and-forget (returns immediately once a path is chosen) rather than
+    blocking for the whole read. This is *not* built yet.
 
 --- BLIND SPOTS / NOT YET TOUCHED ---
 
@@ -580,8 +964,18 @@ App/UI:
       name-lookup verification, but not explicitly confirmed end-to-end
       for the swap/copy drag gestures themselves or the Set List picker
       dropdown -- worth a deliberate pass.
-  11. NSOpenPanel-behind-the-window bug (see above) -- not blocking since
-      drag-and-drop covers real usage, but unresolved if ever revisited.
+  11. **RESOLVED (2026-08-03)**: the NSOpenPanel-behind-the-window bug was
+      specifically in CHOC's own WebView-triggered delegate
+      (`beginSheetModalForWindow:completionHandler:`, a *sheet* attached to
+      the WKWebView's window). `src/platform/NativeFileDialog.cpp` (see the
+      NATIVE FILE DIALOG + PROGRESS section) calls `NSOpenPanel`/
+      `NSSavePanel` directly via `runModal` -- app-modal, not sheet-attached,
+      a genuinely different code path -- bypassing that delegate entirely.
+      **Confirmed working in the real app**: the panel appears in front and
+      loads a dataset successfully. Drag-and-drop-to-open has since been
+      removed now that this is fixed -- "Open..." is the only way to load a
+      file. Save dialog exists at the native layer but isn't wired to any
+      UI yet (nothing meaningful to write -- no encoder exists).
   12. The sibling reference CHOC project (conventions, CI pipeline) still
       not linked in -- this scaffold's choices (no Bootstrap, plain CSS,
       specific file-open pattern) may get reconciled once it is.
@@ -616,13 +1010,12 @@ App/UI:
       broken assertion to confirm they fail loudly and non-zero, not just
       pass trivially. Next: proceed to the Combi decoder, per the
       already-agreed sequencing.
-  15. No progress indicator while opening a large file -- the drag-and-drop
-      open path (base64-encode in JS, decode + parse in C++) can take a
-      moment on a 50-70MB file and currently just shows static "Loading..."
-      text. An indeterminate spinner would be a small change; a real
-      percentage bar needs the encode/transfer to happen in chunks with
-      progress callbacks rather than as one monolithic step, which it
-      isn't today.
+  15. **PARTIALLY RESOLVED (2026-08-03)**: an indeterminate spinner now covers
+      the pane while a dropped file's base64-encode/decode+parse is in
+      flight (see the EXPLORATION section's per-pane UI notes) -- still not
+      a real percentage bar, which needs the encode/transfer restructured
+      into chunks with progress callbacks rather than one monolithic step,
+      not done.
   16. **RESOLVED (2026-08-01)**: the Library view has now been clicked
       through end to end in the real app (see the Datasets entry in
       "ARCHITECTURE" above) -- confirmed working.
