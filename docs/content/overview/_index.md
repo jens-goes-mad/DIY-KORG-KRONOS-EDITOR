@@ -77,20 +77,31 @@ corresponds to which on-screen label beyond the ones directly confirmed above.
 
 ## The editor
 
-- A Norton-Commander-style dual pane: each pane picks which already-open **dataset**
-  (loaded file) to show from its own selector, browse any Set List's 128 slots with
-  filter/search, and drag entries to swap them within a list or copy them across panes
-  -- plus an editable Comment field per slot. Point both panes at the same dataset to
-  rearrange one backup (edits show up in both immediately); point them at different
-  datasets to compare/merge two backups side by side -- see
+- A Norton-Commander-style dual pane: each pane independently picks which already-open
+  **dataset** (loaded file) to show from its own selector, and a per-pane category
+  navbar (Setlist / Programs / Combis / Duplicates) switches what that pane is
+  browsing -- so two panes can show different categories of the same dataset, the same
+  category of two different datasets side by side, or anything in between. Point both
+  panes at the same dataset to rearrange one backup (edits show up in both
+  immediately, dragging a Set List row between them swaps/copies it); point them at
+  different datasets to compare two backups side by side -- see
   [App architecture & components](/components) for how this is built.
-- A Library view: browse every Program and Combi on the unit directly (not just through
-  Set List slots), see which Set List slots reference a given Program, and find Programs
-  that are byte-for-byte duplicates of each other (down to the raw record hash). Has its
-  own dataset selector too, independent of either Set Lists pane.
+- **Setlist**: browse any Set List's 128 slots with filter/search, drag entries to
+  swap them within a list or copy them across panes, edit a free-text Comment per
+  slot, and jump straight from a slot's Bank/number to that exact Program or Combi in
+  the same pane's Programs/Combis view.
+- **Programs / Combis / Duplicates**: browse every Program and Combi on the unit
+  directly (not just through Set List slots), filter by bank, see which Set List
+  slots reference a given Program, and find Programs that are byte-for-byte
+  duplicates of each other (down to the raw record hash).
+- Opens a file via a real native Open dialog (fixed a long-standing macOS z-order bug
+  by calling `NSOpenPanel` directly rather than through the WebView's own broken
+  delegate) -- opening the same path twice reuses the existing dataset instead of
+  loading a second copy.
 - Built on [CHOC](https://github.com/Tracktion/choc) (HTML/JS/CSS UI over a thin native
   C++ bridge) -- the same stack as the sibling `DIY-MIDI-METRONOME/EDITOR` project,
-  reused rather than reinvented.
+  reused rather than reinvented -- with [Bulma](https://bulma.io) (vendored, CSS-only,
+  no JS/build-step dependency) for layout and styling on top.
 - Genuinely cross-platform: one CMake project builds on macOS (arm64 + Intel), Linux,
   and Windows, verified by CI on all four targets -- see [Building the app](/building).
 

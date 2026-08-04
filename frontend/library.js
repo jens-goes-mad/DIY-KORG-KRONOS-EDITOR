@@ -16,14 +16,16 @@
 // for the phased roadmap this is Phase 1 of.
 function createLibraryPanels(root, { log, getDatasetId }) {
   root.innerHTML = `
-    <input class="filter-input library-filter" type="text" placeholder="Filter / search..." />
+    <input class="filter-input library-filter input is-small" type="text" placeholder="Filter / search..." />
+    <div class="bank-filter-area">
+      <div class="bank-filter-row" data-bank-filter="programs"></div>
+      <div class="bank-filter-row" data-bank-filter="combis" hidden></div>
+    </div>
     <div class="library-body">
       <div class="lib-panel" data-panel="programs">
-        <div class="bank-filter-row" data-bank-filter="programs"></div>
         <div class="lib-panel-table" data-panel-table="programs"></div>
       </div>
       <div class="lib-panel" data-panel="combis" hidden>
-        <div class="bank-filter-row" data-bank-filter="combis"></div>
         <div class="lib-panel-table" data-panel-table="combis"></div>
       </div>
       <div class="lib-panel" data-panel="duplicates" hidden></div>
@@ -44,6 +46,11 @@ function createLibraryPanels(root, { log, getDatasetId }) {
     programs: root.querySelector('[data-panel-table="programs"]'),
     combis: root.querySelector('[data-panel-table="combis"]'),
   };
+  // Bank-filter buttons live outside .library-body now (a sibling above it,
+  // not inside the scrolling area) -- per explicit request, they were
+  // scrolling out of view along with the table. showPanel() below toggles
+  // which one (if either -- Duplicates has no bank filter at all) is shown,
+  // mirroring `panels`' own show/hide.
   const bankFilterRows = {
     programs: root.querySelector('[data-bank-filter="programs"]'),
     combis: root.querySelector('[data-bank-filter="combis"]'),
@@ -91,24 +98,26 @@ function createLibraryPanels(root, { log, getDatasetId }) {
 
   // Draws one category's bank-filter button row: one toggle per bank name,
   // enabled only if that bank actually has entries in the current dataset
-  // (`present`), pressed (.active) if currently in `filterSet`. Pure
-  // rendering -- only the click handler mutates `filterSet`, so calling
-  // this again (e.g. to reflect a programmatic change from jumpToEntry())
-  // never resets a user's existing choices on its own.
+  // (`present`), pressed (Bulma's `is-link` -- there's no dedicated
+  // "toggle button" component, this is the idiomatic way to show a button
+  // as active) if currently in `filterSet`. Pure rendering -- only the
+  // click handler mutates `filterSet`, so calling this again (e.g. to
+  // reflect a programmatic change from jumpToEntry()) never resets a
+  // user's existing choices on its own.
   function renderBankFilterRow(container, bankNames, present, filterSet, onToggle) {
     container.innerHTML = "";
     bankNames.forEach((name, bank) => {
       const isPresent = present.has(bank);
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "lib-tab bank-filter-button";
+      btn.className = "button is-small bank-filter-button";
       btn.textContent = name;
       btn.disabled = !isPresent;
-      if (isPresent && filterSet.has(bank)) btn.classList.add("active");
+      if (isPresent && filterSet.has(bank)) btn.classList.add("is-link");
       btn.addEventListener("click", () => {
         if (filterSet.has(bank)) filterSet.delete(bank);
         else filterSet.add(bank);
-        btn.classList.toggle("active");
+        btn.classList.toggle("is-link");
         onToggle();
       });
       container.appendChild(btn);
@@ -134,7 +143,6 @@ function createLibraryPanels(root, { log, getDatasetId }) {
 
   function bankCell(isProgram, bank, number) {
     const td = document.createElement("td");
-    td.className = "col-bank";
     td.textContent = formatBankNumber({ isProgram, bank, number });
     return td;
   }
@@ -142,16 +150,16 @@ function createLibraryPanels(root, { log, getDatasetId }) {
   // Small pill per Set List reference (name + slot number) -- only shown
   // when there are few enough (<=10) to stay readable; above that, the
   // "#STL" count column still shows the total, just without the
-  // per-reference breakdown.
+  // per-reference breakdown. Bulma's own `.tags`/`.tag` (a real pill/chip
+  // component), not a hand-rolled one.
   function badgesCell(setlistUsages) {
     const td = document.createElement("td");
-    td.className = "col-badges";
     if (setlistUsages && setlistUsages.length > 0 && setlistUsages.length <= 10) {
       const wrap = document.createElement("div");
-      wrap.className = "badge-list";
+      wrap.className = "tags";
       for (const u of setlistUsages) {
         const badge = document.createElement("span");
-        badge.className = "badge";
+        badge.className = "tag";
         badge.textContent = `${u.setlistName} (${kronosNumber(u.songIndex)})`;
         wrap.appendChild(badge);
       }
@@ -162,9 +170,9 @@ function createLibraryPanels(root, { log, getDatasetId }) {
 
   function refCell(text, unavailable) {
     const td = document.createElement("td");
-    td.className = unavailable ? "col-refs col-refs-unavailable" : "col-refs";
     td.textContent = text;
     if (unavailable) {
+      td.className = "col-refs-unavailable";
       td.title =
         "Combi usage is only confirmed correct for INT-A..D so far -- other banks would risk a wrong " +
         "count due to the Combi-internal bank numbering not matching this bank's index everywhere. " +
@@ -177,12 +185,7 @@ function createLibraryPanels(root, { log, getDatasetId }) {
     const tr = document.createElement("tr");
     tr.className = "comment-editor-row";  // reuses the existing expand-row look from pane.js
     const td = document.createElement("td");
-    // Span every column -- table is display:grid now (see style.css). Was
-    // `colSpan = 2` under the old <table> layout, a stale value from when
-    // the Programs table had fewer columns (it's had 5 for a while); fixed
-    // as part of the grid migration since grid-column: 1 / -1 always means
-    // "all of them," not a number that can silently drift out of sync.
-    td.style.gridColumn = "1 / -1";
+    td.colSpan = 5;  // Bank, Name, Type, #STL, #CMB -- a real <table> again
 
     const box = document.createElement("div");
     box.textContent = "Loading usage...";
@@ -263,22 +266,20 @@ function createLibraryPanels(root, { log, getDatasetId }) {
 
     panel.innerHTML = "";
     const table = document.createElement("table");
-    table.className = "entries-table library-table";
-    table.style.gridTemplateColumns = gridTemplateColumns([55, null, 38, 54, 54]);
+    table.className = "table is-fullwidth is-hoverable is-narrow";
     table.innerHTML =
-      "<thead><tr><th class=\"col-bank\">Bank</th><th class=\"col-name\">Name</th><th class=\"col-narrow\" " +
+      colgroupHtml([2.6, null, 1.3, 1.3, 1.3]) +
+      "<thead><tr><th>Bank</th><th>Name</th><th " +
       "title=\"HD-1 or EXi -- not yet cross-checked against a real backup, see docs/external/README.md\">Type</th>" +
-      "<th class=\"col-refs\" title=\"Set List references\">#STL</th>" +
-      "<th class=\"col-refs\" title=\"Combi references\">#CMB</th></tr></thead><tbody></tbody>";
+      "<th title=\"Set List references\">#STL</th>" +
+      "<th title=\"Combi references\">#CMB</th></tr></thead><tbody></tbody>";
     const tbody = table.querySelector("tbody");
 
     for (const p of rows) {
       const tr = document.createElement("tr");
       const nameTd = document.createElement("td");
-      nameTd.className = "col-name";
       nameTd.textContent = p.name || "(empty)";
       const typeTd = document.createElement("td");
-      typeTd.className = "col-narrow";
       typeTd.textContent = p.bankType || "";
       tr.append(
         bankCell(true, p.bank, p.number),
@@ -292,7 +293,8 @@ function createLibraryPanels(root, { log, getDatasetId }) {
 
       const key = `${p.bank}-${p.number}`;
       tr.dataset.entryKey = key;  // lets jumpToEntry() find this exact row after a re-render
-      if (key === expandedProgramKey) tr.classList.add("expanded");
+      // Bulma's own `tr.is-selected` highlight, not a hand-rolled class.
+      if (key === expandedProgramKey) tr.classList.add("is-selected");
       tr.addEventListener("click", () => {
         expandedProgramKey = expandedProgramKey === key ? null : key;
         renderProgramsPanel();
@@ -324,7 +326,7 @@ function createLibraryPanels(root, { log, getDatasetId }) {
     const tr = document.createElement("tr");
     tr.className = "comment-editor-row";
     const td = document.createElement("td");
-    td.style.gridColumn = "1 / -1";  // span every column -- table is display:grid now, see style.css
+    td.colSpan = 4;  // Bank, Name, Set Lists, #STL -- a real <table> again
 
     const heading = document.createElement("div");
     heading.className = "usage-heading";
@@ -359,17 +361,16 @@ function createLibraryPanels(root, { log, getDatasetId }) {
 
     panel.innerHTML = "";
     const table = document.createElement("table");
-    table.className = "entries-table library-table";
-    table.style.gridTemplateColumns = gridTemplateColumns([55, null, 160, 54]);
+    table.className = "table is-fullwidth is-hoverable is-narrow";
     table.innerHTML =
-      "<thead><tr><th class=\"col-bank\">Bank</th><th class=\"col-name\">Name</th><th class=\"col-badges\">Set Lists</th>" +
-      "<th class=\"col-refs\" title=\"Set List references\">#STL</th></tr></thead><tbody></tbody>";
+      colgroupHtml([2.6, null, 4, 1.3]) +
+      "<thead><tr><th>Bank</th><th>Name</th><th>Set Lists</th>" +
+      "<th title=\"Set List references\">#STL</th></tr></thead><tbody></tbody>";
     const tbody = table.querySelector("tbody");
 
     for (const c of rows) {
       const tr = document.createElement("tr");
       const nameTd = document.createElement("td");
-      nameTd.className = "col-name";
       nameTd.textContent = c.name || "(empty)";
       tr.append(
         bankCell(false, c.bank, c.number),
@@ -380,7 +381,7 @@ function createLibraryPanels(root, { log, getDatasetId }) {
 
       const key = `${c.bank}-${c.number}`;
       tr.dataset.entryKey = key;  // lets jumpToEntry() find this exact row after a re-render
-      if (key === expandedCombiKey) tr.classList.add("expanded");
+      if (key === expandedCombiKey) tr.classList.add("is-selected");
       tr.addEventListener("click", () => {
         expandedCombiKey = expandedCombiKey === key ? null : key;
         renderCombisPanel();
@@ -419,11 +420,11 @@ function createLibraryPanels(root, { log, getDatasetId }) {
       box.appendChild(title);
 
       const table = document.createElement("table");
-      table.className = "entries-table library-table";
-      table.style.gridTemplateColumns = gridTemplateColumns([55, 54, 54]);
+      table.className = "table is-fullwidth is-hoverable is-narrow";
       table.innerHTML =
-        "<thead><tr><th class=\"col-bank\">Bank</th><th class=\"col-refs\" title=\"Set List references\">#STL</th>" +
-        "<th class=\"col-refs\" title=\"Combi references\">#CMB</th></tr></thead><tbody></tbody>";
+        colgroupHtml([2.6, 1.3, 1.3]) +
+        "<thead><tr><th>Bank</th><th title=\"Set List references\">#STL</th>" +
+        "<th title=\"Combi references\">#CMB</th></tr></thead><tbody></tbody>";
       const tbody = table.querySelector("tbody");
 
       for (const p of group) {
@@ -453,6 +454,10 @@ function createLibraryPanels(root, { log, getDatasetId }) {
     currentTab = name;
     Object.entries(panels).forEach(([panelName, el]) => {
       el.hidden = panelName !== currentTab;
+    });
+    // Duplicates has no bank-filter row at all -- both stay hidden there.
+    Object.entries(bankFilterRows).forEach(([rowName, el]) => {
+      el.hidden = rowName !== currentTab;
     });
     renderCurrentTab();
   }

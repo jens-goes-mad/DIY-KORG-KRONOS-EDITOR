@@ -9,8 +9,8 @@ backup files, built on [CHOC](https://github.com/Tracktion/choc)
 
 First iteration scope (see `STATE.md` for current status):
 
-1. Open a `.PCG` file (drag-and-drop) and extract all 128 Set Lists into
-   memory as a **dataset**.
+1. Open a `.PCG` file via a native Open dialog and extract all 128 Set Lists
+   into memory as a **dataset**.
 2. Pick one Set List per pane and show its 128 song slots, with filter/search.
 3. A Norton-Commander-style dual pane to copy songs between Set Lists, and
    swap/reorder songs within one, both via drag and drop.
@@ -20,12 +20,13 @@ memory tool for now.
 
 ## Datasets: one loaded file, decoupled from which pane shows it
 
-Each dropped `.PCG` file becomes its own **dataset**, identified by an id the
-native bridge mints on open (not by which pane received the drop). Every
-pane -- both Set Lists panes, and the Library view -- has its own selector to
-pick *which already-open dataset* to display, independent of the others.
-This covers two different workflows with one mechanism instead of two UI
-modes:
+Each opened `.PCG` file becomes its own **dataset**, identified by an id the
+native bridge mints on open (not by which pane opened it -- there's a single,
+global Open button, not a per-pane one). Each pane has its own selector to
+pick *which already-open dataset* to display, shared by all of that pane's
+categories (Setlist/Programs/Combis/Duplicates, see below) -- independent of
+the other pane. This covers two different workflows with one mechanism
+instead of two UI modes:
 
 - **Rearranging one backup** (e.g. building a new gig Set List from songs
   spread across other Set Lists in the same file): point both panes at the
@@ -37,22 +38,32 @@ modes:
   different one. Dragging a row between them still works exactly the same
   way, just copying across datasets instead of within one.
 
-Dropping a file always creates a *new* dataset; it never silently overwrites
-whatever a pane was already showing. See `docs/content/components`'s
-Datasets section and `STATE.md`'s "ARCHITECTURE" block for the full
-before/after and why this replaced the old one-file-per-pane model.
+Opening a path already open elsewhere reuses that existing dataset instead of
+loading a second copy; otherwise opening always creates a *new* dataset, and
+never silently overwrites whatever a pane was already showing. See
+`docs/content/components`'s Datasets section and `STATE.md`'s "ARCHITECTURE"
+block for the full before/after and why this replaced the old
+one-file-per-pane model.
 
-## Library view (Programs / Combis / Duplicates)
+## Per-pane categories: Setlist / Programs / Combis / Duplicates
 
-A second top-level tab, alongside Set Lists: browse every Program and
-Combi on the unit directly (not just through Set List slots), see which
-Set List slots directly reference a given Program, and find Programs that
-are byte-for-byte duplicates of each other. Read-only -- this is Phase 1
-of a larger plan (see `STATE.md`'s "Program/Combi Library Editor" section)
-that eventually aims to delete unused duplicates and repoint Combis at a
-single kept copy; that part needs a currently-unparsed piece of the format
-(a Combi's internal Timbre-to-Program references) and a safe write-back
-mechanism this app has never had, so it's deliberately not built yet.
+Each pane has its own category navbar, not a separate top-level tab -- so two
+panes can independently show different categories of the same dataset, the
+same category of two different datasets side by side, or anything in
+between.
+
+- **Setlist**: the 128-slot browsing/filtering/drag-and-drop described above,
+  plus a Bank-jump button per slot that switches that same pane to
+  Programs/Combis and scrolls straight to the exact entry it points at.
+- **Programs / Combis / Duplicates**: browse every Program and Combi on the
+  unit directly (not just through Set List slots), filter by bank, see which
+  Set List slots directly reference a given Program, and find Programs that
+  are byte-for-byte duplicates of each other. Read-only -- this is Phase 1
+  of a larger plan (see `STATE.md`'s "Program/Combi Library Editor" section)
+  that eventually aims to delete unused duplicates and repoint Combis at a
+  single kept copy; that part needs a currently-unparsed piece of the format
+  (a Combi's internal Timbre-to-Program references) and a safe write-back
+  mechanism this app has never had, so it's deliberately not built yet.
 
 ## The KORG PCG/SNG file format
 
@@ -159,13 +170,15 @@ docs/content/                 -- the public Hugo/GitHub Pages docs site (mirrors
 src/
   kronos/PcgFile.{h,cpp}     -- the file-format parser (implements docs/README.md)
   bridge/EditorBridge.{h,cpp} -- native functions exposed to the web UI
+  platform/NativeFileDialog.{h,cpp} -- native Open/Save dialog (macOS; Windows/Linux stubbed)
   main.cpp                   -- CHOC window/webview wiring
 frontend/
-  index.html, app.js, style.css   -- top-level tab bar (Set Lists / Library) + shared wiring
+  index.html, app.js, style.css   -- topbar (global Open button) + shared wiring
   datasets.js                  -- shared dataset registry (open files, decoupled from pane) -- see Datasets above
-  pane.js                      -- Set Lists dual-pane UI
-  library.js                   -- Library view (Programs/Combis/Duplicates)
+  pane.js                      -- pane shell (dataset selector + Setlist/Programs/Combis/Duplicates category nav) + Setlist UI
+  library.js                   -- Programs/Combis/Duplicates category content, embedded per-pane (not a separate tab)
   mock_bridge.js              -- fake in-memory backend for plain-browser dev (no native build needed)
+  vendor/bulma.min.css         -- vendored Bulma (CSS only, no JS/build-step dependency) -- see docs/content/components
   components/kronos/          -- standalone, byte-level-tested UI pieces (see Architecture direction above)
 third_party/choc/            -- vendored from DIY-MIDI-METRONOME/EDITOR
 ```

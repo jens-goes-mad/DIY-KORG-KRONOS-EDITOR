@@ -13,13 +13,20 @@
        would drift from our own hard-coded dark :root in style.css whenever
        the OS itself isn't in dark mode).
 
-       `is-mobile` on .level/.columns below: Bulma is mobile-first --
-       .level/.columns only become row layouts (instead of stacking) past a
-       769px media-query breakpoint. This app enforces an 800px minimum
-       window width (main.cpp), which clears that, but relying on a 31px
-       margin above a breakpoint is exactly the kind of narrow-width edge
-       case that broke things repeatedly before this rewrite. `is-mobile`
-       forces row layout unconditionally, no breakpoint involved. -->
+       `is-mobile` on .level below: Bulma is mobile-first -- .level only
+       becomes a row layout (instead of stacking) past a 769px media-query
+       breakpoint. The topbar should never stack (there's nothing to
+       usefully stack it into), so `is-mobile` forces row layout there
+       unconditionally, no breakpoint involved.
+
+       .panes below is deliberately WITHOUT is-mobile, unlike the topbar --
+       per explicit request, the two-pane split should actually stack full-
+       width below the 769px breakpoint and go side-by-side (half each)
+       above it, mirroring Bootstrap's classic 12/6 responsive-column
+       pattern. This app's own window has an 800px floor (main.cpp), which
+       already clears 769px, so the native app always shows side-by-side --
+       the stacking only becomes visible when testing in a plain browser
+       tab narrower than that (mock_bridge.js's no-build testing mode). -->
   <link rel="stylesheet" href="vendor/bulma.min.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -27,7 +34,7 @@
   <header class="topbar level is-mobile">
     <div class="level-left">
       <button class="button is-small mr-3 open-file-button" type="button" title="Open a .PCG/.SNG file via a native file picker -- lands in whichever pane is empty, or just becomes selectable from either pane's dropdown if both are occupied">Open...</button>
-      <h1 class="title is-5 mb-0">DIY Kronos Editor</h1>
+      <h1 class="title is-5 mb-0" title="Click &quot;Open...&quot; above to load a .PCG/.SNG file as a new dataset, or pick an already-open one from a pane's selector -- both panes on the same dataset share edits. Each pane's Setlist/Programs/Combis/Duplicates tabs browse whichever dataset it's showing; drag a Setlist row within a pane to swap, drag across panes to copy (Programs/Combis rows aren't draggable yet).">DIY Kronos Editor</h1>
     </div>
     <div class="level-right topbar-loading" hidden>
       <div class="topbar-loading-spinner"></div>
@@ -36,10 +43,9 @@
   </header>
 
   <main class="view" id="setlistsView">
-    <div class="view-hint">Click "Open..." above to load a .PCG/.SNG file as a new dataset, or pick an already-open one from a pane's selector -- both panes on the same dataset share edits. Each pane's Setlist/Programs/Combis/Duplicates tabs browse whichever dataset it's showing; drag a Setlist row within a pane to swap, drag across panes to copy (Programs/Combis rows aren't draggable yet).</div>
-    <div class="panes columns is-mobile">
-      <section class="pane column" data-pane="A"></section>
-      <section class="pane column" data-pane="B"></section>
+    <div class="panes columns">
+      <section class="pane column is-12-mobile is-6-tablet" data-pane="A"></section>
+      <section class="pane column is-12-mobile is-6-tablet" data-pane="B"></section>
     </div>
   </main>
 

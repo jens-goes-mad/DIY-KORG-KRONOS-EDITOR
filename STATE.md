@@ -805,6 +805,127 @@ for a while.
       still `.lib-tab`-styled buttons and the CSS-Grid-based `.entries-table` mechanism
       from the previous pass. Per explicit instruction, Bulma adoption lands here next,
       once the pane shell + Setlist table are confirmed working.
+  - **Setlist rebuilt as a real Bulma table + Library (Programs/Combis/Duplicates)
+    fully converted too (BUILT 2026-08-04)** -- two rounds landed together:
+    - **Setlist**: back to a real `<table>` (Bulma's `.table.is-fullwidth.is-hoverable
+      .is-narrow`), not the CSS-Grid-dressed-as-a-table hack from the previous pass --
+      per explicit "remove all non-Bulma CSS from the tables and rows" request. Column
+      widths moved from px to a genuine 12-based grid (`pane.js`'s `colgroupHtml()`,
+      mirroring Bulma's own `.column.is-1..is-12` convention) expressed as percentages
+      via `<colgroup><col style="width:N%">`, so the table scales with its container.
+      `colSpan` is back to a plain attribute (was a `grid-column: 1/-1` workaround).
+      Row highlight (Comment editor open) uses Bulma's real `tr.is-selected`, not a
+      hand-rolled `.expanded` class; row hover comes from Bulma's `.is-hoverable`, no
+      custom CSS needed at all. What's left as genuinely irreducible custom CSS:
+      column-width locking itself (`table-layout: fixed`, since Bulma's `.table` has
+      no column-layout system whatsoever), an opaque sticky-header background (Bulma's
+      table head background is transparent by default), and two real app-specific
+      states no framework has a concept for (drag-and-drop's drop-target hint, "this
+      row has a Comment").
+    - **Column-width floors**: `<col>` doesn't support `min-width` (ignored by
+      browsers), and `table-layout: fixed` ignores per-cell width/min-width past the
+      first row -- so a per-column minimum can only live on the `<col>` itself, via
+      `calc(N% + Mpx)`. `colgroupHtml()` now accepts `{frac, extraPx}` per column;
+      Setlist's #/Type/Vol get +5px, Bank +10px (the jump-button's "I-C 000" text
+      needs more room).
+    - **Library (Programs/Combis/Duplicates) converted the same way**, closing out the
+      staged rollout: same real-`<table>` + `colgroupHtml()` + `tr.is-selected`
+      pattern for all three. Bank-filter-row buttons moved from the hand-rolled
+      `.lib-tab` to Bulma's `.button.is-small` (pressed/active state via `is-link`,
+      the idiomatic Bulma way to show a toggle button as active -- Bulma has no
+      dedicated toggle-button component). Set List reference pills (Combis) moved
+      from a hand-rolled `.badge`/`.badge-list` to Bulma's real `.tags`/`.tag`
+      component. With library.js off it, the entire old CSS-Grid-table mechanism
+      (`.entries-table`, its `display: contents` thead/tbody/tr hack, `.col-narrow`/
+      `.col-bank`/`.col-refs`/`.col-name`, `.badge-list`/`.badge`, `.library-table`,
+      `.lib-tab`/`:hover`/`.active`, `pane.js`'s `gridTemplateColumns()`) had nothing
+      left using it -- deleted outright rather than left as dead code.
+    - **Fixed a real, unrelated bug found along the way**: the topbar loading spinner
+      never actually hid. Root cause -- `.topbar-loading` also carries Bulma's
+      `.level-right`, and since it lives inside `.level.is-mobile`, Bulma's actual
+      matching rule is `.level.is-mobile .level-right{display:flex}` (3 combined
+      classes, specificity 0,0,3,0), which beat our `.topbar-loading[hidden]{display:
+      none}` (0,0,2,0) outright regardless of the `hidden` attribute. Fixed with a
+      deliberate, narrow `!important` -- the right tool for "must win over a
+      third-party framework's conflicting rule for a boolean visibility toggle."
+  - **Real Bootstrap-style responsive breakpoints (BUILT 2026-08-04)**: two changes,
+    both using Bulma's mobile-first `is-N-mobile`/`is-N-tablet` column-size classes
+    (verified against the actual CSS before relying on them: `.column.is-12-mobile`
+    is unconditional `width:100%`, `.column.is-6-tablet` only applies inside `@media
+    (min-width:769px)` -- and critically, `.columns` WITHOUT `.is-mobile` isn't
+    `display:flex` at all below that breakpoint, so `.column` children just stack as
+    plain blocks with no wrapping logic needed).
+    - **Dataset-select and the category tabs share one responsive row (BUILT
+      2026-08-04, corrected same-day)**: the first attempt put them in two separate,
+      always-stacked `.columns` rows -- wrong mechanism, per follow-up clarification
+      the actual want was Bootstrap's `col-12 col-lg-6` pattern: ONE row that wraps
+      into two stacked rows below a breakpoint and merges into one side-by-side row
+      above it. Fixed: both back in a single `.columns.is-multiline` row, each
+      `.column.is-12-mobile.is-6-desktop` -- full width (stacked, 12+12 doesn't fit
+      one row) below Bulma's 1024px desktop breakpoint, half width each (side by
+      side, 6+6=12 fits exactly) from there up. `.is-multiline` is load-bearing here
+      specifically: the container's own flex-activation breakpoint (769px, tablet) is
+      EARLIER than the width-override breakpoint (1024px, desktop) it's paired with,
+      so without it, the 769-1024px range would be a flex row of two still-full-width
+      items with nothing telling them to wrap -- they'd overflow instead of stacking.
+      (`.panes` below doesn't have this mismatch -- its own flex-activation and
+      width-override are both 769px, so no `.is-multiline` needed there.) The app's
+      default window (1100px, `main.cpp`) clears 1024px, so this is genuinely visible
+      in normal use -- shrink the window below ~1024px total (not per-pane, Bulma
+      breakpoints are viewport-width-based) to see it stack.
+    - **The two-pane split (.panes/.pane) is genuinely responsive now**, not forced
+      side-by-side: `is-mobile` removed from `.panes`, `.pane` gained `is-12-mobile
+      is-6-tablet` -- stacks full-width below 769px, side-by-side (half each) above
+      it. The app's own window has an 800px floor (`main.cpp`), comfortably clearing
+      769px, so the native app always renders side-by-side either way; the stacking
+      only becomes externally visible testing in a plain browser tab narrower than
+      that (mock_bridge.js's no-build mode). The topbar's `.level` keeps its
+      unconditional `is-mobile` (nothing useful to stack a title bar into).
+  - **Pane-header breakpoint written directly, not via Bulma's grid (BUILT
+    2026-08-04, supersedes the .columns.is-multiline attempt above -- reported as
+    still not responding to the breakpoint at all)**: reasoning through the Bulma
+    mechanism (mismatched 769px container-flex-activation vs 1024px width-override
+    breakpoints, `.is-multiline` needed to bridge them) held up on paper, but with no
+    screen access to debug Bulma's own minified cascade against what actually
+    rendered, kept relying on an unverifiable chain of reasoning wasn't going
+    anywhere. Replaced with a small, self-contained rule: `.pane-header-row{display:
+    flex;flex-wrap:wrap}`, `.pane-header-col{flex:1 1 100%}` (stacked by default),
+    one `@media(min-width:1024px)` flipping to `flex:1 1 0` (side by side, shared
+    equally). Same lesson as the entries-table saga a few rounds back -- when a
+    framework mechanism can't be visually verified and keeps failing, a few lines of
+    plain CSS beat continuing to reason about a library's internals blind.
+  - **View-hint row removed, moved to a native hover tooltip (BUILT 2026-08-04)**:
+    the always-visible `.view-hint` text row is gone; checked first whether Bulma has
+    a tooltip component to use instead (it doesn't -- tooltips were historically a
+    separate, unbundled Bulma extension, not part of core) -- used the plain HTML
+    `title` attribute instead (a real native hover tooltip, zero JS/CSS/extra markup
+    needed), attached to the topbar's own `<h1>`.
+  - **Column-width regression: calc() on <col> suspected and removed (BUILT
+    2026-08-04)**: reported as "only the Song/Name column shows, everything else is
+    invisible" on all four tables (Setlist, Programs, Combis, Duplicates). Root cause
+    not independently confirmed (no way to inspect actual rendered layout in this
+    environment), but correlates exactly with the one thing that changed since the
+    last confirmed-good state: the previous pass added a per-column pixel floor via
+    `calc(pct% + Npx)` on each `<col>`'s width, to bake in a min-width `<col>` doesn't
+    support natively. `<col>` elements have historically had weak, inconsistent
+    cross-engine support for anything beyond a plain width value -- treating that as
+    the likely cause even though `calc()` on a `<col>` width is spec-legal. Reverted
+    `colgroupHtml()` to plain percentages only, no calc(), across all four tables
+    (`pane.js`'s Setlist + `library.js`'s Programs/Combis/Duplicates all share the
+    one helper). The "make some columns a bit wider" intent from before is now
+    expressed as a non-integer fraction instead (e.g. `1.3` instead of `{frac:1,
+    extraPx:5}`) -- same idea, no calc() involved, `colgroupHtml()` already accepted
+    any number, not just whole ones.
+  - **Bank-filter buttons moved out of the scrolling table area (BUILT 2026-08-04)**:
+    they used to live inside `.library-body` (the same scroll container as the
+    table), so they scrolled out of view along with the rows -- moved to a new
+    `.bank-filter-area` sibling ABOVE `.library-body`, between the Name search input
+    and the table, always visible regardless of scroll position. `showPanel()` now
+    also toggles which category's bank-filter row (if either -- Duplicates has none)
+    is shown, mirroring how it already toggled `panels`. While doing this, proactively
+    fixed the same `[hidden]`-losing-to-our-own-unconditional-`display`-rule bug the
+    topbar spinner had a few rounds back (`.bank-filter-row[hidden]{display:none}`,
+    explicit rather than assumed) -- caught before it needed reporting a second time.
   - **Indeterminate loading spinner (BUILT 2026-08-03)**: a pane-wide overlay
     (`.pane-loading`) shown for the duration of a file drop's base64-encode/decode+parse
     -- genuinely indeterminate, since no byte-level progress callback exists for that

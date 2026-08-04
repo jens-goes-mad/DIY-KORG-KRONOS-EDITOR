@@ -56,25 +56,38 @@ function formatBankNumber(entry) {
   return `${entry.bank} ${num}`;
 }
 
-// Builds a `grid-template-columns` value hard-locking each column's width in
-// px, used by every .entries-table (Setlist, Programs, Combis, Duplicates --
-// see style.css's `display: grid` + `display: contents` on thead/tbody/tr,
-// which is what actually makes th/td behave as grid cells). This replaced
-// two earlier attempts that both fought HTML's own table-layout algorithms
-// instead of sidestepping them: em widths directly on <th>/<td> under
-// `table-layout: fixed` (broke because <th>/<td> don't share a font-size
-// context, so the "locked" em width silently meant two different pixel
-// values depending on which cell the browser picked), then a <colgroup>
-// (fixed that specific bug, but table-layout's own quirks made zero
-// practical difference once it turned out the real remaining bug was an
-// unrelated flex/grid min-width: 0 gap further up the DOM -- by that point
-// plain CSS Grid, the same solid mechanism `.panes` already used, was the
-// more predictable choice going forward). Pass `null` for the one column
-// that should flex/absorb whatever space the fixed ones don't use (`1fr`) --
-// there must be exactly one, or multiple `1fr` columns split the remainder
-// evenly between them instead of one being "the" resizable column.
-function gridTemplateColumns(widthsPx) {
-  return widthsPx.map((w) => (w == null ? "1fr" : `${w}px`)).join(" ");
+// Builds a <colgroup> from 12-based column-grid fractions -- Bulma's own
+// grid (.column.is-1 .. is-12) is a 12-column system; this applies the same
+// convention to table <col> widths, as percentages (e.g. [1,7,1,2,1] ->
+// 8.33%/58.33%/8.33%/16.67%/8.33%, summing to 100%) so the table scales
+// proportionally with its container instead of being pixel-locked. Paired
+// with style.css's `table-layout: fixed` (shared by every real .table in
+// this app -- Setlist here, Programs/Combis/Duplicates in library.js) --
+// Bulma's .table component styles a real HTML table (colors/borders/
+// hover), it doesn't do column-width layout at all, so this is the one
+// genuinely irreducible bit of non-Bulma CSS a table still needs. `<col>`
+// only accepts a handful of CSS properties (width chief among them), which
+// is exactly what's needed here and nothing more.
+//
+// Fractions don't have to be whole numbers -- a plain float like `1.3`
+// nudges a column a bit wider without disturbing the others' ratios. A
+// previous version supported `{frac, extraPx}`, baking a flat pixel bump
+// into the width via `calc(pct% + Npx)` -- reverted after that made every
+// column except the flexible one effectively disappear. `<col>` elements
+// have historically had weak, inconsistent cross-engine support for
+// anything beyond a plain width value, and this correlates exactly with
+// when the widths broke, so calc() on a <col> is being treated as unsafe
+// here even though it's spec-legal -- not independently confirmed root-
+// caused (no way to inspect the actual rendered layout in this
+// environment), but not worth risking a second time either.
+function colgroupHtml(fractions12) {
+  return (
+    "<colgroup>" +
+    fractions12
+      .map((f) => (f == null ? "<col>" : `<col style="width:${((f / 12) * 100).toFixed(4)}%">`))
+      .join("") +
+    "</colgroup>"
+  );
 }
 
 const NO_DATASET_MESSAGE = "No dataset selected -- use the Open... button above, or pick an already-open dataset from the selector.";
@@ -106,14 +119,21 @@ function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId,
     <div class="setlist-info help">${NO_DATASET_MESSAGE}</div>
     <input class="filter-input input is-small" type="text" placeholder="Filter / search..." disabled />
     <div class="entries-scroll">
-      <table class="entries-table" style="grid-template-columns: ${gridTemplateColumns([21, null, 38, 55, 38])}">
+      <table class="table is-fullwidth is-hoverable is-narrow setlist-table">
+        ${colgroupHtml([
+          1.3,   // #
+          null,  // Song -- flexible
+          1.3,   // Type
+          2.6,   // Bank -- the jump-button's "I-C 000" text needs more room than a bare number/type abbreviation
+          1.3,   // Vol
+        ])}
         <thead>
           <tr>
-            <th class="col-index" title="Slot number -- background shows the slot's Color">#</th>
+            <th title="Slot number -- background shows the slot's Color">#</th>
             <th class="col-song">Song</th>
-            <th class="col-narrow" title="Program or Combi">Type</th>
-            <th class="col-bank" title="Bank / number within bank">Bank</th>
-            <th class="col-narrow">Vol</th>
+            <th title="Program or Combi">Type</th>
+            <th title="Bank / number within bank">Bank</th>
+            <th>Vol</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -155,7 +175,7 @@ function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId,
     editorTr.className = "comment-editor-row";
 
     const td = document.createElement("td");
-    td.style.gridColumn = "1 / -1";  // span every column -- table is display:grid now, see style.css
+    td.colSpan = 5;  // #, Song, Type, Bank, Vol -- a real <table> again, so a plain colSpan instead of a grid-column hack
 
     const textarea = document.createElement("textarea");
     textarea.className = "comment-editor";
@@ -202,7 +222,9 @@ function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId,
       const tr = document.createElement("tr");
       tr.draggable = true;
       tr.dataset.index = String(entry.index);
-      if (expandedIndices.has(entry.index)) tr.classList.add("expanded");
+      // Bulma's own `tr.is-selected` highlight (real Bulma table state, not
+      // a hand-rolled class) marks which row's Comment editor is open.
+      if (expandedIndices.has(entry.index)) tr.classList.add("is-selected");
 
       tr.addEventListener("click", () => {
         if (expandedIndices.has(entry.index)) {
@@ -248,7 +270,6 @@ function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId,
       });
 
       const idxTd = document.createElement("td");
-      idxTd.className = "col-index";
       idxTd.textContent = kronosNumber(entry.index);  // 0-based, matching the Kronos's own 000-127 numbering
 
       const labelTd = document.createElement("td");
@@ -281,11 +302,8 @@ function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId,
       }
 
       const typeTd = document.createElement("td");
-      typeTd.className = "col-narrow";
       const bankTd = document.createElement("td");
-      bankTd.className = "col-bank";
       const volTd = document.createElement("td");
-      volTd.className = "col-narrow";
 
       if (entry.paramsFound) {
         typeTd.textContent = entry.isProgram ? "Prog" : "Combi";
@@ -404,16 +422,22 @@ function createSetlistPanel(container, { paneId, log, onDropEntry, getDatasetId,
 function createPane(paneId, root, { onDropEntry, log }) {
   root.innerHTML = `
     <div class="pane-header">
-      <div class="select is-small dataset-select-wrap">
-        <select class="dataset-select"></select>
-      </div>
-      <div class="tabs is-boxed is-small pane-category-tabs">
-        <ul>
-          <li class="is-active" data-category="setlist"><a>Setlist</a></li>
-          <li data-category="programs"><a>Programs</a></li>
-          <li data-category="combis"><a>Combis</a></li>
-          <li data-category="duplicates"><a>Duplicates</a></li>
-        </ul>
+      <div class="pane-header-row">
+        <div class="pane-header-col">
+          <div class="select is-small is-fullwidth dataset-select-wrap">
+            <select class="dataset-select"></select>
+          </div>
+        </div>
+        <div class="pane-header-col">
+          <div class="tabs is-boxed is-small pane-category-tabs">
+            <ul>
+              <li class="is-active" data-category="setlist"><a>Setlist</a></li>
+              <li data-category="programs"><a>Programs</a></li>
+              <li data-category="combis"><a>Combis</a></li>
+              <li data-category="duplicates"><a>Duplicates</a></li>
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
     <div class="pane-category-content" data-category-panel="setlist"></div>

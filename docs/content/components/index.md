@@ -155,21 +155,53 @@ way to point two panes at one shared file.
 The fix: promote **dataset** (one loaded file) to a first-class concept,
 identified by an id `EditorBridge` mints itself on open -- never a
 caller-supplied pane id -- and fully decoupled from which pane displays it.
-`openFile`/`openFileBytes` mint a new dataset every call and return
-`{datasetId, displayName, setlistCount}`; a new `listDatasets()` lets any
-selector populate itself from every currently open dataset, regardless of
-which pane originally opened it. Every pane -- both Set Lists panes and the
-Library view -- gets its own dropdown to pick which open dataset to display.
-Dropping a file always creates a *new* dataset; pointing two panes at the
-*same* one gives shared-view editing for free, since they're then both
-reading/writing the one underlying `PcgFile` -- dragging a row between them
-resolves to an ordinary same-dataset copy, no special-casing needed.
+`openFileDialog()` (a real native Open dialog, see below) mints a new dataset
+per call and returns `{datasetId, displayName, setlistCount}`, or
+`{alreadyOpen: true, ...}` if that exact path is already loaded, reusing the
+existing dataset rather than loading a second copy; a `listDatasets()` lets
+any selector populate itself from every currently open dataset, regardless of
+which pane originally opened it. Each pane's one dataset selector is shared
+by all of that pane's categories (Setlist/Programs/Combis/Duplicates -- see
+[Overview](/#the-editor)), not one dropdown per category. Opening a file
+always creates a *new* dataset (unless it's already open); pointing two panes
+at the *same* one gives shared-view editing for free, since they're then both
+reading/writing the one underlying `PcgFile` -- dragging a Set List row
+between them resolves to an ordinary same-dataset copy, no special-casing
+needed.
+
+The native Open dialog itself was a separate fix worth noting here: CHOC's
+own `<input type="file">`-triggered picker opens `NSOpenPanel` via a *sheet*
+(`beginSheetModalForWindow:`), which has a long-standing z-order bug on macOS
+-- the panel appears behind the app window. `src/platform/NativeFileDialog.cpp`
+sidesteps CHOC's delegate entirely and calls `NSOpenPanel`/`NSSavePanel`
+directly via `choc::objc` (CHOC's own reusable Objective-C interop helpers)
+using `runModal` (app-modal, not sheet-attached) -- a genuinely different code
+path that isn't subject to the same bug. Confirmed working in the real app;
+Windows/Linux are an honest stub for now rather than untested guesswork.
 
 A small shared frontend module, `datasets.js`, holds the last known list of
 open datasets and a tiny pub/sub (`onDatasetsChanged`) so opening a file from
-either pane immediately updates every selector, including Library's -- the
-same "small, focused, independently testable" shape as the codec modules
-above, just for UI registry state instead of byte decoding.
+either pane immediately updates every other pane's selector too -- the same
+"small, focused, independently testable" shape as the codec modules above,
+just for UI registry state instead of byte decoding.
+
+## Styling: Bulma, not a hand-rolled grid
+
+The frontend's CSS moved to [Bulma](https://bulma.io) (vendored as one file,
+`frontend/vendor/bulma.min.css`, no build step, no JS dependency -- Bulma has
+none of its own, every interactive behavior here is still plain hand-written
+JS) after several rounds of hand-rolled CSS Grid/Flexbox layout kept hitting
+the same class of bug: a flex/grid item's default `min-width` is `auto`
+(clamped to its content's own minimum size, not 0), so a table with locked
+column widths nested a few levels deep could silently stop the whole chain
+from ever shrinking below its content's natural size. Bulma's real
+`.columns`/`.column` grid and `.tabs`/`.button`/`.table` components replaced
+the equivalent hand-rolled CSS outright rather than being layered on top of
+it -- less code to maintain, and it's the same battle-tested pattern used
+everywhere else Bulma ships it. Full blow-by-blow (including the specific
+things Bulma *doesn't* solve for free, like column-width locking within a
+table, which Bulma has no concept of at all) is in `STATE.md`, since it's a
+still-evolving area rather than a settled architectural decision.
 
 ## Case study: SetlistComment
 
