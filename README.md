@@ -7,6 +7,43 @@ backup files, built on [CHOC](https://github.com/Tracktion/choc)
 (HTML/JS/CSS UI over a thin native C++ bridge) -- same stack as the sibling
 `DIY-MIDI-METRONOME/EDITOR` project, reused rather than reinvented.
 
+## Why this exists
+
+Korg never published a spec for the Kronos's `.PCG`/`.SNG` backup format, and
+managing a real Kronos's library -- years of accumulated duplicate Programs,
+Set Lists scattered across gig backups, no easy way to compare two backups
+side by side -- means doing it entirely by hand on the unit's own screen, or
+not at all. This project is reverse-engineering that format from scratch,
+byte by byte, verified against real backup files with known ground truth
+(not guessed), and building a real cross-platform editor on top of it as the
+findings land -- see [`docs/README.md`](docs/README.md) for the full format
+writeup and [the docs site](https://jens-goes-mad.github.io/DIY-KORG-KRONOS-EDITOR)
+for the readable version.
+
+**If you own a Kronos**, the browsing/rearranging features below already work
+on real backups today, and every additional confirmed field or fixed Set List
+name is real progress on a format nobody else has fully documented.
+**If you're a developer** curious about reverse-engineering a real binary
+format, building a cross-platform native+web UI, or both, the codebase is
+built specifically to lower that bar -- see
+[App architecture & components](https://jens-goes-mad.github.io/DIY-KORG-KRONOS-EDITOR/components/)
+for how small, independently testable pieces let you contribute to one part
+without building the whole native app first. `STATE.md` tracks exactly
+what's built, what's verified, and every known blind spot/open question --
+that's the place to look for where a contribution would actually help right
+now (Drum Kits/Wave Sequences/Global settings are still completely
+unexplored; Windows/Linux native file dialogs are an honest stub; the
+write-back/encoder side barely exists yet).
+
+**Tools/stack**: C++ (CMake), [CHOC](https://github.com/Tracktion/choc) for
+the native window/WebView bridge, plain vanilla JS/HTML/CSS on the frontend
+(no bundler, no build step in dev -- open `frontend/index.html` in a
+browser tab with `mock_bridge.js`'s fake data and iterate without compiling
+anything), [Bulma](https://bulma.io) (vendored, CSS-only) for layout/styling,
+a scoped `ctest` target plus headless `node`-runnable tests for the
+byte-level parsing logic, and GitHub Actions CI building macOS
+(arm64+Intel), Linux, and Windows on every relevant push.
+
 First iteration scope (see `STATE.md` for current status):
 
 1. Open a `.PCG` file via a native Open dialog and extract all 128 Set Lists
