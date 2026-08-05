@@ -528,8 +528,10 @@ below is wired into `PcgFile.cpp` yet:
 - `src/kronos/PcgFile.{h,cpp}` -- the parser itself: chunk-tag scanning,
   SDB1/SBK1/CBK1/MBK1/PBK1 record parsing, the instrument-name
   cross-reference.
-- `src/bridge/EditorBridge.{h,cpp}` -- exposes parsed data (and in-memory
-  edits: move/copy/comment) to the web UI.
+- `src/bridge/EditorBridge.{h,cpp}` -- exposes parsed data (and edits: Set
+  List move/copy, Program copy, and Set List slot Comment/Color/Volume --
+  the latter three via `getSongRecordBytes`/`putSongRecordBytes`, writing
+  straight into the loaded file's own raw bytes) to the web UI.
 - See the top-level `README.md` for how to build/run the app, and
   `STATE.md` for current project status and the same open questions in
   project-planning form.

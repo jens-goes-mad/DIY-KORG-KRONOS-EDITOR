@@ -13,6 +13,7 @@
 // banks, cross-referencing, duplicate detection, and decodeProgram()'s
 // on-demand re-decode) without needing a real backup on disk.
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -169,14 +170,26 @@ std::vector<uint8_t> buildSyntheticPcgFile() {
     for (uint32_t k = 2; k < kSongsPerSetlist; ++k) pushZeros(sbk1, kSbkRecordSize);
 
     // PBK1 bank 0: records 0 and 1 byte-identical (a duplicate pair), record
-    // 2 unique -- exercises findDuplicatePrograms().
+    // 2 unique -- exercises findDuplicatePrograms(). Records 3 and 4 are
+    // left empty (all-zero -- an unassigned slot, same convention as an
+    // unused Set List song slot) so testCopyProgramFrom() has genuinely
+    // empty same-type targets to copy into.
     std::vector<uint8_t> pbk1BankA;
     pushU32BE(pbk1BankA, 0);
-    pushU32BE(pbk1BankA, 3);
+    pushU32BE(pbk1BankA, 5);
     pushU32BE(pbk1BankA, static_cast<uint32_t>(kBankRecordSize));
     pushNameRecord(pbk1BankA, "Test Program A", kBankRecordSize);
     pushNameRecord(pbk1BankA, "Test Program A", kBankRecordSize);  // byte-exact duplicate of the record above
     pushNameRecord(pbk1BankA, "Unique Program", kBankRecordSize);
+    pushZeros(pbk1BankA, kBankRecordSize);  // record 3 -- empty
+    size_t record4Start = pbk1BankA.size();
+    pushZeros(pbk1BankA, kBankRecordSize);  // record 4 -- empty
+    // Differ from record 3 in a byte outside the name field (offset 4..28,
+    // see pushNameRecord()) -- both still decode to an empty name, but two
+    // byte-IDENTICAL empty records would otherwise register as a spurious
+    // second duplicate pair, breaking the "exactly one duplicate group"
+    // check below.
+    pbk1BankA[record4Start] = 0xFF;
 
     // PBK1 bank 1: two distinct records -- number 0 is what both song slots
     // above reference.
@@ -342,13 +355,25 @@ void testPcgFileEndToEnd() {
     CHECK_EQ(setlist.songs[1].comment, std::string("second"), "song 1 Comment");
     CHECK_EQ(setlist.songs[1].instrumentName, std::string("Bank1 Program0"), "song 1 resolves to the same Program");
 
-    // Programs table: 3 (bank 0) + 2 (bank 1) = 5 rows.
-    CHECK_EQ(pcg.programs().size(), static_cast<size_t>(5), "programs() has one row per PBK1 record");
+    // Programs table: 5 (bank 0, incl. 2 empty trailing records) + 2 (bank 1) = 7 rows.
+    CHECK_EQ(pcg.programs().size(), static_cast<size_t>(7), "programs() has one row per PBK1 record");
 
     // Bank type is classified from each bank's own chunk tag: bank 0 is
     // tagged PBK1 (Hd1), bank 1 is tagged MBK1 (Exi) in this fixture.
     CHECK(pcg.programs()[0].bankType == kronos::ProgramBankType::Hd1);
-    CHECK(pcg.programs()[3].bankType == kronos::ProgramBankType::Exi);
+    CHECK(pcg.programs()[5].bankType == kronos::ProgramBankType::Exi);
+
+    // programBankTypes() gives the same classification per-bank, without
+    // needing a specific Program row -- one entry per bank actually present
+    // (2 in this fixture), matching programs()'s own per-row bankType.
+    auto bankTypes = pcg.programBankTypes();
+    CHECK_EQ(bankTypes.size(), static_cast<size_t>(2), "programBankTypes() has one entry per PBK1/MBK1 bank");
+    if (bankTypes.size() == 2) {
+        CHECK_EQ(bankTypes[0].bank, 0, "programBankTypes()[0] is bank 0");
+        CHECK(bankTypes[0].bankType == kronos::ProgramBankType::Hd1);
+        CHECK_EQ(bankTypes[1].bank, 1, "programBankTypes()[1] is bank 1");
+        CHECK(bankTypes[1].bankType == kronos::ProgramBankType::Exi);
+    }
 
     // Duplicate detection: exactly one group, bank0/number0 + bank0/number1.
     auto dupGroups = pcg.findDuplicatePrograms();
@@ -371,12 +396,76 @@ void testPcgFileEndToEnd() {
     CHECK(redecoded.has_value());
     if (redecoded) {
         CHECK_EQ(redecoded->name, std::string("Bank1 Program0"), "decodeProgram() re-decodes the right record");
-        CHECK_EQ(redecoded->contentHash, pcg.programs()[3].contentHash,
+        CHECK_EQ(redecoded->contentHash, pcg.programs()[5].contentHash,
                  "decodeProgram()'s hash matches the same record's cached table entry");
         CHECK(redecoded->bankType == kronos::ProgramBankType::Exi);
     }
     CHECK(!pcg.decodeProgram(99, 0).has_value());  // out-of-range bank
     CHECK(!pcg.decodeProgram(1, 99).has_value());  // out-of-range number
+
+    // copyProgramFrom(): same-dataset copy (pcg passed as both src and dst,
+    // exactly the documented "pass *this" case) exercising a real write plus
+    // every rejection guard. Bank 0 (Hd1) records 3/4 were left empty
+    // specifically for this. Order matters below -- each subtest targets a
+    // slot untouched by the previous ones, so earlier writes don't change
+    // later expectations.
+    {
+        // Successful copy: "Unique Program" (bank0/number2) into the empty
+        // bank0/number3.
+        auto ok = pcg.copyProgramFrom(pcg, 0, 2, 0, 3);
+        CHECK(!ok.has_value());  // nullopt == success
+        auto copied = pcg.decodeProgram(0, 3);
+        CHECK(copied.has_value());
+        if (copied) {
+            CHECK_EQ(copied->name, std::string("Unique Program"), "copyProgramFrom() actually wrote the source's bytes");
+            auto source = pcg.decodeProgram(0, 2);
+            CHECK(source.has_value());
+            if (source) CHECK_EQ(copied->contentHash, source->contentHash, "copied record hashes identically to its source");
+        }
+        // programs() cache must reflect the fresh write, not go stale.
+        auto cacheEntry = std::find_if(pcg.programs().begin(), pcg.programs().end(),
+                                        [](const kronos::ProgramInfo& p) { return p.bank == 0 && p.number == 3; });
+        CHECK(cacheEntry != pcg.programs().end());
+        if (cacheEntry != pcg.programs().end()) {
+            CHECK_EQ(cacheEntry->name, std::string("Unique Program"), "programs() cache updated after copyProgramFrom()");
+        }
+
+        // Rejected: engine type mismatch (bank0=Hd1 -> bank1=Exi).
+        auto typeMismatch = pcg.copyProgramFrom(pcg, 0, 2, 1, 0);
+        CHECK(typeMismatch.has_value());
+        if (typeMismatch) CHECK(*typeMismatch == kronos::PcgFile::ProgramCopyError::BankTypeMismatch);
+        auto untouchedDst = pcg.decodeProgram(1, 0);
+        CHECK(untouchedDst.has_value());
+        if (untouchedDst) {
+            CHECK_EQ(untouchedDst->name, std::string("Bank1 Program0"), "rejected type-mismatch copy leaves the destination untouched");
+        }
+
+        // Rejected: target slot already holds a *different* Program.
+        auto occupied = pcg.copyProgramFrom(pcg, 0, 2, 0, 0);
+        CHECK(occupied.has_value());
+        if (occupied) CHECK(*occupied == kronos::PcgFile::ProgramCopyError::TargetSlotOccupied);
+        auto stillOriginal = pcg.decodeProgram(0, 0);
+        CHECK(stillOriginal.has_value());
+        if (stillOriginal) {
+            CHECK_EQ(stillOriginal->name, std::string("Test Program A"), "rejected occupied-slot copy leaves the destination untouched");
+        }
+
+        // Rejected: byte-identical Program already exists elsewhere in the
+        // file ("Test Program A" already lives at bank0/number0 and number1).
+        auto duplicate = pcg.copyProgramFrom(pcg, 0, 0, 0, 4);
+        CHECK(duplicate.has_value());
+        if (duplicate) CHECK(*duplicate == kronos::PcgFile::ProgramCopyError::DuplicateExists);
+        auto stillEmpty = pcg.decodeProgram(0, 4);
+        CHECK(stillEmpty.has_value());
+        if (stillEmpty) {
+            CHECK_EQ(stillEmpty->name, std::string(), "rejected duplicate copy leaves the empty destination untouched");
+        }
+
+        // Rejected: out-of-range bank/number on either side.
+        auto outOfRange = pcg.copyProgramFrom(pcg, 99, 0, 0, 3);
+        CHECK(outOfRange.has_value());
+        if (outOfRange) CHECK(*outOfRange == kronos::PcgFile::ProgramCopyError::OutOfRange);
+    }
 
     // Combis: one synthetic CBK1 record with a real Timbre 0 and 15
     // default/unassigned Timbres.
@@ -400,6 +489,54 @@ void testPcgFileEndToEnd() {
     }
     CHECK(!pcg.decodeCombi(99, 0).has_value());  // out-of-range bank
     CHECK(!pcg.decodeCombi(0, 99).has_value());  // out-of-range number
+
+    // songRecordBytes()/putSongRecordBytes(): the raw-byte read/write path
+    // the Setlist Color/Volume/Comment row editors use (frontend/pane.js +
+    // frontend/components/kronos/setlist-slot-params.js). Exercises success,
+    // the re-derive-cached-fields discipline (mirrors copyProgramFrom()),
+    // and every rejection guard.
+    {
+        auto bytes0 = pcg.songRecordBytes(0, 0);
+        CHECK(bytes0.has_value());
+        if (bytes0) {
+            CHECK_EQ(bytes0->size(), static_cast<size_t>(542), "songRecordBytes() returns one full 542-byte record");
+            CHECK_EQ((*bytes0)[16], static_cast<uint8_t>(100), "songRecordBytes() byte+16 is song 0's Volume (100)");
+            CHECK_EQ(std::string(reinterpret_cast<const char*>(bytes0->data() + 18)), std::string("Hello test"),
+                     "songRecordBytes() byte+18.. is song 0's Comment");
+
+            // Round-trip: flip the raw Volume byte only, leave everything
+            // else (incl. Comment) untouched, write it back.
+            auto edited = *bytes0;
+            edited[16] = 42;
+            bool wrote = pcg.putSongRecordBytes(0, 0, edited);
+            CHECK(wrote);
+            CHECK_EQ(pcg.setlists()[0].songs[0].params.volume, 42,
+                     "putSongRecordBytes() re-derives params.volume from the freshly-written bytes");
+            CHECK_EQ(pcg.setlists()[0].songs[0].comment, std::string("Hello test"),
+                     "putSongRecordBytes() re-derives comment too, unaffected by the Volume-only edit");
+            CHECK_EQ(pcg.setlists()[0].songs[0].params.bank, 1,
+                     "putSongRecordBytes() leaves untouched fields (bank) alone");
+
+            // Neighbor record (song 1) must be untouched by song 0's write.
+            CHECK_EQ(pcg.setlists()[0].songs[1].comment, std::string("second"),
+                     "writing song 0's record doesn't disturb song 1's");
+
+            // Restore song 0's original bytes so nothing downstream in this
+            // test (there is nothing after this block, but for hygiene) sees
+            // a mutated fixture.
+            CHECK(pcg.putSongRecordBytes(0, 0, *bytes0));
+            CHECK_EQ(pcg.setlists()[0].songs[0].params.volume, 100, "putSongRecordBytes() restore round-trips cleanly");
+        }
+
+        // Rejected: wrong byte count.
+        std::vector<uint8_t> wrongSize(541, 0);
+        CHECK(!pcg.putSongRecordBytes(0, 0, wrongSize));
+
+        // Rejected: out-of-range setlist/song index, both directions.
+        CHECK(!pcg.songRecordBytes(99, 0).has_value());
+        CHECK(!pcg.songRecordBytes(0, 999).has_value());
+        if (bytes0) CHECK(!pcg.putSongRecordBytes(99, 0, *bytes0));
+    }
 }
 
 }  // namespace

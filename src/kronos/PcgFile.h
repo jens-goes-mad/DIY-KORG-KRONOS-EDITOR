@@ -196,6 +196,60 @@ public:
     const std::vector<ProgramInfo>& programs() const { return programs_; }
     const std::vector<CombiInfo>& combis() const { return combis_; }
 
+    // One entry per Program bank actually present in this file, giving its
+    // classified engine type without needing that bank's ~128 individual
+    // Program records (programs(), which every ProgramInfo already carries
+    // bankType on) -- for UI that wants to label a *bank*, not a specific
+    // Program row (bank-filter buttons, a Set List slot's Bank-jump button,
+    // neither of which has a specific Program row in hand). See
+    // ProgramBankType's own doc comment: derived per-file, never a
+    // hardcoded table.
+    struct ProgramBankTypeEntry {
+        int bank = 0;
+        ProgramBankType bankType = ProgramBankType::Hd1;
+    };
+    std::vector<ProgramBankTypeEntry> programBankTypes() const;
+
+    // Single-bank lookup version of programBankTypes(), for a caller that
+    // already knows the one bank it cares about. nullopt if `bank` is out of
+    // range for this file.
+    std::optional<ProgramBankType> programBankTypeAt(int bank) const;
+
+    // Why a copy can be rejected -- see copyProgramFrom()'s own doc comment.
+    // Kept as a plain enum (not an exception) so EditorBridge can map each
+    // reason to a specific user-facing message without a try/catch.
+    enum class ProgramCopyError { BankTypeMismatch, RecordSizeMismatch, OutOfRange, TargetSlotOccupied, DuplicateExists };
+
+    // Copies one Program record's raw bytes from `src` (pass *this for a
+    // same-dataset copy -- src and dst never alias, since distinct
+    // (bank, number) pairs always map to distinct byte ranges) at
+    // (srcBank, srcNumber) into THIS file's (dstBank, dstNumber) slot, then
+    // re-decodes this file's programs() entry for that slot from the
+    // freshly-written bytes -- a cached field (name/contentHash/bankType)
+    // must never go stale after a direct data_ write. This is this
+    // project's first operation that writes directly into the retained raw
+    // buffer rather than only mutating in-memory bookkeeping (setlists()'s
+    // Songs) -- see STATE.md.
+    //
+    // Returns nullopt on success. Rejects (writes nothing) on:
+    //  - OutOfRange: either bank/number pair doesn't exist in its file.
+    //  - BankTypeMismatch: source and destination banks are different
+    //    engine types (HD-1 vs EXi) -- see ProgramBankType's own doc
+    //    comment for why a Program can only be loaded into a matching bank.
+    //  - RecordSizeMismatch: defensive second check on top of the above --
+    //    should already be implied by matching bank type (HD-1=4960 bytes,
+    //    EXi=3706), kept as a belt-and-suspenders check since
+    //    ProgramBankTypeResult::tagMatchesStride can be false for real data
+    //    this project hasn't independently verified yet.
+    //  - TargetSlotOccupied: the destination's *current* name is non-empty
+    //    (a different Program already lives there -- re-dropping the exact
+    //    same Program already at that slot is caught by DuplicateExists
+    //    instead, not this).
+    //  - DuplicateExists: a byte-identical Program (matching contentHash)
+    //    already exists anywhere in this file.
+    std::optional<ProgramCopyError> copyProgramFrom(const PcgFile& src, int srcBank, int srcNumber,
+                                                      int dstBank, int dstNumber);
+
     // Every Program-type Set List slot that directly references this
     // bank/number. Does NOT include usage from inside a Combi's Timbres --
     // that part of the format isn't parsed yet (see docs/README.md).
@@ -263,6 +317,28 @@ public:
     // the second per-record decoder built this way.
     std::optional<CombiInfo> decodeCombi(int bank, int number) const;
 
+    // Raw 542-byte SBK1 record for one Set List slot, straight from the
+    // retained file bytes -- the same two-tier data-flow idea as
+    // decodeProgram()/decodeCombi(), applied to Set List slots: a detail
+    // editor (Color/Volume/Comment row) requests exactly this chunk,
+    // decodes/encodes it entirely in JS via frontend/components/kronos/
+    // setlist-comment.js and setlist-slot-params.js, and writes it back via
+    // putSongRecordBytes() -- see STATE.md. Returns nullopt if the indices
+    // are out of range or this file's SBK1 data wasn't parseable at load.
+    std::optional<std::vector<uint8_t>> songRecordBytes(int setlistIndex, int songIndex) const;
+
+    // Writes `bytes` (must be exactly 542 bytes) straight into this file's
+    // retained data_ for the given slot, then re-derives setlists()[setlistIndex]
+    // .songs[songIndex]'s params/comment from the freshly-written bytes via
+    // the same readSlotParams()/readComment() the initial load used -- a
+    // cached decoded field must never go stale after a direct data_ write,
+    // same discipline as copyProgramFrom(). Does NOT re-resolve
+    // instrumentName -- out of scope, since every editor using this path so
+    // far (Color/Volume/Comment) never touches bank/number. Returns false
+    // (writes nothing) if `bytes` isn't exactly 542 bytes, or the indices
+    // are out of range.
+    bool putSongRecordBytes(int setlistIndex, int songIndex, const std::vector<uint8_t>& bytes);
+
 private:
     // Where one PRG1 sub-bank's (MBK1 or PBK1) records live within data_
     // -- retained so decodeProgram() can locate and re-decode a specific
@@ -289,6 +365,16 @@ private:
     std::vector<uint8_t> data_;                          // the whole file's raw bytes, retained after load
     std::vector<ProgramBankLocation> programBankLocations_;  // index into data_, one entry per PRG1 sub-bank
     std::vector<CombiBankLocation> combiBankLocations_;      // index into data_, one entry per CBK1 sub-bank
+
+    // data_ offset of setlists_[i]'s first song record (i.e. right after
+    // that Set List's own 40-byte SBK1 header) -- one entry per setlists_
+    // index, the exact same value loadFromMemory() already computes as
+    // `songsStart` while populating songs[k].params/comment, kept around so
+    // songRecordBytes()/putSongRecordBytes() can locate a slot's raw bytes
+    // without re-scanning the file's chunk hierarchy. SIZE_MAX means "no
+    // SBK1 data for this Set List" (SBK1 missing/malformed, or a
+    // non-matching chunk among multiple SBK1 chunks -- see loadFromMemory()).
+    std::vector<size_t> sbkSongsStart_;
 };
 
 }  // namespace kronos

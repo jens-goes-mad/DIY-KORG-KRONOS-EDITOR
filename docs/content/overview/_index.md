@@ -87,9 +87,15 @@ corresponds to which on-screen label beyond the ones directly confirmed above.
   different datasets to compare two backups side by side -- see
   [App architecture & components](/components) for how this is built.
 - **Setlist**: browse any Set List's 128 slots with filter/search, drag entries to
-  swap them within a list or copy them across panes, edit a free-text Comment per
-  slot, and jump straight from a slot's Bank/number to that exact Program or Combi in
-  the same pane's Programs/Combis view.
+  swap them within a list or copy them across panes, and jump straight from a slot's
+  Bank/number to that exact Program or Combi in the same pane's Programs/Combis view.
+  Click a slot's # for its Color (one of the 16 real Kronos Set List colors), Vol for
+  its Volume (0-127), or Song/Type for a free-text Comment -- all three can be open at
+  once on the same slot, edit immediately (Color on click, Volume on slider release,
+  Comment via Apply), and write straight into the loaded file's own raw bytes. If both
+  panes point at the same Set List of the same dataset, opening an editor on a slot
+  already open in the other pane is blocked outright (with a popup explaining why)
+  rather than risking one pane's edit silently overwriting the other's.
 - **Programs / Combis / Duplicates**: browse every Program and Combi on the unit
   directly (not just through Set List slots), filter by bank, see which Set List
   slots reference a given Program, and find Programs that are byte-for-byte

@@ -270,6 +270,8 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
     std::vector<ChunkInfo> sbkChunks;
     collectChunks(data, 16, data.size(), "SBK1", sbkChunks, 0);
 
+    sbkSongsStart_.assign(setlists_.size(), static_cast<size_t>(-1));
+
     for (const auto& sbk : sbkChunks) {
         if (sbk.contentStart + 12 > sbk.contentEnd) continue;
 
@@ -285,6 +287,8 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
         for (uint32_t s = 0; s < numSetlists && s < setlists_.size(); ++s) {
             size_t setlistOff = setlistsStart + static_cast<size_t>(s) * bytesPerSetlist;
             size_t songsStart = setlistOff + kSbkHeaderSize;
+
+            sbkSongsStart_[s] = songsStart;
 
             auto& songs = setlists_[s].songs;
             for (uint32_t k = 0; k < kSongsPerSetlist && k < songs.size(); ++k) {
@@ -509,6 +513,20 @@ std::vector<std::vector<ProgramInfo>> PcgFile::findDuplicatePrograms() const {
     return groups;
 }
 
+std::vector<PcgFile::ProgramBankTypeEntry> PcgFile::programBankTypes() const {
+    std::vector<ProgramBankTypeEntry> result;
+    result.reserve(programBankLocations_.size());
+    for (size_t bank = 0; bank < programBankLocations_.size(); ++bank) {
+        result.push_back({static_cast<int>(bank), programBankLocations_[bank].bankType});
+    }
+    return result;
+}
+
+std::optional<ProgramBankType> PcgFile::programBankTypeAt(int bank) const {
+    if (bank < 0 || bank >= static_cast<int>(programBankLocations_.size())) return std::nullopt;
+    return programBankLocations_[static_cast<size_t>(bank)].bankType;
+}
+
 std::optional<ProgramInfo> PcgFile::decodeProgram(int bank, int number) const {
     if (bank < 0 || bank >= static_cast<int>(programBankLocations_.size())) return std::nullopt;
     const auto& loc = programBankLocations_[bank];
@@ -523,6 +541,64 @@ std::optional<ProgramInfo> PcgFile::decodeProgram(int bank, int number) const {
     return ProgramInfo{fields.bank, fields.number, fields.name, hash, loc.bankType};
 }
 
+std::optional<PcgFile::ProgramCopyError> PcgFile::copyProgramFrom(const PcgFile& src, int srcBank, int srcNumber,
+                                                                    int dstBank, int dstNumber) {
+    // Bounds -- same pattern as decodeProgram()/decodeProgram(), just against
+    // two different files' own bank tables.
+    if (srcBank < 0 || srcBank >= static_cast<int>(src.programBankLocations_.size())) return ProgramCopyError::OutOfRange;
+    const auto& srcLoc = src.programBankLocations_[static_cast<size_t>(srcBank)];
+    if (srcNumber < 0 || static_cast<uint32_t>(srcNumber) >= srcLoc.numRecords) return ProgramCopyError::OutOfRange;
+
+    if (dstBank < 0 || dstBank >= static_cast<int>(programBankLocations_.size())) return ProgramCopyError::OutOfRange;
+    const auto& dstLoc = programBankLocations_[static_cast<size_t>(dstBank)];
+    if (dstNumber < 0 || static_cast<uint32_t>(dstNumber) >= dstLoc.numRecords) return ProgramCopyError::OutOfRange;
+
+    if (srcLoc.bankType != dstLoc.bankType) return ProgramCopyError::BankTypeMismatch;
+    if (srcLoc.bytesPerRecord != dstLoc.bytesPerRecord) return ProgramCopyError::RecordSizeMismatch;
+
+    const size_t srcOff = srcLoc.recordsStart + static_cast<size_t>(srcNumber) * srcLoc.bytesPerRecord;
+    const size_t dstOff = dstLoc.recordsStart + static_cast<size_t>(dstNumber) * dstLoc.bytesPerRecord;
+    if (srcOff + srcLoc.bytesPerRecord > src.data_.size()) return ProgramCopyError::OutOfRange;
+    if (dstOff + dstLoc.bytesPerRecord > data_.size()) return ProgramCopyError::OutOfRange;
+
+    // Target slot already holds a *different* Program -- reject rather than
+    // silently overwrite. Re-dropping the exact same Program already sitting
+    // there is caught by the DuplicateExists check below instead (it already
+    // exists in this file, namely right here), not this one.
+    for (const auto& p : programs_) {
+        if (p.bank == dstBank && p.number == dstNumber && !p.name.empty()) return ProgramCopyError::TargetSlotOccupied;
+    }
+
+    const uint8_t* srcRecord = &src.data_[srcOff];
+    const uint64_t srcHash = hashProgramRecord(srcRecord, srcLoc.bytesPerRecord);
+    const bool sameFile = &src == this;
+    for (const auto& p : programs_) {
+        // For a same-dataset copy, the source's own slot trivially has this
+        // exact hash (it's the thing being copied) -- comparing against it
+        // would reject every same-dataset copy as "a duplicate of itself".
+        // Skip only that one specific slot, not its whole bank.
+        if (sameFile && p.bank == srcBank && p.number == srcNumber) continue;
+        if (p.contentHash == srcHash) return ProgramCopyError::DuplicateExists;
+    }
+
+    std::copy(srcRecord, srcRecord + dstLoc.bytesPerRecord, data_.begin() + static_cast<long>(dstOff));
+
+    const uint8_t* dstRecord = &data_[dstOff];
+    ProgramFields fields = decodeProgramFields(dstRecord, dstLoc.bytesPerRecord, dstBank, dstNumber);
+    uint64_t hash = hashProgramRecord(dstRecord, dstLoc.bytesPerRecord);
+    ProgramInfo updated{fields.bank, fields.number, fields.name, hash, dstLoc.bankType};
+
+    auto it = std::find_if(programs_.begin(), programs_.end(),
+                            [&](const ProgramInfo& p) { return p.bank == dstBank && p.number == dstNumber; });
+    if (it != programs_.end()) {
+        *it = updated;
+    } else {
+        programs_.push_back(updated);
+    }
+
+    return std::nullopt;
+}
+
 std::optional<CombiInfo> PcgFile::decodeCombi(int bank, int number) const {
     if (bank < 0 || bank >= static_cast<int>(combiBankLocations_.size())) return std::nullopt;
     const auto& loc = combiBankLocations_[bank];
@@ -534,6 +610,41 @@ std::optional<CombiInfo> PcgFile::decodeCombi(int bank, int number) const {
     const uint8_t* record = &data_[off];
     CombiFields fields = decodeCombiFields(record, loc.bytesPerRecord, bank, number);
     return CombiInfo{fields.bank, fields.number, fields.name, fields.timbres};
+}
+
+std::optional<std::vector<uint8_t>> PcgFile::songRecordBytes(int setlistIndex, int songIndex) const {
+    if (setlistIndex < 0 || static_cast<size_t>(setlistIndex) >= sbkSongsStart_.size()) return std::nullopt;
+    if (songIndex < 0 || static_cast<size_t>(songIndex) >= setlists_[static_cast<size_t>(setlistIndex)].songs.size())
+        return std::nullopt;
+
+    size_t start = sbkSongsStart_[static_cast<size_t>(setlistIndex)];
+    if (start == static_cast<size_t>(-1)) return std::nullopt;
+
+    size_t songOff = start + static_cast<size_t>(songIndex) * kSbkRecordSize;
+    if (songOff + kSbkRecordSize > data_.size()) return std::nullopt;
+
+    return std::vector<uint8_t>(data_.begin() + static_cast<long>(songOff),
+                                 data_.begin() + static_cast<long>(songOff + kSbkRecordSize));
+}
+
+bool PcgFile::putSongRecordBytes(int setlistIndex, int songIndex, const std::vector<uint8_t>& bytes) {
+    if (bytes.size() != kSbkRecordSize) return false;
+    if (setlistIndex < 0 || static_cast<size_t>(setlistIndex) >= sbkSongsStart_.size()) return false;
+    if (songIndex < 0 || static_cast<size_t>(songIndex) >= setlists_[static_cast<size_t>(setlistIndex)].songs.size())
+        return false;
+
+    size_t start = sbkSongsStart_[static_cast<size_t>(setlistIndex)];
+    if (start == static_cast<size_t>(-1)) return false;
+
+    size_t songOff = start + static_cast<size_t>(songIndex) * kSbkRecordSize;
+    if (songOff + kSbkRecordSize > data_.size()) return false;
+
+    std::copy(bytes.begin(), bytes.end(), data_.begin() + static_cast<long>(songOff));
+
+    Song& song = setlists_[static_cast<size_t>(setlistIndex)].songs[static_cast<size_t>(songIndex)];
+    song.params = readSlotParams(data_.data(), songOff, data_.size());
+    song.comment = readComment(data_.data(), songOff, data_.size());
+    return true;
 }
 
 }  // namespace kronos

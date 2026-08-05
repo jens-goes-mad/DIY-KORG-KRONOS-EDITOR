@@ -57,8 +57,11 @@ First iteration scope (see `STATE.md` for current status):
 3. A Norton-Commander-style dual pane to copy songs between Set Lists, and
    swap/reorder songs within one, both via drag and drop.
 
-Nothing is written back to disk yet -- this is a read/browse/rearrange-in-
-memory tool for now.
+Nothing is written back to *disk* yet (no Save mechanism is wired up) --
+edits happen in memory, but as of Program drag-and-drop and the Setlist
+Comment/Color/Volume editors (see `STATE.md`) that increasingly means
+directly into a loaded file's own retained raw bytes, not just app-level
+bookkeeping layered on top of them.
 
 ## Datasets: one loaded file, decoupled from which pane shows it
 
@@ -96,7 +99,13 @@ between.
 
 - **Setlist**: the 128-slot browsing/filtering/drag-and-drop described above,
   plus a Bank-jump button per slot that switches that same pane to
-  Programs/Combis and scrolls straight to the exact entry it points at.
+  Programs/Combis and scrolls straight to the exact entry it points at. Each
+  slot's Color, Volume, and Comment are directly editable (click #, Vol, or
+  Song/Type respectively) -- Color and Volume commit immediately, Comment via
+  an Apply button, and several can be open on the same slot at once. If both
+  panes point at the same Set List of the same dataset, editing a slot
+  already open in the other pane is blocked (with an explanatory popup)
+  rather than risking one edit silently overwriting the other's.
 - **Programs / Combis / Duplicates**: browse every Program and Combi on the
   unit directly (not just through Set List slots), filter by bank, see which
   Set List slots directly reference a given Program, and find Programs that

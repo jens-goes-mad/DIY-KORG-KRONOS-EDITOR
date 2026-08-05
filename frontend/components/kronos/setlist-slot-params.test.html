@@ -1,0 +1,198 @@
+<!doctype html>
+<!--
+  Standalone test/dev harness for setlist-slot-params.js -- no CHOC, no
+  native build, no mock_bridge.js, nothing from the rest of this app. Just
+  this component and the same real 542-byte SBK1 record setlist-comment.
+  test.html uses.
+
+  ES modules (`type="module"`) don't load over a bare file:// URL in most
+  browsers (CORS), so serve this directory with any static file server,
+  e.g. from the repo root:
+
+      python3 -m http.server 8000
+
+  then open http://localhost:8000/frontend/components/kronos/setlist-slot-params.test.html
+  -- that's not a "build," just a static file server; nothing gets compiled
+  or bundled.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SetlistSlotParams -- standalone test</title>
+  <style>
+    body {
+      background: #1e1f22;
+      color: #e4e4e6;
+      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      max-width: 720px;
+    }
+    h1 { font-size: 18px; margin: 0; }
+    h2 { font-size: 14px; margin: 0 0 8px; color: #9a9ba0; }
+    section {
+      border: 1px solid #3d3e42;
+      border-radius: 6px;
+      padding: 16px;
+    }
+    pre {
+      background: #16171a;
+      border: 1px solid #3d3e42;
+      border-radius: 4px;
+      padding: 8px;
+      font-size: 11px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .check { font-family: ui-monospace, monospace; font-size: 13px; margin: 2px 0; }
+    .pass { color: #6bd66b; }
+    .fail { color: #e05c5c; }
+    .color-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.5em, 1fr)); gap: 4px; }
+    .color-row button { border: 2px solid transparent; border-radius: 4px; padding: 6px; color: #e4e4e6; cursor: pointer; }
+    .color-row button.active { border-color: #e4e4e6; }
+    .volume-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>SetlistSlotParams -- standalone test harness</h1>
+  <p style="color:#9a9ba0; margin:0;">
+    No native app, no CHOC, no mock_bridge.js -- just <code>setlist-slot-params.js</code> fed the
+    same real 542-byte SBK1 song record ("Rolling in the Deep", Set List "emergency exit") setlist-comment.test.html uses.
+  </p>
+
+  <section>
+    <h2>Self-checks (pure decode/encode logic, no DOM)</h2>
+    <div id="checks"></div>
+  </section>
+
+  <section>
+    <h2>Live component (manual test -- click a color, drag the slider)</h2>
+    <div class="color-row" id="color-row"></div>
+    <div class="volume-row">
+      <label for="volume-slider">Volume</label>
+      <input type="range" id="volume-slider" min="0" max="127" />
+      <span id="volume-value"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Current raw bytes (live, updates on every edit)</h2>
+    <pre id="bytes-out"></pre>
+  </section>
+
+  <script type="module">
+    import {
+      RECORD_SIZE,
+      decodeSlotColor,
+      encodeSlotColor,
+      decodeSlotVolume,
+      encodeSlotVolume,
+    } from "./setlist-slot-params.js";
+    import {
+      ROLLING_IN_THE_DEEP_RECORD_HEX,
+      hexToBytes,
+      bytesToHex,
+    } from "./test-fixtures.js";
+
+    const realRecord = hexToBytes(ROLLING_IN_THE_DEEP_RECORD_HEX);
+
+    // --- Self-checks -------------------------------------------------
+    const checksEl = document.getElementById("checks");
+    function check(label, actual, expected) {
+      const pass = JSON.stringify(actual) === JSON.stringify(expected);
+      const div = document.createElement("div");
+      div.className = "check " + (pass ? "pass" : "fail");
+      div.textContent = `${pass ? "PASS" : "FAIL"} -- ${label}` + (pass ? "" : ` (got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)})`);
+      checksEl.appendChild(div);
+    }
+
+    check("record is the documented SBK1 stride", realRecord.length, RECORD_SIZE);
+    check("decodeSlotColor matches the real record's confirmed Color (1/Standard)", decodeSlotColor(realRecord), 1);
+    check("decodeSlotVolume matches the real record's confirmed Volume (127)", decodeSlotVolume(realRecord), 127);
+
+    for (const color of [1, 5, 16]) {
+      const withColor = encodeSlotColor(realRecord, color);
+      check(`setting color=${color} round-trips through decode()`, decodeSlotColor(withColor), color);
+    }
+    check("encodeSlotColor clamps below 1 up to 1", decodeSlotColor(encodeSlotColor(realRecord, 0)), 1);
+    check("encodeSlotColor clamps above 16 down to 16", decodeSlotColor(encodeSlotColor(realRecord, 99)), 16);
+
+    for (const volume of [0, 64, 127]) {
+      const withVolume = encodeSlotVolume(realRecord, volume);
+      check(`setting volume=${volume} round-trips through decode()`, decodeSlotVolume(withVolume), volume);
+    }
+    check("encodeSlotVolume clamps below 0 up to 0", decodeSlotVolume(encodeSlotVolume(realRecord, -5)), 0);
+    check("encodeSlotVolume clamps above 127 down to 127", decodeSlotVolume(encodeSlotVolume(realRecord, 200)), 127);
+
+    const craftedColor = new Uint8Array(realRecord);
+    craftedColor[12] = 0b11000011; // bit0=1, bit1=1, bits6-7=11 -- none of these are Color's own bits
+    const colorEdited = encodeSlotColor(craftedColor, 16);
+    check("Color edit preserves byte12's isProgram bit (0)", colorEdited[12] & 0x01, craftedColor[12] & 0x01);
+    check("Color edit preserves byte12's unexplained bit (1)", colorEdited[12] & 0x02, craftedColor[12] & 0x02);
+    check("Color edit preserves byte12's Font size bits (6-7)", colorEdited[12] & 0xc0, craftedColor[12] & 0xc0);
+    check("Color edit actually changed Color to 16", decodeSlotColor(colorEdited), 16);
+
+    const edited = encodeSlotColor(realRecord, 3);
+    check("edited record is still exactly RECORD_SIZE bytes", edited.length, RECORD_SIZE);
+
+    let threw = false;
+    try {
+      decodeSlotColor(new Uint8Array(10));
+    } catch {
+      threw = true;
+    }
+    check("decode() rejects a byte array of the wrong length", threw, true);
+
+    // --- Live interactive component -----------------------------------
+    // Just for this harness's own display -- the real 16 Kronos color names/
+    // hex approximations live in frontend/pane.js (SETLIST_COLOR_NAMES/
+    // SETLIST_COLOR_HEX), not duplicated here.
+    const DEMO_COLORS = [
+      "#8e8e8e", "#426bbd", "#507946", "#b6912d", "#b6566e", "#428db6", "#b64242", "#b6792d",
+      "#b6a82d", "#428e46", "#2da2a2", "#7942b6", "#a242a2", "#79542d", "#262626", "#a8a8a8",
+    ];
+
+    const bytesOut = document.getElementById("bytes-out");
+    let liveBytes = realRecord;
+    function renderBytes() {
+      bytesOut.textContent = bytesToHex(liveBytes);
+    }
+
+    const colorRow = document.getElementById("color-row");
+    const colorButtons = [];
+    for (let i = 1; i <= 16; i++) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = String(i);
+      btn.style.background = DEMO_COLORS[i - 1];
+      btn.addEventListener("click", () => {
+        liveBytes = encodeSlotColor(liveBytes, i);
+        renderAll();
+      });
+      colorButtons.push(btn);
+      colorRow.appendChild(btn);
+    }
+
+    const volumeSlider = document.getElementById("volume-slider");
+    const volumeValue = document.getElementById("volume-value");
+    volumeSlider.addEventListener("change", () => {
+      liveBytes = encodeSlotVolume(liveBytes, Number(volumeSlider.value));
+      renderAll();
+    });
+
+    function renderAll() {
+      const color = decodeSlotColor(liveBytes);
+      colorButtons.forEach((btn, i) => btn.classList.toggle("active", i + 1 === color));
+      volumeSlider.value = String(decodeSlotVolume(liveBytes));
+      volumeValue.textContent = String(decodeSlotVolume(liveBytes));
+      renderBytes();
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>

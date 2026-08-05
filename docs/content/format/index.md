@@ -531,7 +531,10 @@ Recorded here for later, even though nothing below is wired into
   the parser itself: chunk-tag scanning, SDB1/SBK1/CBK1/MBK1/PBK1 record
   parsing, the instrument-name cross-reference.
 - [`src/bridge/EditorBridge.{h,cpp}`](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/tree/main/src/bridge) --
-  exposes parsed data (and in-memory edits: move/copy/comment) to the web UI.
+  exposes parsed data (and edits: Set List move/copy, Program copy, and Set
+  List slot Comment/Color/Volume -- the latter three via
+  `getSongRecordBytes`/`putSongRecordBytes`, writing straight into the
+  loaded file's own raw bytes) to the web UI.
 - See the top-level [`README.md`](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/blob/main/README.md)
   for how to build/run the app, and
   [`STATE.md`](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/blob/main/STATE.md)

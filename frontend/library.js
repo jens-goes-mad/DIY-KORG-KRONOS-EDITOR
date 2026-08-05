@@ -1,20 +1,23 @@
-// Read-only Program/Combi library panels: Programs, Combis, and Duplicates,
-// embedded inside a pane shell (see pane.js's createPane()) as three of its
-// top-level categories (Setlist/Programs/Combis/Duplicates all live as peer
-// buttons in the shell's own nav -- this module doesn't render its own tab
-// bar, just whichever single panel the shell tells it to show via
-// showPanel()). Operates on whichever dataset the shell tells it via
-// getDatasetId(), not its own selector (the shell owns ONE dataset-select
-// shared by every category). Nothing here is drag-and-drop-able or
-// editable -- this is a browser/reporting tool, and Programs/Combis rows
-// are deliberately not draggable at all (moving/repointing Program content
-// across physical bank locations is the hard, explicitly-deferred problem
-// from the explore/sqlite-patch-datastore branch -- see STATE.md's
-// "EXPLORATION" section). Duplicates is (and stays) scoped to a single
-// selected dataset -- no cross-dataset dedup here, that's a real future
-// idea, not this pass. See STATE.md's "Program/Combi Library Editor" plan
-// for the phased roadmap this is Phase 1 of.
-function createLibraryPanels(root, { log, getDatasetId }) {
+// Program/Combi library panels: Programs, Combis, and Duplicates, embedded
+// inside a pane shell (see pane.js's createPane()) as three of its top-level
+// categories (Setlist/Programs/Combis/Duplicates all live as peer buttons in
+// the shell's own nav -- this module doesn't render its own tab bar, just
+// whichever single panel the shell tells it to show via showPanel()).
+// Operates on whichever dataset the shell tells it via getDatasetId(), not
+// its own selector (the shell owns ONE dataset-select shared by every
+// category). Combis/Duplicates stay read-only, not draggable -- repointing a
+// Combi's Timbre references or deduping is a separate, harder problem, not
+// this pass. Programs rows ARE draggable (drag one onto another to copy its
+// raw bytes into that slot, same dataset or across two panes' different
+// datasets -- see onDropProgram in app.js and PcgFile::copyProgramFrom()'s
+// own doc comment for the validation guards), once explicitly deferred as
+// "the hard, physical-bank-placement problem" (STATE.md's EXPLORATION
+// section) but now unblocked by surfacing bank type in the UI first (this
+// same session). Duplicates is (and stays) scoped to a single selected
+// dataset -- no cross-dataset dedup here, that's a real future idea, not
+// this pass. See STATE.md's "Program/Combi Library Editor" plan for the
+// phased roadmap this is Phase 1 of.
+function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDropProgram }) {
   root.innerHTML = `
     <input class="filter-input library-filter input is-small" type="text" placeholder="Filter / search..." />
     <div class="bank-filter-area">
@@ -55,6 +58,15 @@ function createLibraryPanels(root, { log, getDatasetId }) {
     programs: root.querySelector('[data-bank-filter="programs"]'),
     combis: root.querySelector('[data-bank-filter="combis"]'),
   };
+
+  // Set during a Programs row's own dragstart, cleared on dragend -- lets a
+  // row being dragged OVER (not just dropped on) show immediate reject
+  // feedback if the two banks' engine types don't match, same technique as
+  // pane.js's draggedFromDatasetId for Setlist rows (HTML5 DataTransfer
+  // payloads aren't readable during dragover, so a plain shared variable
+  // stands in). The actual copy still goes through EditorBridge::
+  // copyProgram()'s own validation regardless -- this is only a hover hint.
+  let draggedProgram = null;
 
   let currentTab = "programs";
   let programs = [];
@@ -104,14 +116,18 @@ function createLibraryPanels(root, { log, getDatasetId }) {
   // click handler mutates `filterSet`, so calling this again (e.g. to
   // reflect a programmatic change from jumpToEntry()) never resets a
   // user's existing choices on its own.
-  function renderBankFilterRow(container, bankNames, present, filterSet, onToggle) {
+  // `getBankType(bank)` is optional -- only Programs has one (Combis have no
+  // engine type of their own, see PcgFile.h's ProgramBankType doc comment),
+  // so refreshCombiBankButtons() below just omits it and buttons stay plain.
+  function renderBankFilterRow(container, bankNames, present, filterSet, onToggle, getBankType) {
     container.innerHTML = "";
     bankNames.forEach((name, bank) => {
       const isPresent = present.has(bank);
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "button is-small bank-filter-button";
-      btn.textContent = name;
+      const bankType = getBankType && getBankType(bank);
+      btn.textContent = bankType ? `${name} (${bankType})` : name;
       btn.disabled = !isPresent;
       if (isPresent && filterSet.has(bank)) btn.classList.add("is-link");
       btn.addEventListener("click", () => {
@@ -125,8 +141,13 @@ function createLibraryPanels(root, { log, getDatasetId }) {
   }
 
   function refreshProgramBankButtons() {
-    renderBankFilterRow(bankFilterRows.programs, PROGRAM_BANK_NAMES, programPresentBanks, programBankFilter, () =>
-      renderProgramsPanel()
+    renderBankFilterRow(
+      bankFilterRows.programs,
+      PROGRAM_BANK_NAMES,
+      programPresentBanks,
+      programBankFilter,
+      () => renderProgramsPanel(),
+      getProgramBankType
     );
   }
 
@@ -141,9 +162,9 @@ function createLibraryPanels(root, { log, getDatasetId }) {
     return rows.filter((r) => (r.name || "").toLowerCase().includes(needle));
   }
 
-  function bankCell(isProgram, bank, number) {
+  function bankCell(isProgram, bank, number, bankType) {
     const td = document.createElement("td");
-    td.textContent = formatBankNumber({ isProgram, bank, number });
+    td.textContent = formatBankNumber({ isProgram, bank, number }, bankType);
     return td;
   }
 
@@ -266,7 +287,7 @@ function createLibraryPanels(root, { log, getDatasetId }) {
 
     panel.innerHTML = "";
     const table = document.createElement("table");
-    table.className = "table is-fullwidth is-hoverable is-narrow";
+    table.className = "table is-fullwidth is-hoverable is-narrow programs-table";
     table.innerHTML =
       colgroupHtml([2.6, null, 1.3, 1.3, 1.3]) +
       "<thead><tr><th>Bank</th><th>Name</th><th " +
@@ -299,6 +320,45 @@ function createLibraryPanels(root, { log, getDatasetId }) {
         expandedProgramKey = expandedProgramKey === key ? null : key;
         renderProgramsPanel();
       });
+
+      // Drag this Program onto another Program row (same pane or a
+      // different pane's dataset) to copy its raw bytes into that slot --
+      // see onDropProgram in app.js. Copy, not move: dragstart's payload
+      // never mutates the source, only drop() (on the TARGET row) calls
+      // into the bridge.
+      tr.draggable = true;
+      tr.addEventListener("dragstart", (ev) => {
+        draggedProgram = { datasetId: getDatasetId(), bank: p.bank, number: p.number, bankType: p.bankType };
+        ev.dataTransfer.setData("application/json", JSON.stringify(draggedProgram));
+        ev.dataTransfer.effectAllowed = "copy";
+      });
+      tr.addEventListener("dragend", () => {
+        draggedProgram = null;
+      });
+      tr.addEventListener("dragover", (ev) => {
+        // Reject up front (no preventDefault -- the browser's own "not
+        // allowed" cursor takes over, no `drop` fires here at all) if the
+        // dragged Program's engine type doesn't match this row's own bank.
+        // EditorBridge::copyProgram() enforces this regardless; this is
+        // just immediate hover feedback instead of only after the drop.
+        if (draggedProgram != null && draggedProgram.bankType !== p.bankType) {
+          tr.classList.remove("drop-target");
+          return;
+        }
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = "copy";
+        tr.classList.add("drop-target");
+      });
+      tr.addEventListener("dragleave", () => tr.classList.remove("drop-target"));
+      tr.addEventListener("drop", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        tr.classList.remove("drop-target");
+        const raw = ev.dataTransfer.getData("application/json");
+        if (!raw) return;
+        onDropProgram(JSON.parse(raw), { datasetId: getDatasetId(), bank: p.bank, number: p.number });
+      });
+
       tbody.appendChild(tr);
 
       if (key === expandedProgramKey) tbody.appendChild(buildUsageRow(p));
@@ -307,18 +367,42 @@ function createLibraryPanels(root, { log, getDatasetId }) {
     panel.appendChild(table);
   }
 
+  // Mirrors PcgFile::isConfirmedTimbreProgramBank() (INT-A..D, bank 0-3) --
+  // the one range where a Timbre's raw bank code is confirmed to directly
+  // index the SAME Program bank space as ProgramInfo.bank (this is already
+  // the assumption EditorBridge::combiUsagesForProgram()/combiUsageCounts()
+  // bake in for the #CMB column; every other bank is explicitly flagged as
+  // unconfirmed there too -- see refCell()'s "unavailable" tooltip above).
+  // Outside this range, rawBankCode isn't known to mean the same thing as a
+  // Program's own .bank field at all, so looking up its type/name would be
+  // a guess, not a lookup -- exactly what this project doesn't do.
+  function isConfirmedTimbreProgramBank(bank) {
+    return bank >= 0 && bank <= 3;
+  }
+
   // Formats one Timbre's Program reference for display: the confirmed bank
   // name when known, otherwise the raw numeric code so it's still honest
   // about what was found (see docs/README.md's "Combi Timbre references"
-  // section -- only some bank codes have been identified so far). A
-  // Timbre can hold a real reference while switched off (status != Off is
-  // NOT the same thing as isDefault -- see TimbreRef's doc comment in
-  // PcgFile.h), so that's called out explicitly rather than hidden --
-  // it still counts as "this Combi references that Program."
+  // section -- only some bank codes have been identified so far). For a
+  // confirmed bank, also shows the engine type (getProgramBankType(), same
+  // per-bank map the Programs panel's own bank-filter buttons use) and the
+  // actual Program name -- already sitting in the `programs` array this
+  // panel loaded for its own table, no extra bridge call needed. A Timbre
+  // can hold a real reference while switched off (status != Off is NOT the
+  // same thing as isDefault -- see TimbreRef's doc comment in PcgFile.h),
+  // so that's called out explicitly rather than hidden -- it still counts
+  // as "this Combi references that Program."
   function formatTimbreRef(t) {
     if (t.isDefault) return "--";
+    const confirmed = isConfirmedTimbreProgramBank(t.rawBankCode);
     const bank = t.bankName ? abbreviateBankName(t.bankName) : `code ${t.rawBankCode}`;
-    const ref = `${bank} ${kronosNumber(t.number)}`;
+    let ref = `${bank} ${kronosNumber(t.number)}`;
+    if (confirmed) {
+      const bankType = getProgramBankType(t.rawBankCode);
+      if (bankType) ref += ` (${bankType})`;
+      const program = programs.find((p) => p.bank === t.rawBankCode && p.number === t.number);
+      if (program && program.name) ref += ` — "${program.name}"`;
+    }
     return t.status === "Off" ? `${ref} (off)` : ref;
   }
 
@@ -346,7 +430,8 @@ function createLibraryPanels(root, { log, getDatasetId }) {
     const note = document.createElement("div");
     note.className = "usage-note";
     note.textContent =
-      "Some raw bank codes aren't identified yet -- shown as \"code N\" rather than guessed. " +
+      "Some raw bank codes aren't identified yet -- shown as \"code N\" rather than guessed, and for the " +
+      "same reason engine type/Program name are only shown for the confirmed INT-A..D range. " +
       "See STATE.md's Phase 2 notes.";
     td.appendChild(note);
 
@@ -430,7 +515,10 @@ function createLibraryPanels(root, { log, getDatasetId }) {
       for (const p of group) {
         const tr = document.createElement("tr");
         tr.append(
-          bankCell(true, p.bank, p.number),
+          // Unlike the Programs table, Duplicates has no separate Type
+          // column -- worth showing here since two byte-exact duplicates
+          // could in principle sit in banks of different engine types.
+          bankCell(true, p.bank, p.number, p.bankType),
           refCell(String(p.setlistUsageCount), false),
           p.combiUsageCountAvailable ? refCell(String(p.combiUsageCount), false) : refCell("n/a", true)
         );
@@ -520,5 +608,9 @@ function createLibraryPanels(root, { log, getDatasetId }) {
     if (row) scrollRowBelowHeader(row);
   }
 
-  return { onDatasetChanged, showPanel, jumpToEntry };
+  // `refresh` is just `load` under a name that makes sense to an outside
+  // caller -- exposed so app.js's onDropProgram can re-fetch this pane's
+  // Programs table after a copy lands in it, without resetting bank
+  // filters/expanded state any harder than onDatasetChanged already does.
+  return { onDatasetChanged, showPanel, jumpToEntry, refresh: load };
 }

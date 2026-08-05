@@ -1,5 +1,5 @@
 === STATE BLOCK — GOALS, ACHIEVEMENTS, BLIND SPOTS ===
-Date: 2026-08-03
+Date: 2026-08-05
 Status: Working prototype, git repo (github.com/jens-goes-mad/
         DIY-KORG-KRONOS-EDITOR, `main` branch) with a public Hugo/GitHub
         Pages docs site (jens-goes-mad.github.io/DIY-KORG-KRONOS-EDITOR)
@@ -9,13 +9,19 @@ Status: Working prototype, git repo (github.com/jens-goes-mad/
         references) is reverse-engineered and wired into a real CHOC app
         with drag-and-drop open and two independent panes, each with its
         own dataset selector and a Setlist/Programs/Combis/Duplicates
-        category navbar -- browse/filter/swap/copy Set Lists, an editable
-        Comment field, and a read-only Program/Combi library with
-        byte-exact duplicate detection -- see "PROGRAM/COMBI LIBRARY
-        EDITOR" below. A componentized frontend pattern (small,
-        standalone, byte-level-tested UI pieces) and a matching backend
-        decoder/encoder architecture are now the deliberate direction --
-        see "ARCHITECTURE: DECODER/ENCODER REFACTOR" below, currently the
+        category navbar -- browse/filter/swap/copy Set Lists, editable
+        Comment/Color/Volume fields (all three writing straight into a
+        loaded file's own raw bytes, independently open per row, safely
+        blocked from being opened on the same slot in both panes at once
+        with a toast popup explaining why -- see "Setlist Color/Volume/
+        Comment row editors" and "Setlist editor UI polish + cross-pane
+        edit lock + toasts" under "ARCHITECTURE" below), and a read-only
+        Program/Combi library with byte-exact duplicate detection -- see
+        "PROGRAM/COMBI LIBRARY EDITOR" below. A
+        componentized frontend pattern (small, standalone, byte-level-
+        tested UI pieces) and a matching backend decoder/encoder
+        architecture are now the deliberate direction -- see "ARCHITECTURE:
+        DECODER/ENCODER REFACTOR" below, currently the
         active thread of work.
 
 --- GOAL ---
@@ -141,9 +147,19 @@ Combi's order was).
     always, even when identical to the label -- confirms the lookup found
     something). Dragging a row within a pane swaps two songs (all fields);
     dragging to a different pane/Set List copies the whole song across.
-    Clicking a row expands an inline multiline Comment editor (monospace,
-    grows to fit content past 10 rows, multiple rows can stay open at
-    once); Apply calls `setComment`. No typed-path/Open-button UI (removed
+    Clicking a row's Song/Type cell expands an inline multiline Comment
+    editor (monospace, grows to fit content past 10 rows); clicking # opens
+    a 16-button Color editor (real Kronos colors); clicking Vol opens a
+    0-127 slider. All three route through the SAME shared raw-bytes cache
+    per row and can be open together on one row at once (see "Setlist
+    Color/Volume/Comment row editors" under ARCHITECTURE below for why that
+    matters). Color/Volume commit immediately (color on click, volume on
+    slider release); Comment keeps its Apply button. If two panes point at
+    the same dataset AND the same Set List, opening an editor on a slot
+    already open in the other pane is blocked outright (a toast explains
+    why) rather than risking one pane's write silently overwriting the
+    other's -- see "Setlist editor UI polish + cross-pane edit lock +
+    toasts" under ARCHITECTURE below. No typed-path/Open-button UI (removed
     per explicit request -- drag-and-drop is the only way in, though the
     bridge's path-based `openFile` still exists underneath).
   - `frontend/mock_bridge.js`: fake in-memory backend (mirrors the real
@@ -151,9 +167,11 @@ Combi's order was).
     build -- cannot exercise real file parsing (browsers have no
     filesystem access at all, which is the whole reason Choc's native
     bridge exists).
-  - `frontend/components/kronos/setlist-comment.{js,css,test.html}`: the
-    first componentized piece (see "ARCHITECTURE" below) -- built,
-    self-tested standalone, not yet wired into `pane.js`.
+  - `frontend/components/kronos/setlist-comment.{js,css,test.html}` and its
+    sibling `setlist-slot-params.{js,test.html}` (Color/Volume): the
+    componentized codec pieces (see "ARCHITECTURE" below) -- built,
+    self-tested standalone, AND wired into `pane.js` via a dynamic
+    `import()` (see "Setlist Color/Volume/Comment row editors" below).
   - `docs/`: a public Hugo/GitHub Pages site
     (jens-goes-mad.github.io/DIY-KORG-KRONOS-EDITOR) alongside the format
     reference doc (`docs/README.md`, mirrored -- keep in sync by hand --
@@ -280,9 +298,13 @@ full rationale):
     stayed in `PcgFile.cpp` rather than moving, since `PcgFile.cpp` itself calls them (in
     `combiUsagesForProgram()`/`combiUsageCounts()`), not just the decoder.
   - **Sequencing (explicit, small-iterations-first)**: Program decoder done, test
-    infrastructure landed (Blind Spot #14), Combi decoder done -- **Set List slot decoder
-    is the next step**, following the same pattern once proven against tests + the real
-    UI.
+    infrastructure landed (Blind Spot #14), Combi decoder done, Set List slot raw-byte
+    read/write done (2026-08-05, see "Setlist Color/Volume/Comment row editors" below) --
+    unlike Program/Combi, this didn't need a new standalone `SetlistDecoder.{h,cpp}`:
+    every SBK1 song record's byte offset is one deterministic formula off a single
+    retained anchor (`sbkSongsStart_`), not a per-bank location table, so
+    `PcgFile::songRecordBytes()`/`putSongRecordBytes()` just reuse the *existing*
+    `readSlotParams()`/`readComment()` functions already living in `PcgFile.cpp`.
   - **Datasets: decoupling "loaded file" from "pane" (BUILT 2026-08-01, human-verified
     in the real app -- "works like a charm")**: the two-pane UI used to conflate two
     different things a user wants to do -- (1) rearrange entries between Set Lists
@@ -364,8 +386,9 @@ full rationale):
       scoped to the pane's single selected dataset, no cross-dataset dedup yet.
     - No backend/bridge changes at all -- purely a frontend reorganization reusing
       already-tested render logic; `pcg_file_test`/`ctest` untouched and still passing.
-  - **Chunk-based data flow for components (designed 2026-08-01, not yet implemented)**:
-    two deliberately different tiers, not one architecture for everything --
+  - **Chunk-based data flow for components (designed 2026-08-01, first real feature BUILT
+    2026-08-05 for Setlist slots -- see below)**: two deliberately different tiers, not
+    one architecture for everything --
     - *Bulk/list views* (Programs table, dedup, etc.) stay served by native decoders
       walking the whole retained buffer -- real efficiency win here (e.g.
       `findDuplicatePrograms()` hashes ~12.7MB across ~2560 records; genuinely faster
@@ -398,7 +421,9 @@ full rationale):
       bytes in `data_`, (2) re-run the *existing* SBK1 decode on just the newly-written
       bytes, (3) update the corresponding `Song` in `setlists_` from that fresh decode --
       so the structured cache is always derived from canonical bytes right after a
-      write, never hand-maintained separately.
+      write, never hand-maintained separately. **Realized 2026-08-05** as
+      `PcgFile::putSongRecordBytes()` -- see below, same three-step discipline, just for
+      Setlist song records instead of Programs.
     - **Cross-pane refresh gap -- RESOLVED (2026-08-01), superseded by the Datasets
       refactor below**: the plan on this line used to be a narrow fix (a
       `getCurrentSetlistIndex()` pane accessor, `app.js` checking "is the other pane on
@@ -433,6 +458,119 @@ full rationale):
     deferred: this project is still in read-only territory (Phase 1/2 of the Library
     Editor, no Program/Combi/Set-List encoder exists yet either), so fixing this now
     would be solving a problem too early.
+  - **Setlist Color/Volume/Comment row editors (BUILT 2026-08-05)**: per-column click
+    routing on a Set List row (# -> Color, Vol -> Volume, Song/Type -> Comment, same
+    fallback as before), all three independently toggleable so several can be open on
+    the SAME row at once (explicit request) -- this is what turned "Comment still writes
+    via the old struct-only path" from a style inconsistency into a real data-loss bug:
+    with Color/Volume writing raw bytes and Comment only mutating `Setlist::songs[i]
+    .comment` in memory, whichever committed second would silently discard the other
+    (a raw-byte write re-derives every decoded field, including comment, from the bytes
+    it just wrote). Fix: Comment was retrofitted onto the same raw-byte path, so all
+    three editors on a row share one raw-bytes cache and one write path.
+    - Backend: `PcgFile` retains one anchor per Set List (`sbkSongsStart_`, set during
+      the existing SBK1 parse loop, no new scan) plus `songRecordBytes(setlistIndex,
+      songIndex)` / `putSongRecordBytes(...)` -- the latter writes into `data_`, then
+      re-derives `Song::params`/`comment` via the *existing* `readSlotParams()`/
+      `readComment()`, same "cached field must never go stale after a direct write"
+      discipline as `copyProgramFrom()`. Does NOT re-resolve `instrumentName` -- none of
+      these three editors touch bank/number, so it stays valid; would need revisiting if
+      a future editor ever did.
+    - Bridge: `getSongRecordBytes`/`putSongRecordBytes` (array-of-numbers over the
+      bridge, same `choc::value::createArray`/`addArrayElement` pattern every other
+      array-returning method already uses -- 542 bytes needs no base64). `setComment` is
+      unused by the new UI now but left in place in case anything else still calls it.
+    - Frontend: new sibling codec `frontend/components/kronos/setlist-slot-params.js`
+      (`decodeSlotColor`/`encodeSlotColor`/`decodeSlotVolume`/`encodeSlotVolume`) next to
+      `setlist-comment.js`, same masked-read-modify-write discipline (Color shares byte
+      +12 with isProgram/Font size, masked to bits2-5 only; Volume is a clean unpacked
+      byte at +16, no masking needed) -- own `.test.html`/`.test.js`, reusing
+      `test-fixtures.js`'s real "Rolling in the Deep" record (byte+12=`0xc0` confirms
+      Color=1/Standard, byte+16=`0x7f` confirms Volume=127 on that real record).
+      `pane.js` loads both codecs via a cached dynamic `import()` expression -- works
+      from inside a plain (non-`type="module"`) script without converting `index.html`'s
+      scripts to ES modules.
+    - `pane.js`'s expand-state grew from `Set<songIndex>` to `Map<songIndex,
+      Set<"comment"|"color"|"volume">>`, plus a `Map<songIndex, Uint8Array>` raw-bytes
+      cache shared by every editor open on that row (`getSlotBytes()` fetches once,
+      `commitSlotBytes()` is the one write path all three editors call through). Color
+      commits on click, Volume commits on the slider's `change` event specifically (not
+      `input`) so it writes once on release/blur, not once per pixel of drag.
+    - `frontend/mock_bridge.js` gained fake `getSongRecordBytes`/`putSongRecordBytes`,
+      synthesizing a 542-byte buffer from a mock entry's own fields (`makeFakeSlotBytes()`)
+      so mock/no-native-build mode can exercise the whole feature.
+    - Verified: `pcg_file_test`/`ctest` extended (round-trip, byte-boundary/neighbor-
+      record isolation, wrong-size/out-of-range rejection), deliberately broken then
+      restored per this project's standard practice; full app + test target both build
+      clean; every touched JS file `node --check`ed; the new codec's headless
+      `.test.js` passes (22 checks) against the real fixture bytes. Initially NOT
+      visually click-tested in a real browser (no browser-automation tool available in
+      the environment this was built in -- a static-file-server mock-mode smoke test,
+      asset/import-path resolution only, stood in instead) -- since then click-tested
+      live by the project owner in the real app across several follow-up rounds (see
+      below), with real bugs found and fixed that the static smoke test couldn't have
+      caught.
+  - **Setlist editor UI polish + cross-pane edit lock + toasts (BUILT 2026-08-05, same
+    day, driven by live click-through feedback)**: several rounds of real-app testing
+    against the row editors above surfaced concrete issues -- fixed in order:
+    - **Row order**: editor rows now append in a fixed Color/Comment/Volume order,
+      matching the columns' own left-to-right order (#, Song/Type, Vol) instead of the
+      original Comment/Color/Volume order.
+    - **Volume editor**: gained a "Volume" text label in front of the slider.
+    - **Editor-row visual treatment**: a generic `.editor-row` class (added alongside
+      each row's specific `comment-editor-row`/`color-editor-row`/`volume-editor-row`
+      class, kept as unused-for-now per-type hooks) carries a shared 10px left padding
+      and a `darkorange` 1px left border, so an open editor reads as a distinct
+      "you're now editing" section instead of just another table row. Took two passes
+      to land correctly: the left padding was initially silently overridden by Bulma's
+      own `.table.is-narrow td{padding:.25em .5em}` rule, which -- having two classes
+      plus an element in its selector -- out-specifies a plain `.editor-row td` (one
+      class plus an element) regardless of stylesheet order; fixed by matching Bulma's
+      own `.table.is-narrow` prefix in the override selector.
+    - **`tr.is-selected` row highlight** (marks "this row has an editor open") recolored
+      from Bulma's default green/teal to the same `darkorange`. Same specificity lesson
+      hit twice: Bulma sets the `--bulma-table-row-active-background-color` custom
+      property it reads on `.table` itself, not `:root` -- a `:root`-level override
+      loses because a rule that directly matches an element always wins over an
+      inherited value, regardless of source order or specificity. Landed on a simpler
+      fix that sidesteps the whole custom-property indirection: a plain
+      `background`/`color` declaration on `.table tr.is-selected` (two classes + a
+      type selector) beats Bulma's own `.is-selected` (one class) outright.
+    - **`.instrument-name` contrast**: the Combi/Program name shown under a Setlist
+      row's label sets its own dim-gray `color` directly, which -- being a directly-set
+      property -- doesn't inherit the selected row's white text regardless of the row's
+      own color; needed its own `.table tr.is-selected .instrument-name{color:#000}`
+      override to stay readable against the orange highlight.
+    - **Slot color palette brightened** (`SETLIST_COLOR_HEX`, `pane.js`) -- the initial
+      pass read as too dark/muted; all 16 values bumped ~28% brighter (Black/White
+      handled separately so they stay sane), keeping the demo palette in
+      `setlist-slot-params.test.html` in sync.
+    - **Cross-pane edit-lock (the one genuinely severe bug this round)**: two panes can
+      legitimately point at the SAME dataset AND the same Set List at once (a real,
+      already-supported setup -- see the Datasets subsection above) -- if both opened an
+      editor on the SAME slot, each pane's raw-bytes cache is its own independent copy,
+      so whichever pane committed second would silently overwrite whatever the other
+      had just written, unnoticed. Fixed with a module-level `openSlotEditors` map
+      (`pane.js`, shared across both pane instances, keyed `datasetId:setlistIndex:
+      songIndex` -> owning paneId): `toggleEditor()` now refuses to open a slot another
+      pane already holds, and a `releaseAllSlotLocks()` helper drops every lock a pane
+      owns whenever its `expandedTypes` gets cleared wholesale (Set List switch, dataset
+      switch/close) so a lock never outlives the editor state it was protecting.
+    - **Toast notifications** (`app.js`'s new `showToast()`): the cross-pane block above
+      needed to actually be noticed -- the persistent bottom status bar is easy to miss
+      or get overwritten before being read. A small (~15-line) hand-rolled transient
+      popup, deliberately not a pulled-in library (see its own doc comment -- worth
+      revisiting with something like Notyf/Toastify if toast usage ever grows beyond
+      simple single-line messages), styled with Bulma's own semantic `--bulma-warning`/
+      `-invert` color pair (the same background/text combination `.notification.
+      is-warning` uses internally) rather than a one-off hand-picked color. One shared
+      `#toastContainer` (`index.html`, fixed to the viewport) so toasts from either pane
+      stack in the same place.
+    - Verified: every touched JS file `node --check`ed, CSS brace-balance checked,
+      backend build/`ctest` re-confirmed green (none of this round touches the backend).
+      UI changes confirmed against real click-through by the project owner (this is what
+      surfaced the padding-specificity and cross-pane-race issues above in the first
+      place) rather than only the earlier static smoke test.
   - **Explicitly not committed to being final**: both the project owner and this
     assistant agreed to revisit/rethink this shape as each piece (Program decoder now
     done; chunk-based component wiring next) proves itself against real tests and the
@@ -926,6 +1064,138 @@ for a while.
     fixed the same `[hidden]`-losing-to-our-own-unconditional-`display`-rule bug the
     topbar spinner had a few rounds back (`.bank-filter-row[hidden]{display:none}`,
     explicit rather than assumed) -- caught before it needed reporting a second time.
+  - **Program bank type (HD-1/EXi) surfaced in the UI (BUILT 2026-08-05)**: was already
+    classified and stored per-Program (`ProgramInfo::bankType`, exposed via
+    `listPrograms()`), but nothing showed it except the Programs table's own dedicated
+    Type column -- the Programs bank-filter buttons and the Setlist/Duplicates Bank
+    labels had no way to show it without a specific Program row in hand. Added
+    `PcgFile::programBankTypes()` (new, one entry per bank: `{bank, bankType}`,
+    derived from the already-classified `programBankLocations_`, no new parsing) and a
+    matching lightweight bridge call `getProgramBankTypes(datasetId)` -- much cheaper
+    than fetching all ~2560 Program records just to label ~20 banks. Covered by a new
+    `pcg_file_test` assertion (verified failing before restoring the correct expected
+    value, this project's usual deliberate-break-then-restore check).
+    `pane.js`'s `formatBankNumber(entry, bankType)` now takes an optional bank type and
+    appends `" (HD-1)"`/`" (EXi)"` -- only ever for Programs (Combis have no engine type
+    of their own, so it's a no-op there regardless of what's passed). Wired into: the
+    Programs bank-filter buttons (`"U-A (EXi)"`), the Setlist Bank-jump button when it
+    points at a Program (`"U-A 008 (EXi)"`), and the Duplicates table's Bank cell
+    (which -- unlike Programs -- has no separate Type column, so this is genuinely new
+    information there, not a repeat of an adjacent column). Deliberately NOT added to
+    the Programs table's own Bank cell, since its Type column already shows the same
+    fact right next to it -- would just be the same information twice in one row.
+    `createPane()` now fetches+caches this once per dataset load (a `bank -> type` Map)
+    and shares it with both `createSetlistPanel()` and `createLibraryPanels()`, so the
+    bridge call happens once per dataset change, not once per renderer. Two follow-on
+    CSS fixes this forced: `.bank-filter-button`'s old fixed 3.6em width (fine when
+    every label was uniformly "I-A".."U-FF") had to go, since `"U-AA (EXi)"` varies too
+    much in length now; and Bulma's `.button` forces `white-space: nowrap` by default,
+    which would have made the Setlist Bank-jump button overflow its cell once the
+    suffix made its text much longer -- overridden to `white-space: normal` so it wraps
+    onto a second line instead, plus its column's colgroup fraction bumped 2.6 -> 3.5.
+    Caveat carried through honestly, not smoothed over: `ProgramBankType` itself is
+    per-file-derived (Kronos OS 3.0+ lets a user reassign INT Program Banks between
+    HD-1/EXi, so it was never going to be a hardcoded table) and is flagged in
+    `PcgFile.h`'s own doc comment as **not yet independently verified against a real
+    Kronos backup** -- this UI surfaces that classification more prominently now, not
+    a newly-confirmed fact.
+  - **Program drag-and-drop: the first feature that writes immediately into the
+    native buffer (BUILT 2026-08-05)**: per explicit direction, editor operations
+    stop being purely in-memory-bookkeeping from here on -- this is the first one
+    that actually writes into a dataset's retained raw bytes (`data_`), not just
+    `setlists_`. Planned via `EnterPlanMode` given the scope (first real write path,
+    touches the physical-bank-placement problem this branch exists to explore) --
+    plan file preserved the full design reasoning; summary here.
+    - **`PcgFile::copyProgramFrom(src, srcBank, srcNumber, dstBank, dstNumber)`**
+      (new): copies one Program record's raw bytes from `src` (pass `*this` for a
+      same-dataset copy) into this file's target slot, re-decoding the destination's
+      `programs()` entry from the freshly-written bytes so cached fields never go
+      stale. Five guards, checked in order, nothing written unless all pass:
+      out-of-range bank/number, engine-type mismatch (HD-1 record into an EXi bank
+      would corrupt it, or vice versa -- this is exactly why bank type was surfaced
+      in the UI just before this), a record-size mismatch as a defensive second
+      check on top of the type check, the target slot already holding a *different*
+      Program (confirmed explicitly with the project owner as a real, no-undo
+      action worth a hard block, not silently overwritten), and a byte-identical
+      Program already existing anywhere in the destination file. New
+      `programBankTypeAt()` (single-bank lookup) alongside it.
+    - **Real bug caught and fixed by the test, not by inspection**: the
+      duplicate-exists check initially compared the source record's hash against
+      *every* entry in the destination's `programs()`, including the source's own
+      slot -- which trivially matches itself, so every same-dataset copy rejected
+      itself as "a duplicate of itself." Caught immediately because
+      `testCopyProgramFrom()` (new, `tests/pcg_file_test.cpp`) actually exercises a
+      real same-dataset copy, not just the rejection paths -- fixed by excluding
+      only the exact source slot from that comparison (not its whole bank), and
+      only when `&src == this`. Also deliberately broken-then-restored once more,
+      per this project's usual practice.
+    - **`EditorBridge::copyProgram(args)`**: `[srcDatasetId, srcBank, srcNumber,
+      dstDatasetId, dstBank, dstNumber] -> {ok}` or `{ok:false, error}`, same or
+      different dataset both work (`fileOf()` twice, no aliasing risk since
+      distinct (bank, number) pairs never overlap in byte range even when
+      `srcDatasetId == dstDatasetId`).
+    - **Cross-dataset copying is allowed for Programs specifically** -- confirmed
+      with the project owner this doesn't reopen the physical-bank-placement
+      problem the SQLite exploration flagged as hard: unlike a Setlist slot or a
+      Combi Timbre, nothing *outside* a dataset can already be pointing at one of
+      its Program slots, so copying raw bytes into another dataset's slot doesn't
+      leave any dangling/wrong reference behind. Setlist's own `onDropEntry`
+      (`app.js`) stays same-dataset-only, unchanged.
+    - **Frontend**: Programs rows are draggable now (`library.js`, was explicitly
+      "not draggable yet" until this pass) -- drag one onto another (same pane or a
+      different pane's dataset) to copy. `app.js`'s new `onDropProgram` mirrors
+      `onDropEntry`'s shape but only refreshes the *destination* dataset's panes
+      (a copy never touches the source, unlike Setlist's swap/copy). Live
+      type-mismatch feedback during `dragover` (before drop, not just after) reuses
+      each row's own already-known `bankType` -- no extra bridge call needed beyond
+      what the bank-type-in-UI pass already wired up. `.programs-table` shares its
+      `cursor:grab`/`.drop-target` CSS with `.setlist-table` rather than duplicating
+      it (one rule, two selectors).
+    - **Not built**: any UI for the reverse direction (does the source disappear?
+      No -- copy, not move, confirmed explicitly) or a "target occupied, overwrite
+      anyway?" confirmation -- the third guard above is a hard block instead, since
+      this app has no modal UI anywhere yet and building one just for this would be
+      scope creep beyond what was asked.
+  - **Real Kronos Set List slot colors (BUILT 2026-08-05)**: the "#" cell's
+    background color used to be a synthetic hue-spread placeholder
+    (`hsl(color*47%360, ...)`), explicitly flagged as not Korg's real palette.
+    Replaced with `pane.js`'s `SETLIST_COLOR_NAMES`/`SETLIST_COLOR_HEX` (16 real
+    color names from the official Korg manual, English + German, provided by the
+    project owner) -- **ordering not yet independently confirmed against a real
+    Kronos** (noted explicitly in both the code comment and here, per this
+    project's "no guessing" standard); the array order is the order they were
+    given in (reads like the on-device menu order), a working assumption pending
+    a real-hardware cross-check the project owner will do later. Hex values are
+    this project's own muted approximation of each named color (not sampled from
+    real hardware either), deliberately kept dark enough that the existing
+    dim-gray cell text stays legible on top of any of them -- White specifically
+    can't be real white for that reason, see the code comment. `mock_bridge.js`'s
+    fake Setlist songs now cycle through all 16 colors (`(k % 16) + 1`) instead of
+    a fixed `color: 1`, so mock mode can actually exercise the full palette
+    visually without needing a real backup file.
+  - **Bank-filter grid alignment + Timbre reference engine type/Program name (BUILT
+    2026-08-05)**: three small follow-ups from real usage.
+    - `.bank-filter-row` moved from `flex-wrap` to a real CSS grid
+      (`grid-template-columns: repeat(auto-fill, minmax(6.5em, 1fr))`) -- flex-wrap
+      left each button hugging its own label's width, which read as ragged once
+      labels started varying in length ("I-A" vs "U-AA (EXi)"); the grid gives every
+      column the same width regardless of label length.
+    - Combi Timbre references now show engine type and the actual Program name
+      (`library.js`'s `formatTimbreRef()`), not just bank/number -- the name was
+      "already in memory anyway" per the request: `programs` is the exact array this
+      panel already fetched for its own Programs table, just searched by
+      (bank, number), no new bridge call. Both are gated to
+      `isConfirmedTimbreProgramBank()`'s same bank 0-3 (INT-A..D) range
+      `EditorBridge::combiUsagesForProgram()`/`combiUsageCounts()` already use for
+      the #CMB column -- outside that range, a Timbre's raw bank code isn't
+      confirmed to mean the same thing as a Program's own `.bank` field at all, so
+      showing a type/name for it would be a guess dressed up as a lookup, exactly
+      what got flagged when a Combi showed `"Timbre 5: code 19 085"` with nothing
+      else -- that's not a bug, it's the honest "don't know" case working as
+      designed, and is the same reason a name/type can't safely be added for it
+      either (mirrored in `mock_bridge.js`: one fake Timbre now deliberately matches
+      a fake Program's bank/number so the new lookup has something to demonstrate
+      in mock mode too).
   - **Indeterminate loading spinner (BUILT 2026-08-03)**: a pane-wide overlay
     (`.pane-loading`) shown for the duration of a file drop's base64-encode/decode+parse
     -- genuinely indeterminate, since no byte-level progress callback exists for that

@@ -14,6 +14,25 @@ int intArg(const choc::value::ValueView& args, size_t index, int fallback = -1) 
     return static_cast<int>(args[static_cast<uint32_t>(index)].getWithDefault<double>(fallback));
 }
 
+// Reads args[index] as a nested JS array of numbers (e.g. a raw record's
+// bytes) into a std::vector<uint8_t>. Empty if the argument is missing or
+// isn't an array -- callers (getSongRecordBytes/putSongRecordBytes) treat an
+// unexpected size as a validation failure, same as any other bad input.
+std::vector<uint8_t> bytesArg(const choc::value::ValueView& args, size_t index) {
+    std::vector<uint8_t> result;
+    if (!args.isArray() || args.size() <= index) return result;
+    auto arr = args[static_cast<uint32_t>(index)];
+    if (!arr.isArray()) return result;
+    result.reserve(arr.size());
+    for (uint32_t i = 0; i < arr.size(); ++i) result.push_back(static_cast<uint8_t>(arr[i].getWithDefault<double>(0)));
+    return result;
+}
+
+choc::value::Value bytesToValue(const std::vector<uint8_t>& bytes) {
+    return choc::value::createArray(static_cast<uint32_t>(bytes.size()),
+                                     [&](uint32_t i) { return static_cast<int32_t>(bytes[i]); });
+}
+
 // Bounds-checked lookup into the `[bank][number]` counts PcgFile::setlistUsageCounts()
 // returns -- a bank/number beyond what any slot referenced simply has no entry, i.e. 0 uses.
 int countAt(const std::vector<std::vector<int>>& counts, int bank, int number) {
@@ -335,6 +354,37 @@ choc::value::Value EditorBridge::setComment(const choc::value::ValueView& args) 
     return makeOk();
 }
 
+choc::value::Value EditorBridge::getSongRecordBytes(const choc::value::ValueView& args) {
+    const int datasetId = intArg(args, 0);
+    const int setlistIndex = intArg(args, 1);
+    const int songIndex = intArg(args, 2);
+
+    auto* file = fileOf(datasetId);
+    if (file == nullptr) return makeError("Dataset " + std::to_string(datasetId) + " has no file loaded");
+
+    auto bytes = file->songRecordBytes(setlistIndex, songIndex);
+    if (!bytes.has_value()) return makeError("No SBK1 record for that Set List slot");
+
+    auto result = makeOk();
+    result.setMember("bytes", bytesToValue(*bytes));
+    return result;
+}
+
+choc::value::Value EditorBridge::putSongRecordBytes(const choc::value::ValueView& args) {
+    const int datasetId = intArg(args, 0);
+    const int setlistIndex = intArg(args, 1);
+    const int songIndex = intArg(args, 2);
+    const std::vector<uint8_t> bytes = bytesArg(args, 3);
+
+    auto* file = fileOf(datasetId);
+    if (file == nullptr) return makeError("Dataset " + std::to_string(datasetId) + " has no file loaded");
+
+    if (!file->putSongRecordBytes(setlistIndex, songIndex, bytes)) {
+        return makeError("Couldn't write that Set List slot's record (wrong size, or index out of range)");
+    }
+    return makeOk();
+}
+
 choc::value::Value EditorBridge::listPrograms(const choc::value::ValueView& args) {
     const int datasetId = intArg(args, 0);
     auto* file = fileOf(datasetId);
@@ -426,4 +476,59 @@ choc::value::Value EditorBridge::findDuplicatePrograms(const choc::value::ValueV
         result.addArrayElement(groupValue);
     }
     return result;
+}
+
+choc::value::Value EditorBridge::getProgramBankTypes(const choc::value::ValueView& args) {
+    const int datasetId = intArg(args, 0);
+    auto* file = fileOf(datasetId);
+    if (file == nullptr) return choc::value::createEmptyArray();
+
+    auto result = choc::value::createEmptyArray();
+    for (const auto& entry : file->programBankTypes()) {
+        auto v = choc::value::createObject("ProgramBankTypeEntry");
+        v.setMember("bank", entry.bank);
+        v.setMember("bankType", programBankTypeName(entry.bankType));
+        result.addArrayElement(v);
+    }
+    return result;
+}
+
+namespace {
+
+std::string programCopyErrorMessage(kronos::PcgFile::ProgramCopyError error) {
+    switch (error) {
+        case kronos::PcgFile::ProgramCopyError::BankTypeMismatch:
+            return "Can't copy: source and destination banks are different engine types (HD-1/EXi) -- "
+                   "a Program can only be loaded into a bank of the matching type.";
+        case kronos::PcgFile::ProgramCopyError::RecordSizeMismatch:
+            return "Can't copy: source and destination banks don't share the same record size.";
+        case kronos::PcgFile::ProgramCopyError::OutOfRange:
+            return "Can't copy: source or destination bank/number is out of range.";
+        case kronos::PcgFile::ProgramCopyError::TargetSlotOccupied:
+            return "Can't copy: the destination slot already holds a different Program.";
+        case kronos::PcgFile::ProgramCopyError::DuplicateExists:
+            return "Can't copy: a byte-identical Program already exists in the destination dataset.";
+        default:
+            return "Can't copy: unknown error.";
+    }
+}
+
+}  // namespace
+
+choc::value::Value EditorBridge::copyProgram(const choc::value::ValueView& args) {
+    const int srcDatasetId = intArg(args, 0);
+    const int srcBank = intArg(args, 1);
+    const int srcNumber = intArg(args, 2);
+    const int dstDatasetId = intArg(args, 3);
+    const int dstBank = intArg(args, 4);
+    const int dstNumber = intArg(args, 5);
+
+    auto* srcFile = fileOf(srcDatasetId);
+    if (srcFile == nullptr) return makeError("Source dataset is no longer open.");
+    auto* dstFile = fileOf(dstDatasetId);
+    if (dstFile == nullptr) return makeError("Destination dataset is no longer open.");
+
+    auto error = dstFile->copyProgramFrom(*srcFile, srcBank, srcNumber, dstBank, dstNumber);
+    if (error.has_value()) return makeError(programCopyErrorMessage(*error));
+    return makeOk();
 }

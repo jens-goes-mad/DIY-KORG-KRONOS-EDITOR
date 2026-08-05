@@ -2,6 +2,43 @@ function setStatus(message) {
   document.getElementById("statusBar").textContent = message;
 }
 
+// A transient, auto-dismissing popup -- distinct from setStatus() above,
+// which writes to the persistent bottom status bar (easy to miss, and
+// overwritten by the next status message before a user necessarily reads
+// it). Used for things that genuinely need to interrupt/get noticed in the
+// moment, e.g. "another pane already has this open" -- see pane.js's
+// toggleEditor(). `toastContainer` is one shared element (index.html) so
+// toasts from either pane stack in the same place rather than each pane
+// needing its own.
+//
+// Deliberately hand-rolled (~15 lines, no queueing/stacking-limit/action-
+// button support) rather than pulling in a ready-made toast library --
+// matches this project's no-extra-dependencies-until-actually-needed
+// convention (see CLAUDE.md), and the one real use case so far doesn't
+// need more than this. Worth revisiting if toast usage grows beyond simple
+// single-line messages -- there are mature, small, generic JS toast libs
+// (e.g. Notyf, Toastify) that would be a reasonable swap-in at that point
+// rather than growing this by hand.
+const toastContainer = document.getElementById("toastContainer");
+
+function showToast(message, durationMs = 3500) {
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+
+  // Added in a separate frame so the fade-in transition (style.css) actually
+  // animates from the "not visible" state instead of starting already at
+  // its end state (both classes present on the same frame == no visible
+  // transition at all).
+  requestAnimationFrame(() => toast.classList.add("toast-visible"));
+
+  setTimeout(() => {
+    toast.classList.remove("toast-visible");
+    toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+  }, durationMs);
+}
+
 // The native app (choc_DesktopWindow.h) has no menu bar at all, so there's
 // no OS-level Cmd+R/Ctrl+R reload the way a real browser tab gets for free
 // -- without this, the only way to pick up a frontend/ change while testing
@@ -77,9 +114,44 @@ async function onDropEntry(source, target) {
   }
 }
 
+// Dragging a Program row onto another Program row COPIES its raw bytes into
+// that slot -- same dataset or across two panes' different datasets both
+// work (unlike Setlist's onDropEntry above, cross-dataset is fine here: a
+// Program's bank/number isn't referenced by anything OUTSIDE its own
+// dataset the way a Setlist slot or Combi Timbre is, so there's no dangling-
+// reference risk to solve first -- see STATE.md's EXPLORATION section for
+// why that distinction matters). The source is never touched -- only the
+// destination's bridge call (EditorBridge::copyProgram(), which enforces
+// matching engine type, an empty target slot, and no existing byte-
+// identical duplicate in the destination dataset -- see its own doc
+// comment) can reject the whole thing.
+async function onDropProgram(source, target) {
+  if (source.datasetId === target.datasetId && source.bank === target.bank && source.number === target.number) return;
+
+  const result = await window.copyProgram(
+    source.datasetId, source.bank, source.number,
+    target.datasetId, target.bank, target.number
+  );
+  if (!result.ok) {
+    setStatus(`Copy failed: ${result.error}`);
+    return;
+  }
+  setStatus(
+    `Copied ${formatBankNumber({ isProgram: true, bank: source.bank, number: source.number })} -> ` +
+      `${formatBankNumber({ isProgram: true, bank: target.bank, number: target.number })}.`
+  );
+
+  // Only the destination dataset's Programs table(s) can have changed -- a
+  // copy never touches the source. Could be 0, 1, or both panes (e.g. both
+  // pointed at the same destination dataset).
+  for (const pane of Object.values(panes)) {
+    if (pane.getCurrentDatasetId() === target.datasetId) await pane.refreshLibrary();
+  }
+}
+
 document.querySelectorAll(".pane").forEach((root) => {
   const paneId = root.dataset.pane;
-  panes[paneId] = createPane(paneId, root, { onDropEntry, log: setStatus });
+  panes[paneId] = createPane(paneId, root, { onDropEntry, onDropProgram, log: setStatus, showToast });
 });
 
 refreshDatasets();  // so every pane's selectors have data as soon as the bridge is ready

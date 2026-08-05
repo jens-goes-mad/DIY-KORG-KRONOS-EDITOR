@@ -41,12 +41,38 @@
       isProgram: k % 4 !== 0,
       bank: 0,
       number: k,
-      color: 1,
+      color: (k % 16) + 1,  // cycle through all 16 real colors (pane.js's SETLIST_COLOR_NAMES/_HEX) for visual testing
       holdTime: 5,
       volume: 127,
       comment: "",
       instrumentName: "",
     };
+  }
+
+  // Mock mode has no real SBK1 bytes to hand back -- getSongRecordBytes()/
+  // putSongRecordBytes() below need SOME 542-byte buffer that the real
+  // frontend/components/kronos codecs can decode/encode against, so this
+  // synthesizes one from a fake entry's own fields, close enough to the
+  // real byte layout (docs/README.md §4.3, src/kronos/PcgFile.cpp's kSbk*
+  // constants) for Color (byte+12 bits2-5)/Volume (byte+16)/Comment
+  // (byte+18..) to round-trip correctly. Font size/Transpose/isProgram's
+  // other bits aren't reconstructed (mock entries don't track them), so
+  // they'll always decode as their zero/default value here -- fine, no mock
+  // UI reads them yet.
+  const SBK_RECORD_SIZE = 542;
+  function makeFakeSlotBytes(entry) {
+    const bytes = new Uint8Array(SBK_RECORD_SIZE);
+    const colorField = ((Math.max(1, Math.min(16, entry.color)) - 1) << 2) & 0x3c;
+    bytes[12] = colorField | (entry.isProgram ? 0x01 : 0x00);
+    bytes[13] = entry.bank & 0x1f;
+    bytes[14] = entry.number & 0xff;
+    bytes[15] = (entry.holdTime + 1) & 0xff;
+    bytes[16] = Math.max(0, Math.min(127, entry.volume));
+    const comment = entry.comment || "";
+    for (let i = 0; i < comment.length && 18 + i < SBK_RECORD_SIZE - 1; i++) {
+      bytes[18 + i] = comment.charCodeAt(i) & 0xff;
+    }
+    return bytes;
   }
 
   // Mock-only Programs -- deliberately includes a repeated name ("Init
@@ -75,6 +101,20 @@
           combiReferenceCount: 0,
         })
       );
+      // One genuinely empty slot per bank (number 5) -- gives copyProgram()
+      // below a real target to succeed into, not just reject; every other
+      // slot above already has a name, so a same-type drop onto one of
+      // those correctly exercises the "target slot occupied" rejection
+      // instead.
+      programs.push({
+        bank,
+        number: names.length,
+        name: "",
+        bankType: bank === 0 ? "HD-1" : "EXi",
+        setlistReferenceCount: 0,
+        combiReferenceCountAvailable: true,
+        combiReferenceCount: 0,
+      });
     }
     return programs;
   }
@@ -84,7 +124,10 @@
   // (see docs/README.md's "Combi Timbre references" section).
   function makeFakeTimbres() {
     const timbres = [
-      { number: 100, rawBankCode: 1, bankName: "INT-B", status: "Internal", isDefault: false },
+      // number:0/rawBankCode:1 deliberately matches makeFakePrograms()'s own
+      // bank1/number0 ("Berlin Grand SW2 U.C.") -- exercises the new name/
+      // engine-type lookup in mock mode too, not just the real bridge.
+      { number: 0, rawBankCode: 1, bankName: "INT-B", status: "Internal", isDefault: false },
       { number: 15, rawBankCode: 20, bankName: "USER-D", status: "Internal", isDefault: false },
       // A real reference that's currently switched off -- exercises the
       // "referenced but inactive" display case in mock mode too.
@@ -207,9 +250,47 @@
     return ok();
   };
 
+  // The Setlist Color/Volume/Comment row editors (frontend/pane.js) read/
+  // write through these two instead of setComment() above -- see
+  // makeFakeSlotBytes()'s own comment for how a mock 542-byte record is
+  // synthesized.
+  window.getSongRecordBytes = (datasetId, setlistIndex, songIndex) => {
+    const list = datasets[datasetId] && datasets[datasetId].songs[setlistIndex];
+    if (!list) return fail(`Dataset ${datasetId} has no file loaded`);
+    const entry = list.find((e) => e.index === songIndex);
+    if (!entry) return fail("No SBK1 record for that Set List slot");
+    return ok({ bytes: Array.from(makeFakeSlotBytes(entry)) });
+  };
+
+  window.putSongRecordBytes = (datasetId, setlistIndex, songIndex, bytes) => {
+    const list = datasets[datasetId] && datasets[datasetId].songs[setlistIndex];
+    if (!list) return fail(`Dataset ${datasetId} has no file loaded`);
+    const entry = list.find((e) => e.index === songIndex);
+    if (!entry || !Array.isArray(bytes) || bytes.length !== SBK_RECORD_SIZE) {
+      return fail("Couldn't write that Set List slot's record (wrong size, or index out of range)");
+    }
+    // Re-derive the mock entry's own fields from the written bytes, same
+    // discipline as the real PcgFile::putSongRecordBytes() -- a cached
+    // field must never go stale after a direct "raw bytes" write, even in
+    // mock mode.
+    entry.color = ((bytes[12] & 0x3c) >> 2) + 1;
+    entry.volume = bytes[16];
+    let end = 18;
+    while (end < bytes.length && bytes[end] !== 0) end++;
+    entry.comment = bytes.slice(18, end).map((b) => String.fromCharCode(b)).join("");
+    return ok();
+  };
+
   window.listPrograms = (datasetId) => Promise.resolve(datasets[datasetId] ? datasets[datasetId].programs : []);
 
   window.listCombis = (datasetId) => Promise.resolve(datasets[datasetId] ? datasets[datasetId].combis : []);
+
+  // Mirrors makeFakePrograms()'s own bank 0 = HD-1 / bank 1 = EXi convention,
+  // independent of which programs actually exist in a bank -- same as the
+  // real bridge's getProgramBankTypes(), which is a per-bank listing, not
+  // derived from any specific Program row.
+  window.getProgramBankTypes = (datasetId) =>
+    Promise.resolve(datasets[datasetId] ? [{ bank: 0, bankType: "HD-1" }, { bank: 1, bankType: "EXi" }] : []);
 
   window.getProgramUsage = (datasetId, bank, number) => {
     const dataset = datasets[datasetId];
@@ -240,12 +321,64 @@
     return ok({ setlistUsages, combiUsagesAvailable, combiUsages });
   };
 
+  // Mirrors EditorBridge::copyProgram()'s three rejection guards (see
+  // PcgFile::copyProgramFrom()'s doc comment for the real thing) using
+  // `name` as mock mode's stand-in for real byte content, same convention
+  // findDuplicatePrograms() above already uses -- mock data has no actual
+  // bytes to hash.
+  window.copyProgram = (srcDatasetId, srcBank, srcNumber, dstDatasetId, dstBank, dstNumber) => {
+    const srcDataset = datasets[srcDatasetId];
+    const dstDataset = datasets[dstDatasetId];
+    if (!srcDataset) return fail("Source dataset is no longer open.");
+    if (!dstDataset) return fail("Destination dataset is no longer open.");
+
+    const srcProgram = srcDataset.programs.find((p) => p.bank === srcBank && p.number === srcNumber);
+    if (!srcProgram) return fail("Can't copy: source or destination bank/number is out of range.");
+
+    const dstBankType = dstBank === 0 ? "HD-1" : "EXi";  // same convention as getProgramBankTypes() above
+    if (srcProgram.bankType !== dstBankType) {
+      return fail(
+        "Can't copy: source and destination banks are different engine types (HD-1/EXi) -- " +
+          "a Program can only be loaded into a bank of the matching type."
+      );
+    }
+
+    const existingAtTarget = dstDataset.programs.find((p) => p.bank === dstBank && p.number === dstNumber);
+    if (existingAtTarget && existingAtTarget.name) {
+      return fail("Can't copy: the destination slot already holds a different Program.");
+    }
+
+    const duplicate = dstDataset.programs.find(
+      (p) => p.name && p.name === srcProgram.name && !(srcDatasetId === dstDatasetId && p.bank === srcBank && p.number === srcNumber)
+    );
+    if (duplicate) {
+      return fail("Can't copy: a byte-identical Program already exists in the destination dataset.");
+    }
+
+    if (existingAtTarget) {
+      existingAtTarget.name = srcProgram.name;
+      existingAtTarget.bankType = dstBankType;
+    } else {
+      dstDataset.programs.push({
+        bank: dstBank,
+        number: dstNumber,
+        name: srcProgram.name,
+        bankType: dstBankType,
+        setlistReferenceCount: 0,
+        combiReferenceCountAvailable: true,
+        combiReferenceCount: 0,
+      });
+    }
+    return ok();
+  };
+
   window.findDuplicatePrograms = (datasetId) => {
     const dataset = datasets[datasetId];
     if (!dataset) return Promise.resolve([]);
 
     const byName = {};
     for (const p of dataset.programs) {
+      if (!p.name) continue;  // empty slots (makeFakePrograms()'s copyProgram() target) aren't "duplicates" of each other
       (byName[p.name] = byName[p.name] || []).push(p);
     }
     const groups = Object.values(byName)

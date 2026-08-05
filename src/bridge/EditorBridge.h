@@ -20,8 +20,10 @@
 // pointed at the same dataset edit the same in-memory file -- this is
 // deliberate, see docs/content/components/index.md's dataset section. Dataset
 // count is unbounded and nothing evicts a dataset except an explicit
-// closeDataset() call; nothing is ever written back to disk yet -- move/copy
-// only rearrange the in-memory Setlist struct, see README.md/STATE.md.
+// closeDataset() call; nothing is ever written back to *disk* yet (no Save
+// mechanism exists) -- Setlist moveEntry()/copyEntry() only rearrange the
+// in-memory Setlist struct, but copyProgram() and putSongRecordBytes() write
+// directly into the dataset's own retained raw bytes -- see README.md/STATE.md.
 class EditorBridge {
 public:
     choc::value::Value openFile(const choc::value::ValueView& args);    // [path] -> {ok, datasetId, displayName, setlistCount}
@@ -59,7 +61,30 @@ public:
 
     // [datasetId, setlistIndex, songIndex, newComment] -- in-memory only,
     // like move/copy; nothing is written back to disk (see README.md/STATE.md).
+    // Superseded by getSongRecordBytes()/putSongRecordBytes() for the real
+    // Setlist row editors (frontend/pane.js), which read-modify-write the
+    // Comment field through the same raw-byte path Color/Volume use --
+    // this older struct-only setter is unused by them, kept only in case
+    // something else still calls it directly.
     choc::value::Value setComment(const choc::value::ValueView& args);
+
+    // [datasetId, setlistIndex, songIndex] -> {ok, bytes:[0-255 x 542]} or
+    // {ok:false, error}. The raw SBK1 record for one Set List slot -- see
+    // PcgFile::songRecordBytes()'s doc comment. Decoded/edited entirely in
+    // JS (frontend/components/kronos/setlist-comment.js and
+    // setlist-slot-params.js), the same two-tier data-flow idea
+    // decodeProgram()/decodeCombi() already use for detail views.
+    choc::value::Value getSongRecordBytes(const choc::value::ValueView& args);
+
+    // [datasetId, setlistIndex, songIndex, bytes[0-255 x 542]] -> {ok} or
+    // {ok:false, error}. Writes straight into the dataset's retained raw
+    // bytes via PcgFile::putSongRecordBytes(), which also re-derives the
+    // decoded Song fields (params/comment) from what was just written --
+    // see that method's doc comment for why. This is the Setlist-side
+    // counterpart to copyProgram(): the second bridge method that writes
+    // directly into a dataset's retained raw bytes rather than only
+    // mutating in-memory bookkeeping.
+    choc::value::Value putSongRecordBytes(const choc::value::ValueView& args);
 
     // Library browser (read-only) -- see docs/README.md and STATE.md's
     // Program/Combi Library Editor plan for scope/roadmap.
@@ -67,6 +92,23 @@ public:
     choc::value::Value listCombis(const choc::value::ValueView& args);            // [datasetId]
     choc::value::Value getProgramUsage(const choc::value::ValueView& args);       // [datasetId, bank, number]
     choc::value::Value findDuplicatePrograms(const choc::value::ValueView& args); // [datasetId]
+
+    // [datasetId] -> [{bank, bankType}] for every Program bank in this file --
+    // lighter than listPrograms() for UI that labels a *bank* rather than a
+    // specific Program row (bank-filter buttons, a Set List slot's Bank-jump
+    // button). See PcgFile::programBankTypes()'s doc comment.
+    choc::value::Value getProgramBankTypes(const choc::value::ValueView& args);
+
+    // [srcDatasetId, srcBank, srcNumber, dstDatasetId, dstBank, dstNumber] ->
+    // {ok} or {ok:false, error}. Copies a Program's raw bytes from the source
+    // slot into the destination slot -- see PcgFile::copyProgramFrom()'s own
+    // doc comment for the exact validation guards (bank type must match,
+    // target slot must be empty, no byte-identical duplicate may already
+    // exist in the destination dataset). Same-dataset or cross-dataset both
+    // work (srcDatasetId may equal dstDatasetId). This is the first bridge
+    // method that writes directly into a dataset's retained raw bytes rather
+    // than only mutating in-memory bookkeeping -- see STATE.md.
+    choc::value::Value copyProgram(const choc::value::ValueView& args);
 
 private:
     struct Dataset {

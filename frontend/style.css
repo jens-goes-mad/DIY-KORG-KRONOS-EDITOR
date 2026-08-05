@@ -6,6 +6,43 @@
   --text: #e4e4e6;
   --text-dim: #9a9ba0;
   --accent: #5b8def;
+  /* Marks a Setlist row's Color/Comment/Volume editor state -- the left
+     border on the editor rows themselves (.editor-row td below) and the
+     "this row has an editor open" row highlight (.table tr.is-selected
+     below) both use this one orange so the two reinforce each other
+     visually, one token instead of two similar-but-different ones. */
+  --editor-accent: darkorange;
+}
+
+/* Overrides Bulma's own `.is-selected` row highlight (a green/teal derived
+   from its default primary color) for exactly this reason: this app only
+   ever uses `tr.is-selected` to mark "this Setlist row has an editor open"
+   (pane.js), so it should read as part of the same orange editor-row
+   language as --editor-accent above, not as an unrelated Bulma theme
+   color. A plain `background`/`color` declaration here (rather than
+   overriding the `--bulma-table-row-active-*` custom properties Bulma's
+   own rule reads) wins on SPECIFICITY alone -- `.table tr.is-selected` (two
+   classes + a type selector) beats Bulma's own `.is-selected` (one class)
+   outright, so this doesn't depend on load order or on knowing Bulma's
+   internal variable names at all. (A `var(some-color-keyword)` typo here
+   once silently did nothing -- `var()` only takes a `--custom-property`
+   name, not a plain keyword like `darkorange`; invalid `var()` values are
+   dropped by the parser instead of erroring, which is why a broken rule
+   like that shows up grayed out in devtools rather than as a visible
+   mistake.) */
+.table tr.is-selected {
+  background: var(--editor-accent);
+  color: #fff;
+}
+
+/* .instrument-name (the Combi/Program's own name, shown as a subtitle under
+   a Setlist row's label) sets its own `color: var(--text-dim)` (a dim gray)
+   further down -- a directly-set property on an element always wins over an
+   inherited one, so `tr.is-selected`'s `color: #fff` above never reaches it
+   on its own, leaving it barely readable against darkorange. Needs its own
+   override, specifically scoped to a selected row. */
+.table tr.is-selected .instrument-name {
+  color: #000;
 }
 
 * { box-sizing: border-box; }
@@ -251,27 +288,33 @@ body {
   background: var(--panel);
 }
 
-/* Below this point: Setlist-only. Programs/Combis/Duplicates rows aren't
-   draggable and have no per-row Comment (see library.js's own doc
-   comment), so drag/comment interaction states don't apply there. */
+/* Below this point: Setlist-only. Combis/Duplicates rows aren't draggable
+   and have no per-row Comment (see library.js's own doc comment), so those
+   two states don't apply there -- but Programs rows ARE draggable now too
+   (library.js), so the drag-related rules just below are shared with
+   .programs-table instead of staying Setlist-only. */
 
 .setlist-table .col-song {
   word-break: break-word;
 }
 
-.setlist-table tbody tr {
-  cursor: grab;
-}
-
-.setlist-table tbody tr.drop-target {
-  background: rgba(91, 141, 239, 0.25);
-  outline: 1px dashed var(--accent);
-  outline-offset: -1px;
-}
-
 td.has-comment {
   text-decoration: underline dotted var(--text-dim);
   text-underline-offset: 3px;
+}
+
+/* Shared by both draggable tables (Setlist rows, Programs rows) -- see
+   pane.js's Setlist drag handlers and library.js's Programs ones. */
+.setlist-table tbody tr,
+.programs-table tbody tr {
+  cursor: grab;
+}
+
+.setlist-table tbody tr.drop-target,
+.programs-table tbody tr.drop-target {
+  background: rgba(91, 141, 239, 0.25);
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
 }
 
 /* The Setlist table's Bank cell is a button (jumps to that exact Program/
@@ -284,6 +327,11 @@ td.has-comment {
   padding: 2px 8px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  /* Bulma's .button forces white-space: nowrap by default -- fine for the
+     plain "I-C 000" label, but the optional "(HD-1)"/"(EXi)" suffix
+     (pane.js) can make this too long for the column to fit on one line.
+     Wrap onto a second line instead of overflowing the cell. */
+  white-space: normal;
 }
 
 /* Still used by library.js's refCell() -- Combi usage counts aren't
@@ -304,9 +352,26 @@ td.has-comment {
   opacity: 0.6;
 }
 
-.comment-editor-row td {
+/* Generic class every Setlist editor row carries (comment-editor-row/
+   color-editor-row/volume-editor-row stay too, as hooks for anything that
+   ever needs to style one editor type differently -- nothing does yet).
+   The left border + extra left padding (10px, on top of the normal 8px)
+   is deliberate, not decorative -- an editor row reads too much like just
+   another table row otherwise; this orange edge is the visual cue that
+   it's a distinct "you're now editing" section, matching --editor-accent's
+   use for the "has an editor open" row highlight above.
+   Scoped to `.table.is-narrow .editor-row td`, not just `.editor-row td`,
+   specifically to out-specify Bulma's own `.table.is-narrow td{padding:
+   .25em .5em}` (bulma.min.css) -- that rule's two classes + element
+   (0,2,1) beat a plain `.editor-row td` (0,1,1) regardless of stylesheet
+   order, which is exactly why the 10px left padding was silently getting
+   overridden back down to Bulma's own .25em/.5em. Matching Bulma's own
+   `.table.is-narrow` prefix keeps this rule's specificity (0,3,1) safely
+   above it. */
+.table.is-narrow .editor-row td {
   background: var(--panel);
-  padding: 8px;
+  padding: 8px 8px 8px 10px;
+  border-left: 1px solid var(--editor-accent);
   cursor: default;
 }
 
@@ -343,6 +408,49 @@ td.has-comment {
   filter: brightness(1.1);
 }
 
+/* Same auto-fill/minmax grid idea as .bank-filter-row -- 16 equal-width
+   swatch buttons that wrap cleanly regardless of container width, instead
+   of flex-wrap's ragged last row. */
+.color-editor-row-inner {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(3.5em, 1fr));
+  gap: 4px;
+}
+
+.color-swatch-button {
+  border: 2px solid transparent;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);  /* keeps the (empty) label area legible over every swatch color, incl. White */
+}
+
+/* Bulma's own .is-link border color marks the row's CURRENT color, same
+   selected-state idiom the bank-filter buttons use elsewhere in this app. */
+.color-swatch-button.is-link {
+  border-color: #fff;
+}
+
+.volume-editor-row-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.volume-label {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.volume-slider {
+  flex: 1;
+}
+
+.volume-value {
+  min-width: 2.5em;
+  text-align: right;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--text);
+}
+
 .statusbar {
   padding: 6px 16px;
   border-top: 1px solid var(--border);
@@ -358,11 +466,16 @@ td.has-comment {
 
 /* One toggle button per bank on the Programs/Combis panels -- now a sibling
    ABOVE .library-body (library.js), not nested inside its scrolling area,
-   so it no longer scrolls out of view along with the table. Wraps since
-   there can be up to 20 buttons. */
+   so it no longer scrolls out of view along with the table. A real grid,
+   not flex-wrap -- flex-wrap just left each button hugging its own label's
+   width, which reads as ragged/misaligned once labels vary in length
+   ("I-A" vs "U-AA (EXi)"). `auto-fill`/`minmax` wraps into as many equal-
+   width columns as fit, each at least wide enough for the longest label
+   (Programs' own "U-AA (EXi)"), so every row of buttons lines up into a
+   clean grid regardless of how many banks are present. */
 .bank-filter-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5em, 1fr));
   gap: 4px;
   margin-bottom: 8px;
 }
@@ -378,14 +491,11 @@ td.has-comment {
   display: none;
 }
 
-/* Fixed, equal width -- since bank names are now uniformly short ("I-A".."I-G",
-   "G(d)", "U-A".."U-FF", see pane.js's PROGRAM_BANK_NAMES/COMBI_BANK_NAMES),
-   a shared width keeps the whole row's buttons aligned instead of each one
-   sizing to its own label. Bulma's `.button.is-small` already supplies
-   padding/font-size/disabled-opacity/cursor -- this is the one thing it
-   can't know on its own. */
+/* Fills its .bank-filter-row grid cell -- the grid (not the button itself)
+   is what makes every column the same width now; without this the button
+   would still just hug its own label inside a wider cell. */
 .bank-filter-button {
-  width: 3.6em;
+  width: 100%;
 }
 
 .library-body {
@@ -445,4 +555,47 @@ td.has-comment {
 .duplicate-group-title {
   font-weight: 600;
   margin-bottom: 6px;
+}
+
+/* Transient popups -- app.js's showToast(). Fixed to the viewport (not a
+   pane) so one appears the same way regardless of which pane's action
+   triggered it; stacks top-to-bottom if more than one is visible at once.
+   Deliberately NOT styled with --editor-accent/orange -- unlike the
+   Setlist editor-row styling above, this component is meant to be reused
+   for any future "needs to interrupt in the moment" message, not just the
+   Setlist edit-lock one it started with. Bulma's own semantic "warning"
+   color instead (its --bulma-warning/-invert pair, the same
+   background/text combination Bulma's own .notification.is-warning uses
+   internally) -- reuses Bulma's real color system rather than a one-off
+   hand-picked color, appropriate since a toast is inherently a "heads up"
+   message. */
+.toast-container {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 1000;
+  pointer-events: none;  /* never blocks clicks on whatever's underneath */
+}
+
+.toast {
+  background: var(--bulma-warning);
+  color: var(--bulma-warning-invert);
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast-visible {
+  opacity: 1;
+  transform: translateY(0);
 }

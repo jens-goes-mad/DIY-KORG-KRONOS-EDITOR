@@ -106,6 +106,10 @@ int main() {
         view.bind("moveEntry", [&bridge](const choc::value::ValueView& args) { return bridge.moveEntry(args); });
         view.bind("copyEntry", [&bridge](const choc::value::ValueView& args) { return bridge.copyEntry(args); });
         view.bind("setComment", [&bridge](const choc::value::ValueView& args) { return bridge.setComment(args); });
+        view.bind("getSongRecordBytes",
+                   [&bridge](const choc::value::ValueView& args) { return bridge.getSongRecordBytes(args); });
+        view.bind("putSongRecordBytes",
+                   [&bridge](const choc::value::ValueView& args) { return bridge.putSongRecordBytes(args); });
         view.bind("listPrograms",
                    [&bridge](const choc::value::ValueView& args) { return bridge.listPrograms(args); });
         view.bind("listCombis", [&bridge](const choc::value::ValueView& args) { return bridge.listCombis(args); });
@@ -113,6 +117,9 @@ int main() {
                    [&bridge](const choc::value::ValueView& args) { return bridge.getProgramUsage(args); });
         view.bind("findDuplicatePrograms",
                    [&bridge](const choc::value::ValueView& args) { return bridge.findDuplicatePrograms(args); });
+        view.bind("getProgramBankTypes",
+                   [&bridge](const choc::value::ValueView& args) { return bridge.getProgramBankTypes(args); });
+        view.bind("copyProgram", [&bridge](const choc::value::ValueView& args) { return bridge.copyProgram(args); });
     };
 
     auto webView = std::make_unique<choc::ui::WebView>(options);

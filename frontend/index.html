@@ -51,6 +51,13 @@
 
   <footer class="statusbar" id="statusBar">Ready.</footer>
 
+  <!-- Transient auto-dismissing popups (app.js's showToast()) -- one shared
+       container so toasts from either pane stack in the same place, fixed-
+       positioned (style.css) so it floats above everything regardless of
+       which category/pane triggered it. aria-live so a screen reader
+       announces a toast as it appears, same as it would the status bar. -->
+  <div class="toast-container" id="toastContainer" aria-live="polite"></div>
+
   <script src="datasets.js"></script>
   <script src="library.js"></script>
   <script src="pane.js"></script>
