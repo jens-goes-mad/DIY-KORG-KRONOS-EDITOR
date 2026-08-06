@@ -30,7 +30,7 @@
 //        await saveTestFile("/absolute/path/to/output.pcg")
 //      -- writes the whole dataset (your one real entry PLUS the 15 new
 //      test slots below, everything else untouched) to that path.
-//   7. Load output.pcg onto your Kronos and check slots 010-024 by eye.
+//   7. Load output.pcg onto your Kronos and check slots 010-029 by eye.
 //
 // Both functions default to SET LIST INDEX 0, SOURCE SLOT 0 (Kronos's own
 // 000-127 numbering) and the MOST RECENTLY OPENED dataset -- edit the
@@ -45,6 +45,15 @@ const TEST_MATRIX_SOURCE_SLOT = 0;
 // values, 127 = max) -- one each per group, in this fixed order.
 const TEST_MATRIX_FONT_SIZES = ["XS", "S", "M", "L", "XL"];
 const TEST_MATRIX_VOLUMES = [0, 1, 10, 100, 127];
+
+// Group 4's word-wrap probe: sequential 2-digit tokens ("01 02 03 ... 80"),
+// same text in all 5 Font sizes so wherever the real hardware breaks each
+// line can be read straight off the screen and reported back exactly (e.g.
+// "line 1 ends at 09, line 2 at 19") -- no ambiguity about which word is
+// which, unlike a real sentence. See frontend/readme-screen.txt's own
+// (unverified, likely fabricated) claims about Kronos text rendering --
+// this is how to actually find out, not guess.
+const TEST_MATRIX_WRAP_TEXT = Array.from({ length: 80 }, (_, i) => String(i + 1).padStart(2, "0")).join(" ");
 
 async function generateSetlistTestMatrix() {
   const datasets = await window.listDatasets();
@@ -101,7 +110,14 @@ async function generateSetlistTestMatrix() {
     await writeSlot(20 + i, { fontSize, volume, label: `TEST FontSize: ${fontSize} Volume: ${volume}` });
   }
 
-  console.log("Done -- 15 slots written (010-024). Now run: await saveTestFile(\"/absolute/path/to/output.pcg\")");
+  // Group 4 (slots 25-29): Font size only, same wrap-probe Comment text in
+  // every slot -- Volume left as the source's own, same as group 1.
+  for (let i = 0; i < TEST_MATRIX_FONT_SIZES.length; i++) {
+    const fontSize = TEST_MATRIX_FONT_SIZES[i];
+    await writeSlot(25 + i, { fontSize, volume: null, label: TEST_MATRIX_WRAP_TEXT });
+  }
+
+  console.log("Done -- 20 slots written (010-029). Now run: await saveTestFile(\"/absolute/path/to/output.pcg\")");
 }
 
 async function saveTestFile(path) {

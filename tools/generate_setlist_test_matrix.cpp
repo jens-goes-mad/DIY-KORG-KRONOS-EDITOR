@@ -1,12 +1,20 @@
 // Standalone hardware-validation CLI tool -- NOT part of the shipped app,
 // not linked into kronos_editor. Loads a real .PCG/.SNG file, writes a
 // matrix of Setlist Color/Volume/Comment/Font-size test permutations into
-// Set List 0's slots 010-024 (leaving slot 000, the source entry, and
+// Set List 0's slots 010-029 (leaving slot 000, the source entry, and
 // everything else in the file untouched), and saves the result next to the
 // input as "<name>-test<ext>" -- so the output can be loaded onto a real
 // Kronos and checked by eye, slot by slot. See STATE.md for the full
 // rationale: this is how every confirmed byte offset in this project has
 // been verified -- real ground truth, not a plausible-looking guess.
+//
+// Slots 025-029 (group 4) specifically probe word-wrap: the same sequential
+// numbered-token Comment text ("01 02 03 ... 80") at each of the 5 Font
+// sizes, so wherever the real hardware breaks each line can be read
+// straight off the screen and reported back exactly -- see
+// frontend/readme-screen.txt's own (unverified, likely fabricated) claims
+// about Kronos text rendering for why this needed a real check rather than
+// trusting a plausible-looking guess.
 //
 // tools/generate_setlist_test_matrix.js is the equivalent devtools-console
 // version -- same idea, driven through the real running app's bridge
@@ -61,6 +69,17 @@ constexpr size_t kRecordSize = 542;
 const char* const kFontSizeNames[5] = {"XS", "S", "M", "L", "XL"};
 constexpr int kFontSizeValues[5] = {1, 0, 2, 3, 4};
 constexpr int kVolumes[5] = {0, 1, 10, 100, 127};
+
+// Group 4's word-wrap probe text: "01 02 03 ... 80", built once in main().
+std::string makeWrapTestText() {
+    std::string text;
+    for (int i = 1; i <= 80; ++i) {
+        if (i > 1) text += ' ';
+        if (i < 10) text += '0';
+        text += std::to_string(i);
+    }
+    return text;
+}
 
 // Mirrors setlist-comment.js's encodeSetlistComment() -- masked read-
 // modify-write so this never touches Color/Transpose/the still-unexplained
@@ -164,6 +183,13 @@ int main(int argc, char** argv) {
     for (int i = 0; i < 5; ++i) {
         const std::string label = std::string("TEST FontSize: ") + kFontSizeNames[i] + " Volume: " + std::to_string(kVolumes[i]);
         ok = writeSlot(pcg, 20 + i, sourceBytes, kFontSizeValues[i], kVolumes[i], label, error) && ok;
+    }
+
+    // Group 4 (slots 25-29): Font size only, same wrap-probe Comment text in
+    // every slot -- Volume left as the source's own, same as group 1.
+    const std::string wrapTestText = makeWrapTestText();
+    for (int i = 0; i < 5; ++i) {
+        ok = writeSlot(pcg, 25 + i, sourceBytes, kFontSizeValues[i], originalVolume, wrapTestText, error) && ok;
     }
 
     if (!ok) {

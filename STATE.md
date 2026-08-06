@@ -666,21 +666,53 @@ full rationale):
         deliberately byte-for-byte mirroring the JS codecs, with an explicit comment
         flagging that if the confirmed encoding for these fields ever changes, this
         needs to change with it.
-    - Both generate the same fixed matrix into one Set List's slots 010-024 (source
+    - Both generate the same fixed matrix into one Set List's slots 010-029 (source
       entry at slot 000 -- these constants are edit-in-place if a different setlist/slot
       layout is ever needed): slots 10-14 vary Font size only (XS/S/M/L/XL, ascending),
       15-19 vary Volume only (0/1/10/100/127), 20-24 vary both together (the same 5
       pairings combined) -- each slot's Comment states exactly which value(s) it's
       testing, so the result is legible directly on the Kronos's own screen without
       cross-referencing anything.
+    - **Group 4 (slots 25-29, ADDED 2026-08-06)**: a word-wrap probe, prompted directly
+      by `frontend/readme-screen.txt` -- an untracked file with specific, confident-
+      sounding claims about the Kronos's screen resolution (800x600) and rendering font
+      (Helvetica-family), with zero citation for either and a resolution that doesn't
+      match what's commonly documented for the Kronos's actual TouchView display
+      (800x480). Treated as exactly what this project's whole methodology exists to
+      reject -- a plausible-looking guess -- and answered the same way every other
+      confirmed byte offset in this project has been: check it for real, don't debate
+      it. All 5 slots carry the SAME Comment (`"01 02 03 ... 80"`, sequential 2-digit
+      tokens, only Font size varies) -- unambiguous to read off the hardware screen and
+      report back exactly where each size wraps ("line 1 ends at 09, line 2 at 19"),
+      and directly comparable across sizes since the text itself never changes.
     - Verified end to end (not just "it compiles"): ran the CLI tool against a real
       minimal KORG-magic file, then independently re-decoded the output with a fresh
-      Python script (not reusing any of this project's own code) -- confirmed all 15
+      Python script (not reusing any of this project's own code) -- confirmed all 20
       test slots' Font size/Volume/Comment bytes exactly match what was requested, and
       that the source slot and every other untouched slot in the file were unaffected.
-    - **Not yet done**: the actual real-hardware check this whole thing exists for --
-      load the generated file onto a real Kronos and confirm every slot reads back as
-      intended. That's the next step, by hand, outside this codebase.
+    - **CONFIRMED on real hardware, 2026-08-06**: the generated file loaded onto a real
+      Kronos with no issues at all -- meaningful beyond just this test, since it's the
+      first real evidence that `PcgFile::save()`'s naive verbatim `data_` dump is
+      actually accepted by the hardware, not just by this app's own reader. (Only
+      tested so far against a minimal SDB1/SBK1-only file, not a full real backup with
+      its original PRG1/CMB1/etc. content intact -- worth confirming that case too
+      before trusting this broadly, see Blind Spot #9.) Every slot 010-024 read back
+      exactly as written. Group 4's wrap points, read directly off the screen (each
+      line's last token number, project owner's own report, one typo corrected in a
+      follow-up): every Font size wraps at a perfectly constant tokens-per-line count,
+      no exceptions across any line --
+        XS=40, S=35, M=30, L=19, XL=8 (tokens of the probe's `"NN "` shape, 3 chars
+        each, per line).
+      Notably non-linear in a structured way: XS->S->M step by exactly -5 each time,
+      then M->L->XL step by exactly -11 each time -- consistent with real integer
+      pixel-width quantization (line pixel width / per-character pixel width, floored)
+      rather than a simple linear formula, which is exactly the kind of texture real
+      hardware measurements produce and a fabricated guess (see `readme-screen.txt`
+      above) would not. This single-token-shape result doesn't by itself prove general
+      proportional-font behavior (a real sentence's varying word lengths could still
+      wrap differently) or reveal the actual screen resolution/font -- both remain
+      unconfirmed; a longer single unbreakable "word" per size would be the natural next
+      probe if that's ever needed for an in-app wrap-preview feature.
   - **Explicitly not committed to being final**: both the project owner and this
     assistant agreed to revisit/rethink this shape as each piece (Program decoder now
     done; chunk-based component wiring next) proves itself against real tests and the
@@ -1457,23 +1489,29 @@ App/UI:
      `readComment()` nor `setComment()` does any trimming, so the cause
      isn't obvious from code inspection alone; repro steps needed (typed
      fresh via Apply vs. already present in the source file).
-  9. **First piece BUILT 2026-08-06, real-hardware validation still pending**:
+  9. **First piece BUILT 2026-08-06; real-hardware round-trip CONFIRMED the same
+     day for a minimal file** -- still real gaps remain, see below.
      `PcgFile::save()`/`EditorBridge::saveFileAs()` (see "ARCHITECTURE" above)
      write the retained bytes straight to disk -- a naive verbatim `data_`
-     dump, no Save UI wired up (no dialog, no dirty-tracking), and critically
-     **not yet confirmed a real Kronos will actually accept the result**. The
-     project owner's actual bar is higher than "this app can re-open the
-     file": loading it back onto real hardware. Two tools
-     (`tools/generate_setlist_test_matrix.{js,cpp}`) generate a matrix of
-     Comment/Color/Volume/Font-size test permutations across 15 Set List
-     slots specifically to check that by eye on a real unit -- verified so
-     far only against this project's own independent re-decode of the
-     output bytes, NOT against real hardware yet (that's the actual open
-     question). If the hardware rejects the file, the file-header checksum
-     flag (§1.1, byte offset 8, confirmed present as `0x01` on the one real
-     sample checked so far, but where any such checksum would actually live
-     and over what byte range is completely uninvestigated, see Format blind
-     spot list above) is the prime suspect to chase down next.
+     dump, no Save UI wired up (no dialog, no dirty-tracking). The project
+     owner's actual bar was higher than "this app can re-open the file":
+     loading it back onto real hardware -- **confirmed working**: a file
+     generated by `tools/generate_setlist_test_matrix.{js,cpp}` (a minimal
+     SDB1/SBK1-only file, one real entry plus 20 generated test slots) loaded
+     onto a real Kronos with no issues, and every generated slot (Comment/
+     Color/Volume/Font size, plus the Group 4 word-wrap probe) read back
+     exactly as written -- see the "ARCHITECTURE" entry above for the full
+     wrap-point results. This is real evidence the naive verbatim dump is
+     hardware-acceptable, not just accepted by this app's own reader.
+     **Still open**: this was only tested against a minimal file with no
+     PRG1/CMB1/etc. content -- a full real backup (this app's actual primary
+     use case) round-tripped through load-edit-save hasn't been checked yet,
+     and the file-header checksum flag (§1.1, byte offset 8, confirmed
+     present as `0x01` on the one real sample checked so far, but where any
+     such checksum would actually live and over what byte range is still
+     completely uninvestigated, see Format blind spot list above) remains a
+     real question mark for a larger/more complex file even though this
+     minimal one worked.
   10. Filter/search and row drag-swap/drag-copy interactions have been
       exercised by the project owner in the real app for file-open and
       name-lookup verification, but not explicitly confirmed end-to-end
