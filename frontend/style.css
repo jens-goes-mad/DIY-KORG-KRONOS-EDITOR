@@ -352,14 +352,18 @@ td.has-comment {
   opacity: 0.6;
 }
 
-/* Generic class every Setlist editor row carries (comment-editor-row/
-   color-editor-row/volume-editor-row stay too, as hooks for anything that
-   ever needs to style one editor type differently -- nothing does yet).
-   The left border + extra left padding (10px, on top of the normal 8px)
-   is deliberate, not decorative -- an editor row reads too much like just
-   another table row otherwise; this orange edge is the visual cue that
-   it's a distinct "you're now editing" section, matching --editor-accent's
-   use for the "has an editor open" row highlight above.
+/* The one editor <tr> a Setlist slot gets while its editor panel is open
+   (pane.js's buildEditorRow()) -- one panel per slot, not one row per open
+   section (changed 2026-08-05: three separate look-alike orange-bordered
+   rows per slot read as unrelated table rows rather than one coherent
+   "you're editing this" panel; changed again the same day into a real
+   accordion, per explicit feedback that plain stacked sections with no
+   title/chevron and no dedicated close control weren't recognizable as
+   collapsible UI and left no way to dismiss everything in one click). The
+   left border + extra left padding (10px, on top of the normal 8px) is
+   deliberate, not decorative -- this orange edge is the visual cue that
+   it's a distinct panel, matching --editor-accent's use for the "has an
+   editor open" row highlight above.
    Scoped to `.table.is-narrow .editor-row td`, not just `.editor-row td`,
    specifically to out-specify Bulma's own `.table.is-narrow td{padding:
    .25em .5em}` (bulma.min.css) -- that rule's two classes + element
@@ -375,7 +379,100 @@ td.has-comment {
   cursor: default;
 }
 
-.comment-editor-row-inner {
+/* `position: relative` anchor for .editor-panel-close below. */
+.editor-panel {
+  position: relative;
+}
+
+/* The ONE way to fully dismiss a slot's editor panel (pane.js's
+   closePanel()) -- top-right of the panel, the conventional spot for a
+   dialog/panel dismiss control, deliberately separate from the three
+   accordion headers below so it reads as "close everything" rather than
+   as a fourth toggle. */
+.editor-panel-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.editor-panel-close:hover {
+  color: var(--text);
+}
+
+/* Always shows all three Color/Comment/Volume accordion headers (pane.js's
+   buildEditorRow()), in that fixed order, regardless of which are
+   individually expanded -- a thin top border between consecutive sections
+   is the only visual seam, deliberately subtle (not another full border/
+   background box each) since they're meant to read as one panel, not
+   three. */
+.editor-row-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.accordion-section + .accordion-section {
+  border-top: 1px solid var(--border);
+}
+
+.accordion-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: inherit;  /* not using Bulma's .button reset here, so this needs to be explicit or the browser's default UI font leaks in */
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  padding: 8px 24px 8px 0;  /* right padding leaves room for .editor-panel-close, top-right of the panel */
+}
+
+.accordion-header:hover {
+  color: var(--accent);
+}
+
+.accordion-chevron {
+  display: inline-block;
+  width: 1em;
+  color: var(--text-dim);
+}
+
+.accordion-content {
+  padding: 0 0 12px 1.5em;  /* indented under the chevron/title above it */
+}
+
+/* Column: the Font size bar sits above the textarea+Apply row -- was
+   accidentally dropped when Comment editing moved from the old standalone
+   setlist-comment.js component (which had both) into pane.js's own
+   accordion section (which initially only ported the textarea). Brought
+   back 2026-08-06. */
+.comment-editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comment-fontsize-bar {
+  display: flex;
+  gap: 4px;
+}
+
+.fontsize-button {
+  min-width: 2.5em;  /* consistent width across "XS".."XL"'s varying label lengths */
+}
+
+.comment-editor-text-row {
   display: flex;
   gap: 8px;
   align-items: flex-start;
@@ -394,26 +491,17 @@ td.has-comment {
   overflow-y: hidden;  /* grown to fit content in JS instead of scrolling */
 }
 
-.comment-editor-row-inner button {
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  padding: 5px 12px;
-  cursor: pointer;
-  align-self: flex-start;
-}
-
-.comment-editor-row-inner button:hover {
-  filter: brightness(1.1);
-}
-
-/* Same auto-fill/minmax grid idea as .bank-filter-row -- 16 equal-width
-   swatch buttons that wrap cleanly regardless of container width, instead
-   of flex-wrap's ragged last row. */
-.color-editor-row-inner {
+/* A fixed 8-column grid (not auto-fill/minmax, like .bank-filter-row uses
+   -- that's the right call for a row of unpredictable-width bank labels,
+   but wrong here) -- 16 known, always-present color swatches read best as
+   a clean, predictable 2 rows of 8, not however many minmax(3.5em, ...)
+   happens to fit at the accordion content's narrower width (indented
+   1.5em under its header, unlike the old full-width panel this rule was
+   first written for). Buttons just shrink to fit their 1/8th share of the
+   row instead of wrapping unevenly. */
+.color-editor-section {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(3.5em, 1fr));
+  grid-template-columns: repeat(8, 1fr);
   gap: 4px;
 }
 
@@ -429,7 +517,7 @@ td.has-comment {
   border-color: #fff;
 }
 
-.volume-editor-row-inner {
+.volume-editor-section {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -463,6 +551,26 @@ td.has-comment {
    (Bulma's `.button.is-small`, library.js's renderBankFilterRow()) both
    moved off the old hand-rolled `.lib-tab` class -- nothing uses it
    anymore, removed entirely rather than left as dead code. */
+
+/* "Select: None/All/Invert" -- library.js's createSelectControlRow(),
+   sitting above .bank-filter-row (below) so it reads as acting on the
+   buttons right underneath it. Same `[hidden]` override reasoning as
+   .bank-filter-row[hidden] just below -- this rule's own unconditional
+   `display: flex` is normal author CSS, which beats the `[hidden]`
+   attribute's UA-stylesheet styling regardless of specificity. */
+.select-control-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.select-control-row[hidden] {
+  display: none;
+}
+
+.select-control-button {
+  min-width: 4.5em;
+}
 
 /* One toggle button per bank on the Programs/Combis panels -- now a sibling
    ABOVE .library-body (library.js), not nested inside its scrolling area,

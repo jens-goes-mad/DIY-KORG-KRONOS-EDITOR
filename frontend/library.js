@@ -20,6 +20,10 @@
 function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDropProgram }) {
   root.innerHTML = `
     <input class="filter-input library-filter input is-small" type="text" placeholder="Filter / search..." />
+    <div class="select-control-area">
+      <div class="select-control-row" data-select-control="programs"></div>
+      <div class="select-control-row" data-select-control="combis" hidden></div>
+    </div>
     <div class="bank-filter-area">
       <div class="bank-filter-row" data-bank-filter="programs"></div>
       <div class="bank-filter-row" data-bank-filter="combis" hidden></div>
@@ -57,6 +61,13 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
   const bankFilterRows = {
     programs: root.querySelector('[data-bank-filter="programs"]'),
     combis: root.querySelector('[data-bank-filter="combis"]'),
+  };
+  // Select-none/all/invert row, one per category, sitting between the
+  // Filter input and the bank-filter buttons -- same show/hide-by-
+  // `currentTab` treatment as bankFilterRows (Duplicates has neither).
+  const selectControlRows = {
+    programs: root.querySelector('[data-select-control="programs"]'),
+    combis: root.querySelector('[data-select-control="combis"]'),
   };
 
   // Set during a Programs row's own dragstart, cleared on dragend -- lets a
@@ -140,6 +151,51 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
     });
   }
 
+  // "Select: None/All/Invert" -- a small reusable component (Programs and
+  // Combis both need one, hence a shared function rather than writing it
+  // twice) that bulk-mutates a bank-filter Set instead of toggling one bank
+  // at a time. Wired up ONCE per category (unlike renderBankFilterRow,
+  // which re-renders on every filter change to reflect each bank's
+  // pressed/unpressed state) -- these three buttons have no state of their
+  // own to reflect, so there's nothing to redraw after a click, only the
+  // bank buttons and table need refreshing (`onChange`).
+  //
+  // `getFilterSet`/`getPresent` are passed as functions, not the Set
+  // values directly -- load() (below) REASSIGNS programBankFilter/
+  // programPresentBanks etc. to a brand-new Set on every dataset load
+  // rather than mutating the existing one in place, so a plain captured
+  // reference taken once at setup time would silently start operating on
+  // a stale, disconnected Set after the very first load().
+  function createSelectControlRow(container, { getPresent, getFilterSet, onChange }) {
+    const actions = [
+      ["None", (filterSet) => filterSet.clear()],
+      [
+        "All",
+        (filterSet, present) => {
+          filterSet.clear();
+          present.forEach((bank) => filterSet.add(bank));
+        },
+      ],
+      [
+        "Invert",
+        (filterSet, present) => {
+          present.forEach((bank) => (filterSet.has(bank) ? filterSet.delete(bank) : filterSet.add(bank)));
+        },
+      ],
+    ];
+    for (const [label, apply] of actions) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "button is-small select-control-button";
+      btn.textContent = label;
+      btn.addEventListener("click", () => {
+        apply(getFilterSet(), getPresent());
+        onChange();
+      });
+      container.appendChild(btn);
+    }
+  }
+
   function refreshProgramBankButtons() {
     renderBankFilterRow(
       bankFilterRows.programs,
@@ -156,6 +212,26 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
       renderCombisPanel()
     );
   }
+
+  // Wired up once (not re-created per load()/refresh) -- see
+  // createSelectControlRow()'s own comment for why getters instead of
+  // captured Set values.
+  createSelectControlRow(selectControlRows.programs, {
+    getPresent: () => programPresentBanks,
+    getFilterSet: () => programBankFilter,
+    onChange: () => {
+      refreshProgramBankButtons();
+      renderProgramsPanel();
+    },
+  });
+  createSelectControlRow(selectControlRows.combis, {
+    getPresent: () => combiPresentBanks,
+    getFilterSet: () => combiBankFilter,
+    onChange: () => {
+      refreshCombiBankButtons();
+      renderCombisPanel();
+    },
+  });
 
   function filterByName(rows, needle) {
     if (!needle) return rows;
@@ -204,7 +280,7 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
 
   function buildUsageRow(program) {
     const tr = document.createElement("tr");
-    tr.className = "comment-editor-row";  // reuses the existing expand-row look from pane.js
+    tr.className = "editor-row";  // reuses the shared expand-row look from pane.js/style.css
     const td = document.createElement("td");
     td.colSpan = 5;  // Bank, Name, Type, #STL, #CMB -- a real <table> again
 
@@ -408,7 +484,7 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
 
   function buildTimbreRow(combi) {
     const tr = document.createElement("tr");
-    tr.className = "comment-editor-row";
+    tr.className = "editor-row";  // reuses the shared expand-row look from pane.js/style.css
     const td = document.createElement("td");
     td.colSpan = 4;  // Bank, Name, Set Lists, #STL -- a real <table> again
 
@@ -543,8 +619,12 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
     Object.entries(panels).forEach(([panelName, el]) => {
       el.hidden = panelName !== currentTab;
     });
-    // Duplicates has no bank-filter row at all -- both stay hidden there.
+    // Duplicates has no bank-filter row (or select-control row) at all --
+    // both stay hidden there.
     Object.entries(bankFilterRows).forEach(([rowName, el]) => {
+      el.hidden = rowName !== currentTab;
+    });
+    Object.entries(selectControlRows).forEach(([rowName, el]) => {
       el.hidden = rowName !== currentTab;
     });
     renderCurrentTab();

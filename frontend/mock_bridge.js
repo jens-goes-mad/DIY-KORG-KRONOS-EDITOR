@@ -44,30 +44,41 @@
       color: (k % 16) + 1,  // cycle through all 16 real colors (pane.js's SETLIST_COLOR_NAMES/_HEX) for visual testing
       holdTime: 5,
       volume: 127,
+      fontSize: "S",  // baseline/default, matches SlotParams' own default (PcgFile.h)
       comment: "",
       instrumentName: "",
     };
   }
+
+  // Same encoding setlist-comment.js's encodeSetlistComment() uses (bits
+  // 6-7 of byte+12, bit 4 of byte+17) -- duplicated by hand here rather
+  // than importing that module, matching this file's existing pattern for
+  // Color (below) and Volume: a plain script, not built to load ES modules.
+  const FONT_SIZE_VALUE = { S: 0, XS: 1, M: 2, L: 3, XL: 4 };
+  const FONT_SIZE_BY_VALUE = ["S", "XS", "M", "L", "XL"];
 
   // Mock mode has no real SBK1 bytes to hand back -- getSongRecordBytes()/
   // putSongRecordBytes() below need SOME 542-byte buffer that the real
   // frontend/components/kronos codecs can decode/encode against, so this
   // synthesizes one from a fake entry's own fields, close enough to the
   // real byte layout (docs/README.md §4.3, src/kronos/PcgFile.cpp's kSbk*
-  // constants) for Color (byte+12 bits2-5)/Volume (byte+16)/Comment
-  // (byte+18..) to round-trip correctly. Font size/Transpose/isProgram's
-  // other bits aren't reconstructed (mock entries don't track them), so
-  // they'll always decode as their zero/default value here -- fine, no mock
-  // UI reads them yet.
+  // constants) for Color (byte+12 bits2-5)/Volume (byte+16)/Font size
+  // (byte+12 bits6-7 + byte+17 bit4)/Comment (byte+18..) to round-trip
+  // correctly. Transpose/isProgram's other bits aren't reconstructed (mock
+  // entries don't track them), so they'll always decode as their zero/
+  // default value here -- fine, no mock UI reads them.
   const SBK_RECORD_SIZE = 542;
   function makeFakeSlotBytes(entry) {
     const bytes = new Uint8Array(SBK_RECORD_SIZE);
     const colorField = ((Math.max(1, Math.min(16, entry.color)) - 1) << 2) & 0x3c;
-    bytes[12] = colorField | (entry.isProgram ? 0x01 : 0x00);
+    const fontValue = FONT_SIZE_VALUE[entry.fontSize] ?? FONT_SIZE_VALUE.S;
+    const fontLowBits = (fontValue & 2 ? 0x80 : 0) | (fontValue & 1 ? 0x40 : 0);
+    bytes[12] = colorField | fontLowBits | (entry.isProgram ? 0x01 : 0x00);
     bytes[13] = entry.bank & 0x1f;
     bytes[14] = entry.number & 0xff;
     bytes[15] = (entry.holdTime + 1) & 0xff;
     bytes[16] = Math.max(0, Math.min(127, entry.volume));
+    bytes[17] = fontValue & 4 ? 0x10 : 0x00;
     const comment = entry.comment || "";
     for (let i = 0; i < comment.length && 18 + i < SBK_RECORD_SIZE - 1; i++) {
       bytes[18 + i] = comment.charCodeAt(i) & 0xff;
@@ -275,6 +286,8 @@
     // mock mode.
     entry.color = ((bytes[12] & 0x3c) >> 2) + 1;
     entry.volume = bytes[16];
+    const fontValue = (bytes[17] & 0x10 ? 4 : 0) | (bytes[12] & 0x80 ? 2 : 0) | (bytes[12] & 0x40 ? 1 : 0);
+    entry.fontSize = FONT_SIZE_BY_VALUE[fontValue] || "S";
     let end = 18;
     while (end < bytes.length && bytes[end] !== 0) end++;
     entry.comment = bytes.slice(18, end).map((b) => String.fromCharCode(b)).join("");

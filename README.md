@@ -100,21 +100,25 @@ between.
 - **Setlist**: the 128-slot browsing/filtering/drag-and-drop described above,
   plus a Bank-jump button per slot that switches that same pane to
   Programs/Combis and scrolls straight to the exact entry it points at. Each
-  slot's Color, Volume, and Comment are directly editable (click #, Vol, or
-  Song/Type respectively) -- Color and Volume commit immediately, Comment via
-  an Apply button, and several can be open on the same slot at once. If both
-  panes point at the same Set List of the same dataset, editing a slot
-  already open in the other pane is blocked (with an explanatory popup)
-  rather than risking one edit silently overwriting the other's.
+  slot has one editor panel (click #, Vol, or Song/Type to open it) with a
+  collapsible section per field -- Color, Volume, Comment+Font size -- several
+  can be expanded at once, and one Close button dismisses the whole panel.
+  Color/Volume commit immediately; Comment+Font size via Apply. If both panes
+  point at the same Set List of the same dataset, editing a slot already open
+  in the other pane is blocked (with an explanatory popup) rather than
+  risking one edit silently overwriting the other's -- see
+  [App architecture & components](https://jens-goes-mad.github.io/DIY-KORG-KRONOS-EDITOR/components/)
+  for exactly how that's implemented.
 - **Programs / Combis / Duplicates**: browse every Program and Combi on the
-  unit directly (not just through Set List slots), filter by bank, see which
-  Set List slots directly reference a given Program, and find Programs that
-  are byte-for-byte duplicates of each other. Read-only -- this is Phase 1
-  of a larger plan (see `STATE.md`'s "Program/Combi Library Editor" section)
-  that eventually aims to delete unused duplicates and repoint Combis at a
-  single kept copy; that part needs a currently-unparsed piece of the format
-  (a Combi's internal Timbre-to-Program references) and a safe write-back
-  mechanism this app has never had, so it's deliberately not built yet.
+  unit directly (not just through Set List slots), filter by bank (a
+  None/All/Invert row bulk-toggles the bank filter), see which Set List slots
+  directly reference a given Program, and find Programs that are byte-for-byte
+  duplicates of each other. Read-only -- this is Phase 1 of a larger plan
+  (see `STATE.md`'s "Program/Combi Library Editor" section) that eventually
+  aims to delete unused duplicates and repoint Combis at a single kept copy;
+  that part needs a currently-unparsed piece of the format (a Combi's
+  internal Timbre-to-Program references) and a safe write-back mechanism
+  this app has never had, so it's deliberately not built yet.
 
 ![DIY Kronos Editor - Combi](README-Combi.png)
 

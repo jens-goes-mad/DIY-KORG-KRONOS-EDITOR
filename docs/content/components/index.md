@@ -73,11 +73,12 @@ tiers:
   hashing every Program for dedup is genuinely faster in native code than doing the
   same scan in a WebView's JS engine, and it avoids shipping a large amount of data
   across the JS/native bridge for something already sitting in native memory.
-- **Detail/edit views** (Comment + Font size today) request the *specific raw byte
-  chunk* they're working on from the bridge, and decode/encode it entirely in
-  JavaScript -- exactly what `setlist-comment.js` already does. This is where "test
-  without building the native app" actually matters, since that's the UI a human
-  iterates on directly.
+- **Detail/edit views** (a Set List slot's Comment/Font size/Color/Volume today)
+  request the *specific raw byte chunk* they're working on from the bridge, and
+  decode/encode it entirely in JavaScript -- exactly what `setlist-comment.js` and
+  `setlist-slot-params.js` already do, see the case study below for the full loop.
+  This is where "test without building the native app" actually matters, since
+  that's the UI a human iterates on directly.
 
 Writes from the JS side go straight back into the native buffer immediately (a
 `putRecordBytes()`-style bridge call), rather than being tracked as a separate pending
@@ -224,6 +225,132 @@ the whole loop working end to end:
    (clear only the bits a field owns, then OR in the new value) so editing Font size can
    never corrupt Color, Transpose, or the handful of bits in this format that are still
    completely unexplained.
+
+This codec is also, as of the real editor panels described next, wired into `pane.js`
+against the actual loaded file -- see below for how a codec goes from a standalone test
+harness to a live, writable piece of the real app.
+
+## Case study: the Setlist editor panel -- attach, decode/encode, write back, discard
+
+A Set List slot's Color/Comment/Volume editors (`pane.js`) are the most complete example
+so far of the whole loop this page describes actually running live, not just in a test
+harness -- and they surface a real correctness problem (two panes editing the same raw
+bytes) that only shows up once a component is wired into a stateful app, not something
+a standalone codec test would ever catch. Worth walking through in detail since the
+shape here -- one shared byte buffer, one write path, state that fully discards itself
+on close -- is the template for any future row-level editor in this app, Kronos-specific
+or generic.
+
+### How a panel attaches to a row
+
+Clicking a Set List row's `#`, `Vol`, or `Song`/`Type` cell calls `pane.js`'s
+`openSection(entry, type)` -- the single entry point for opening *and* for toggling a
+section that's already open (a click on an accordion header inside an open panel calls
+the exact same function). The first time any section opens for a given slot, `openSection`:
+
+1. Checks a cross-pane lock (more below) and bails out with a toast if another pane
+   already has this exact slot open.
+2. Fetches the slot's raw 542-byte SBK1 record via `window.getSongRecordBytes(datasetId,
+   setlistIndex, songIndex)` and lazily loads the two codecs (`setlist-comment.js`,
+   `setlist-slot-params.js`) via a cached dynamic `import()` -- a plain expression, not a
+   static `import` statement, which is what lets it work from inside `pane.js` even
+   though `index.html`'s scripts are all classic (non-`module`) `<script>` tags.
+3. Only once both are ready does it mark the slot as having an open panel and re-render.
+
+Every section builder (`buildColorSection`/`buildCommentSection`/`buildVolumeSection`)
+can then assume, synchronously, that a row's raw bytes and the codecs are both already
+available -- no per-section "still loading" state needed anywhere downstream.
+
+### One shared byte buffer, one write path
+
+All three sections on one slot's panel -- Color, Comment, Volume -- read and write
+through the *same* cached `Uint8Array` (`slotBytesCache`, keyed by song index), not
+three independent copies. This matters because Comment originally didn't work this way:
+it used to call a separate bridge method (`setComment`) that only mutated a decoded
+struct field in memory, never touching raw bytes at all. That was harmless when Comment
+was the only editable field, but once Color/Volume could be open on the *same* row and
+write raw bytes directly, it became a real bug -- a raw-byte write re-derives every
+decoded field (comment included) from the bytes it just wrote, so committing a Color
+change after typing an unapplied Comment edit would silently discard the typed text. The
+fix was to retrofit Comment onto the same raw-byte path, not to keep it as a special
+case: every edit -- Color's immediate-apply click, Volume's slider-release, Comment's
+Apply button -- funnels through one function, `commitSlotBytes(entry, newBytes)`, which:
+
+1. Writes `newBytes` back via `window.putSongRecordBytes(datasetId, setlistIndex,
+   songIndex, bytes)`.
+2. Updates `slotBytesCache` with the newly-written bytes, so the *next* edit (of any
+   type, in the same panel) starts from what was actually just written, not from a stale
+   snapshot.
+3. Re-derives the row's own display fields (`entry.comment`, `entry.color`,
+   `entry.volume`, `entry.fontSize`) directly from those same bytes, via the same JS
+   codecs -- no bridge round-trip needed to refresh what the table shows.
+4. Re-renders.
+
+On the native side, `PcgFile::putSongRecordBytes()` mirrors this exactly: it writes into
+the file's retained raw buffer (`data_`), then re-runs the *existing* `readSlotParams()`/
+`readComment()` (the same functions the initial load uses) on just the newly-written
+bytes, so the cached `Song` struct never goes stale after a direct write -- the same
+discipline `copyProgramFrom()` already established for Programs. Locating a slot's exact
+byte range needed no new per-record lookup table, either: unlike Programs (whose bank
+records vary in size, hence `programBankLocations_`), every Set List's song records sit
+at a fixed 542-byte stride from one retained anchor (`sbkSongsStart_`, captured once
+during the existing SBK1 parse), so `songRecordBytes()`/`putSongRecordBytes()` just do
+the arithmetic.
+
+### Discarding a panel: nothing to clean up
+
+`renderRows()` rebuilds the whole `<tbody>` from current state on every change
+(`tbody.innerHTML = ""`, then re-append every visible row). A slot's editor `<tr>` exists
+in the DOM if and only if that slot's index is currently in the `openPanels` set at
+render time -- closing a panel (its own dedicated Close button, not a column click,
+see the note below) just removes it from that state and re-renders; there's no separate
+DOM-node teardown step, no listeners to manually detach. This is a deliberate "just
+re-derive the DOM from state" choice over anything resembling virtual-DOM diffing --
+perfectly fine at this scale (128 rows per Set List, realistically 0-2 panels open at
+once), and it means a panel's *entire* lifecycle -- attach, edit, discard -- is fully
+described by three small pieces of state (`openPanels`, `expandedSections`,
+`slotBytesCache`), not by anything living in the DOM itself.
+
+(Why a dedicated Close button rather than clicking the same column again: an earlier
+version closed a section by re-clicking its own trigger column, which meant "close
+everything" required remembering which columns you'd opened and clicking each one again
+-- confusing once several sections could be open on one row at once. The panel now stays
+visible, showing all three collapsed/expanded accordion headers, until its own Close
+button is clicked -- one action, not up to three.)
+
+### The cross-pane problem this surfaces
+
+Two panes can legitimately point at the *same* dataset and the *same* Set List at once
+(see the Datasets section above) -- a real, already-supported setup, not an edge case.
+If both opened an editor on the same slot, each pane's `slotBytesCache` would be its own
+independent copy of those 542 bytes, so whichever pane committed second would silently
+overwrite whatever the other had just written -- the exact same class of bug the shared-
+buffer fix above solved *within* one pane, just reappearing *across* panes instead. A
+module-level registry, `openSlotEditors` (keyed `datasetId:setlistIndex:songIndex`,
+shared by every pane instance, not per-pane state), tracks which pane currently owns a
+slot's panel; a second pane trying to open the same slot is refused outright (with a
+toast explaining why) rather than risking the race. The lock is released whenever that
+slot's panel closes, or whenever a pane's whole editor state gets cleared wholesale
+(switching Set Lists, switching datasets).
+
+### Testing this without the native app
+
+None of the above requires building the CHOC app to iterate on. `frontend/mock_bridge.js`
+provides fake `getSongRecordBytes`/`putSongRecordBytes` implementations that synthesize
+(and re-derive, on write) a 542-byte buffer from a mock entry's own fields -- close enough
+to the real byte layout that the *real* codecs decode/encode against it exactly as they
+would against real hardware data. Serve the repo root with a plain static file server --
+
+```sh
+python3 -m http.server 8000
+```
+
+-- open `http://localhost:8000/frontend/index.html`, and the whole flow (open a panel,
+edit Color/Comment/Volume, close it, even the cross-pane lock across two mock "panes") is
+exercisable in a plain browser tab with real devtools, no compiler involved. This is the
+same property the individual `.test.html` codec harnesses give you, one level up: a
+stateful, multi-component *feature* -- not just one pure function -- that's still fully
+testable without the rest of this project's native toolchain.
 
 Nothing here claims the architecture is finished or that every future component will fit
 this shape perfectly -- it's a pattern being learned by doing, one real component at a

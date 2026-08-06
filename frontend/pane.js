@@ -168,7 +168,7 @@ let draggedFromDatasetId = null;
 // cache would dedupe the actual fetch anyway, but this also dedupes the
 // in-flight Promise for callers that race each other. `resolvedSlotCodecs`
 // holds the already-settled value so row-builders (called synchronously
-// from renderRows(), see toggleEditor()'s own comment for why that's safe)
+// from renderRows(), see openSection()'s own comment for why that's safe)
 // can use the codecs without themselves being async.
 let slotCodecsPromise = null;
 let resolvedSlotCodecs = null;
@@ -250,28 +250,36 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
   let currentSetlistIndex = -1;
   let entries = [];         // [{index, label}], as returned by getEntries()
   let filterText = "";
-  // Which editors are open, per song -- songIndex -> Set of
-  // "comment"|"color"|"volume", not a single flag, so several editor types
-  // can stay open on the SAME row at once (per explicit request), and
+  // Which slots currently show the editor panel at all -- a slot's panel,
+  // once open, stays open (showing all three Color/Comment/Volume accordion
+  // headers) until explicitly dismissed via its own Close button, regardless
+  // of how many of its sections are individually expanded/collapsed. This
+  // split (panel-open vs. section-expanded, below) exists specifically so
+  // "close everything" is one click on one button, not clicking every
+  // column that happens to have something expanded -- the original design
+  // (one <tr> per open type, closed by re-clicking the same column) read as
+  // counterintuitive once there was no single place to close "all of it."
+  let openPanels = new Set();
+  // Which of an OPEN panel's three accordion sections are currently
+  // expanded (showing content, not just a header) -- songIndex -> Set of
+  // "comment"|"color"|"volume". A type absent here (or the whole songIndex
+  // missing) shows as a collapsed header, not as absent -- once a panel is
+  // open all three headers are always shown, see buildEditorRow(). Several
+  // can be expanded on the SAME panel at once (per explicit request), and
   // independently across every OTHER row/pane too -- except the exact same
   // slot in another pane showing the same Set List of the same dataset,
   // which openSlotEditors below deliberately blocks (a real, not
   // hypothetical, setup -- see its own comment).
-  let expandedTypes = new Map();
-  // One shared raw-bytes cache per row with at least one editor open, keyed
-  // by songIndex -- Comment/Color/Volume editors on the same row all
+  let expandedSections = new Map();
+  // One shared raw-bytes cache per row with an open panel, keyed by
+  // songIndex -- Comment/Color/Volume sections on the same panel all
   // read/write through the same cached Uint8Array (see commitSlotBytes())
   // rather than each fetching (and each other's writes silently discarding)
   // their own copy -- see STATE.md for why Comment was retrofitted onto
   // this same raw-byte path once multi-open made that a real correctness
   // risk, not just a style choice. Populated lazily in getSlotBytes(),
-  // dropped once every editor on that row closes.
+  // dropped once the panel closes.
   let slotBytesCache = new Map();
-
-  function isExpanded(songIndex) {
-    const set = expandedTypes.get(songIndex);
-    return !!set && set.size > 0;
-  }
 
   // Fetches (once per row) and caches this row's raw 542-byte SBK1 record.
   async function getSlotBytes(entry) {
@@ -286,52 +294,59 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
     return bytes;
   }
 
-  // Opens/closes one editor type on one row. Closing never needs to touch
-  // the network, so it re-renders immediately; opening awaits both the
-  // codecs and this row's raw bytes FIRST and only marks the type as open
-  // once both are ready -- row-builders below (called synchronously from
-  // renderRows()) can then assume slotBytesCache/resolvedSlotCodecs are
-  // populated for any type that's actually in expandedTypes, no per-row
-  // "still loading" state needed.
-  async function toggleEditor(entry, type) {
+  // Opens a slot's editor panel if it isn't already open (fetching bytes/
+  // codecs and acquiring the cross-pane lock first -- see openSlotEditors'
+  // own comment for the race that guards against), then toggles ONE
+  // section's own expanded state -- called both by a column click (#/Vol/
+  // Song-Type on the main row) and by clicking a section's own accordion
+  // header once the panel is already open; both are exactly the same
+  // action; "make sure the panel is open, then toggle this one section."
+  // Does NOT close the panel even if this collapses its last expanded
+  // section -- see closePanel() for the one explicit way to do that.
+  async function openSection(entry, type) {
     const key = slotEditorKey(getDatasetId(), currentSetlistIndex, entry.index);
-    const current = expandedTypes.get(entry.index);
-    if (current && current.has(type)) {
-      current.delete(type);
-      if (current.size === 0) {
-        expandedTypes.delete(entry.index);
-        slotBytesCache.delete(entry.index);
-        openSlotEditors.delete(key);
+
+    if (!openPanels.has(entry.index)) {
+      // Refuse to open if another pane already has this exact slot open --
+      // see openSlotEditors' own comment for the race this avoids. A toast
+      // (not just the persistent status bar) because this is a click that
+      // visibly did nothing -- without an in-the-moment popup, it just
+      // looks broken rather than deliberately blocked.
+      const owner = openSlotEditors.get(key);
+      if (owner != null && owner !== paneId) {
+        showToast(`This Set List slot is already being edited in Pane ${owner}.`);
+        return;
       }
-      renderRows();
-      return;
+
+      const [bytes] = await Promise.all([getSlotBytes(entry), loadSlotCodecs()]);
+      if (bytes == null) return;  // getSlotBytes() already logged the error
+
+      openPanels.add(entry.index);
+      openSlotEditors.set(key, paneId);
     }
 
-    // Refuse to open if another pane already has this exact slot open --
-    // see openSlotEditors' own comment for the race this avoids. Not this
-    // pane's own lock, though: re-opening a second editor type on a slot
-    // THIS pane already has open is exactly the normal multi-open case. A
-    // toast (not just the persistent status bar) because this is a click
-    // that visibly did nothing -- without an in-the-moment popup, it just
-    // looks broken rather than deliberately blocked.
-    const owner = openSlotEditors.get(key);
-    if (owner != null && owner !== paneId) {
-      showToast(`This Set List slot is already being edited in Pane ${owner}.`);
-      return;
-    }
+    const sections = expandedSections.get(entry.index) || new Set();
+    if (sections.has(type)) sections.delete(type);
+    else sections.add(type);
+    expandedSections.set(entry.index, sections);
+    renderRows();
+  }
 
-    const [bytes] = await Promise.all([getSlotBytes(entry), loadSlotCodecs()]);
-    if (bytes == null) return;  // getSlotBytes() already logged the error
-
-    const updated = expandedTypes.get(entry.index) || new Set();
-    updated.add(type);
-    expandedTypes.set(entry.index, updated);
-    openSlotEditors.set(key, paneId);
+  // The one explicit way to fully dismiss a slot's editor panel -- its own
+  // Close button (buildEditorRow()), never a column click. Drops every bit
+  // of per-slot editor state (expanded sections, cached bytes, cross-pane
+  // lock) in one go.
+  function closePanel(entry) {
+    const key = slotEditorKey(getDatasetId(), currentSetlistIndex, entry.index);
+    openPanels.delete(entry.index);
+    expandedSections.delete(entry.index);
+    slotBytesCache.delete(entry.index);
+    if (openSlotEditors.get(key) === paneId) openSlotEditors.delete(key);
     renderRows();
   }
 
   // Releases every cross-pane edit-lock THIS pane currently holds (see
-  // openSlotEditors above) -- called anywhere expandedTypes is about to be
+  // openSlotEditors above) -- called anywhere openPanels is about to be
   // cleared wholesale (Set List switch, dataset switch), so a lock never
   // outlives the editor state it was protecting. Brute-force scan is fine
   // here: at most a couple of entries are ever locked at once.
@@ -355,35 +370,104 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
     }
     slotBytesCache.set(entry.index, newBytes);
     const codecs = await loadSlotCodecs();
-    entry.comment = codecs.decodeSetlistComment(newBytes).comment;
+    const decodedComment = codecs.decodeSetlistComment(newBytes);
+    entry.comment = decodedComment.comment;
+    entry.fontSize = decodedComment.fontSize;
     entry.color = codecs.decodeSlotColor(newBytes);
     entry.volume = codecs.decodeSlotVolume(newBytes);
     renderRows();
   }
 
-  // Shared shell every editor row below builds on: a <tr> spanning all 5
-  // columns (a real <table> again, so a plain colSpan instead of a grid-
-  // column hack), wrapping whatever `buildContent()` returns as the cell's
-  // one child. Every editor row carries BOTH the generic "editor-row" class
-  // (style.css's shared left-border/padding treatment, one rule instead of
-  // a per-type selector list) and its own specific class (comment-editor-
-  // row/color-editor-row/volume-editor-row) as a hook for anything that
-  // ever needs to style one type differently -- nothing does yet, but the
-  // hook costs nothing to keep. Open/close state itself already lives in
-  // expandedTypes/toggleEditor() above -- this only dedupes the identical
-  // <tr>/<td colSpan> construction the three row-builders would otherwise
-  // each repeat by hand. There's nothing to clean up on close beyond this:
-  // a closed row's <tr> simply isn't rebuilt into the next renderRows()
+  // ONE editor <tr> per slot with an open panel (not one per open section)
+  // -- a single "you're now editing this slot" panel inside one
+  // <td colSpan=5> (a real <table> again, so a plain colSpan instead of a
+  // grid-column hack), containing all three Color/Comment/Volume accordion
+  // headers (buildAccordionSection() below) plus one Close button that's
+  // the only way to fully dismiss it (closePanel()) -- per explicit
+  // feedback, needing to re-click three separate distant table columns to
+  // get rid of everything was counterintuitive, and three separate look-
+  // alike orange-bordered <tr>s per slot read as unrelated table rows
+  // rather than one coherent panel. Column clicks (# -> Color, Vol ->
+  // Volume, Song/Type -> Comment) still expand/collapse their own section
+  // in place (openSection()) -- same as clicking that section's own header
+  // once the panel is already open -- they just don't close the panel
+  // itself anymore. Fixed section order (Color, Comment, Volume), matching
+  // the columns' own left-to-right order. Nothing to clean up on close:
+  // a closed slot's <tr> simply isn't rebuilt into the next renderRows()
   // pass (tbody.innerHTML = "" there), so it's fully gone from the DOM the
-  // moment its type leaves expandedTypes -- no separate removal step.
-  function buildEditorRow(className, buildContent) {
+  // moment it leaves openPanels -- no separate removal step.
+  function buildEditorRow(entry, sections) {
     const editorTr = document.createElement("tr");
-    editorTr.classList.add("editor-row", className);
+    editorTr.classList.add("editor-row");
     const td = document.createElement("td");
     td.colSpan = 5;  // #, Song, Type, Bank, Vol
-    td.appendChild(buildContent());
+
+    const panel = document.createElement("div");
+    panel.className = "editor-panel";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "editor-panel-close";
+    closeBtn.textContent = "✕";
+    closeBtn.title = "Close";
+    closeBtn.addEventListener("click", () => closePanel(entry));
+    panel.appendChild(closeBtn);
+
+    const stack = document.createElement("div");
+    stack.className = "editor-row-stack";
+    stack.appendChild(buildAccordionSection(entry, "color", "Color", sections.has("color"), buildColorSection));
+    stack.appendChild(buildAccordionSection(entry, "comment", "Comment", sections.has("comment"), buildCommentSection));
+    stack.appendChild(buildAccordionSection(entry, "volume", "Volume", sections.has("volume"), buildVolumeSection));
+    panel.appendChild(stack);
+
+    td.appendChild(panel);
     editorTr.appendChild(td);
     return editorTr;
+  }
+
+  // One collapsible accordion item: a clickable header (chevron + title,
+  // title suffixed with the current value for Color/Volume so a collapsed
+  // section still shows a useful at-a-glance summary) that toggles this
+  // one section via openSection(), and -- only when `isOpen` -- its content
+  // (`buildContent(entry)`, one of the three section-builders below).
+  function buildAccordionSection(entry, type, title, isOpen, buildContent) {
+    const section = document.createElement("div");
+    section.className = "accordion-section" + (isOpen ? " is-open" : "");
+
+    const header = document.createElement("button");
+    header.type = "button";
+    header.className = "accordion-header";
+    header.addEventListener("click", () => openSection(entry, type));
+
+    const chevron = document.createElement("span");
+    chevron.className = "accordion-chevron";
+    chevron.textContent = isOpen ? "▾" : "▸";
+
+    const titleEl = document.createElement("span");
+    titleEl.className = "accordion-title";
+    titleEl.textContent = title + accordionSummary(type, entry);
+
+    header.append(chevron, titleEl);
+    section.appendChild(header);
+
+    if (isOpen) {
+      const content = document.createElement("div");
+      content.className = "accordion-content";
+      content.appendChild(buildContent(entry));
+      section.appendChild(content);
+    }
+
+    return section;
+  }
+
+  // At-a-glance summary appended to a (possibly collapsed) accordion
+  // header -- Comment's own text has no short summary worth showing (could
+  // be long/multi-line), but its Font size is a quick, useful hint.
+  function accordionSummary(type, entry) {
+    if (type === "color") return ` — ${setlistColorName(entry.color)}`;
+    if (type === "volume") return ` — ${entry.volume}`;
+    if (type === "comment") return entry.fontSize ? ` — Font ${entry.fontSize}` : "";
+    return "";
   }
 
   const COMMENT_EDITOR_MIN_ROWS = 10;
@@ -397,53 +481,93 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
 
   // Comment editor -- click a row's Song/Type cell to expand a multiline-
   // editable panel below it (same click-to-expand-inline interaction as
-  // DIY-MIDI-METRONOME's EDITOR trigger list), Apply reads/writes through
-  // the shared raw-bytes cache via setlist-comment.js's real codec (see
-  // commitSlotBytes()) -- retrofitted off the old struct-only setComment()
-  // bridge call once Color/Volume being independently open on the same row
-  // made that a real data-loss risk, not just an inconsistency (see
-  // STATE.md). A plain <textarea> is used (not contenteditable) so \r\n
-  // line breaks Just Work via normal textarea semantics. Sized to show at
-  // least 10 lines, growing to fit longer content instead of scrolling.
-  function buildCommentEditorRow(entry) {
-    return buildEditorRow("comment-editor-row", () => {
-      const bytes = slotBytesCache.get(entry.index);
-      const decoded = resolvedSlotCodecs.decodeSetlistComment(bytes);
+  // DIY-MIDI-METRONOME's EDITOR trigger list), plus a Font size button bar
+  // (XS/S/M/L/XL) above it -- brought back 2026-08-06 after being dropped
+  // when Comment editing moved from the old standalone setlist-comment.js
+  // component (which had both) into this accordion section (which
+  // initially only ported the textarea). Both share one Apply button --
+  // unlike Color/Volume, Font size does NOT commit on click. It's packed
+  // into the SAME bytes/codec call as the Comment text (setlist-comment.js
+  // encodes both together), and this section's free text needs a deliberate
+  // confirm step (unlike Color/Volume's discrete immediate-apply options);
+  // committing Font size immediately would trigger commitSlotBytes()'s
+  // renderRows(), which rebuilds this whole section from the just-written
+  // bytes -- silently discarding whatever comment text was typed but not
+  // yet Applied. Font size clicks instead just update local `pendingFontSize`
+  // and the buttons' own active state, exactly like the textarea's own
+  // uncommitted draft, until Apply writes both together.
+  //
+  // Apply reads/writes through the shared raw-bytes cache via setlist-
+  // comment.js's real codec (see commitSlotBytes()) -- retrofitted off the
+  // old struct-only setComment() bridge call once Color/Volume being
+  // independently open on the same row made that a real data-loss risk,
+  // not just an inconsistency (see STATE.md). A plain <textarea> is used
+  // (not contenteditable) so \r\n line breaks Just Work via normal
+  // textarea semantics. Sized to show at least 10 lines, growing to fit
+  // longer content instead of scrolling.
+  function buildCommentSection(entry) {
+    const bytes = slotBytesCache.get(entry.index);
+    const decoded = resolvedSlotCodecs.decodeSetlistComment(bytes);
+    let pendingFontSize = decoded.fontSize;
 
-      const textarea = document.createElement("textarea");
-      textarea.className = "comment-editor";
-      textarea.rows = COMMENT_EDITOR_MIN_ROWS;
-      textarea.value = decoded.comment;
-      textarea.placeholder = "Comment (supports line breaks)...";
-      textarea.addEventListener("input", () => autoSizeCommentEditor(textarea));
-
-      const applyBtn = document.createElement("button");
-      applyBtn.type = "button";
-      applyBtn.textContent = "Apply";
-      applyBtn.addEventListener("click", async () => {
-        const current = slotBytesCache.get(entry.index);
-        const encoded = resolvedSlotCodecs.encodeSetlistComment(current, {
-          ...resolvedSlotCodecs.decodeSetlistComment(current),
-          comment: textarea.value,
-        });
-        await commitSlotBytes(entry, encoded);
+    const fontBar = document.createElement("div");
+    fontBar.className = "comment-fontsize-bar";
+    const fontButtons = {};
+    for (const size of resolvedSlotCodecs.FONT_SIZES) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "button is-small fontsize-button" + (size === pendingFontSize ? " is-link" : "");
+      btn.textContent = size;
+      btn.title = `Font size ${size}`;
+      btn.addEventListener("click", () => {
+        pendingFontSize = size;
+        for (const [otherSize, otherBtn] of Object.entries(fontButtons)) {
+          otherBtn.classList.toggle("is-link", otherSize === size);
+        }
       });
+      fontButtons[size] = btn;
+      fontBar.appendChild(btn);
+    }
 
-      // Measured after the row is actually in the DOM (scrollHeight needs
-      // layout), and only then grown to fit content taller than 10 rows --
-      // safe to schedule before this element is inserted since renderRows()
-      // (the only caller) appends buildEditorRow()'s return value
-      // synchronously, well before the next paint this callback waits for.
-      requestAnimationFrame(() => {
-        textarea.minHeightPx = textarea.clientHeight;
-        autoSizeCommentEditor(textarea);
+    const textarea = document.createElement("textarea");
+    textarea.className = "comment-editor";
+    textarea.rows = COMMENT_EDITOR_MIN_ROWS;
+    textarea.value = decoded.comment;
+    textarea.placeholder = "Comment (supports line breaks)...";
+    textarea.addEventListener("input", () => autoSizeCommentEditor(textarea));
+
+    const applyBtn = document.createElement("button");
+    applyBtn.type = "button";
+    applyBtn.className = "button is-small is-link";
+    applyBtn.textContent = "Apply";
+    applyBtn.addEventListener("click", async () => {
+      const current = slotBytesCache.get(entry.index);
+      const encoded = resolvedSlotCodecs.encodeSetlistComment(current, {
+        comment: textarea.value,
+        fontSize: pendingFontSize,
       });
-
-      const row = document.createElement("div");
-      row.className = "comment-editor-row-inner";
-      row.append(textarea, applyBtn);
-      return row;
+      await commitSlotBytes(entry, encoded);
     });
+
+    // Measured after the section is actually in the DOM (scrollHeight
+    // needs layout), and only then grown to fit content taller than 10
+    // rows -- safe to schedule before this element is inserted since
+    // renderRows() (the only caller) appends buildEditorRow()'s return
+    // value synchronously, well before the next paint this callback waits
+    // for.
+    requestAnimationFrame(() => {
+      textarea.minHeightPx = textarea.clientHeight;
+      autoSizeCommentEditor(textarea);
+    });
+
+    const textRow = document.createElement("div");
+    textRow.className = "comment-editor-text-row";
+    textRow.append(textarea, applyBtn);
+
+    const section = document.createElement("div");
+    section.className = "comment-editor-section";
+    section.append(fontBar, textRow);
+    return section;
   }
 
   // Color editor -- click a row's # cell to expand a row of 16 buttons, one
@@ -451,25 +575,23 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
   // Immediate-apply, no Apply button (per explicit request): each click
   // decodes/re-encodes through setlist-slot-params.js's masked Color codec
   // and commits straight away.
-  function buildColorEditorRow(entry) {
-    return buildEditorRow("color-editor-row", () => {
-      const row = document.createElement("div");
-      row.className = "color-editor-row-inner";
-      for (let color = 1; color <= 16; color++) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "button is-small color-swatch-button" + (color === entry.color ? " is-link" : "");
-        btn.style.background = setlistColorHex(color);
-        btn.title = setlistColorName(color);
-        btn.addEventListener("click", async () => {
-          const current = slotBytesCache.get(entry.index);
-          const encoded = resolvedSlotCodecs.encodeSlotColor(current, color);
-          await commitSlotBytes(entry, encoded);
-        });
-        row.appendChild(btn);
-      }
-      return row;
-    });
+  function buildColorSection(entry) {
+    const section = document.createElement("div");
+    section.className = "color-editor-section";
+    for (let color = 1; color <= 16; color++) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "button is-small color-swatch-button" + (color === entry.color ? " is-link" : "");
+      btn.style.background = setlistColorHex(color);
+      btn.title = setlistColorName(color);
+      btn.addEventListener("click", async () => {
+        const current = slotBytesCache.get(entry.index);
+        const encoded = resolvedSlotCodecs.encodeSlotColor(current, color);
+        await commitSlotBytes(entry, encoded);
+      });
+      section.appendChild(btn);
+    }
+    return section;
   }
 
   // Volume editor -- click a row's Vol cell to expand a 0-127 slider.
@@ -478,37 +600,35 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
   // `input` tick during drag, so this doesn't spam a write per pixel of
   // drag movement. The live numeric label still updates on every `input`
   // tick for feedback, it just doesn't commit until `change`.
-  function buildVolumeEditorRow(entry) {
-    return buildEditorRow("volume-editor-row", () => {
-      const labelEl = document.createElement("label");
-      labelEl.className = "volume-label";
-      labelEl.textContent = "Volume";
+  function buildVolumeSection(entry) {
+    const labelEl = document.createElement("label");
+    labelEl.className = "volume-label";
+    labelEl.textContent = "Volume";
 
-      const slider = document.createElement("input");
-      slider.type = "range";
-      slider.min = "0";
-      slider.max = "127";
-      slider.value = String(entry.volume);
-      slider.className = "volume-slider";
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "0";
+    slider.max = "127";
+    slider.value = String(entry.volume);
+    slider.className = "volume-slider";
 
-      const valueEl = document.createElement("span");
-      valueEl.className = "volume-value";
-      valueEl.textContent = String(entry.volume);
+    const valueEl = document.createElement("span");
+    valueEl.className = "volume-value";
+    valueEl.textContent = String(entry.volume);
 
-      slider.addEventListener("input", () => {
-        valueEl.textContent = slider.value;
-      });
-      slider.addEventListener("change", async () => {
-        const current = slotBytesCache.get(entry.index);
-        const encoded = resolvedSlotCodecs.encodeSlotVolume(current, Number(slider.value));
-        await commitSlotBytes(entry, encoded);
-      });
-
-      const row = document.createElement("div");
-      row.className = "volume-editor-row-inner";
-      row.append(labelEl, slider, valueEl);
-      return row;
+    slider.addEventListener("input", () => {
+      valueEl.textContent = slider.value;
     });
+    slider.addEventListener("change", async () => {
+      const current = slotBytesCache.get(entry.index);
+      const encoded = resolvedSlotCodecs.encodeSlotVolume(current, Number(slider.value));
+      await commitSlotBytes(entry, encoded);
+    });
+
+    const section = document.createElement("div");
+    section.className = "volume-editor-section";
+    section.append(labelEl, slider, valueEl);
+    return section;
   }
 
   function renderRows() {
@@ -521,17 +641,20 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
       tr.draggable = true;
       tr.dataset.index = String(entry.index);
       // Bulma's own `tr.is-selected` highlight (real Bulma table state, not
-      // a hand-rolled class) marks whether ANY editor on this row is open.
-      if (isExpanded(entry.index)) tr.classList.add("is-selected");
+      // a hand-rolled class) marks whether this row's editor panel is open
+      // at all -- stays highlighted even if every section inside it is
+      // individually collapsed, since the panel (and its Close button)
+      // are still showing.
+      if (openPanels.has(entry.index)) tr.classList.add("is-selected");
 
       // Row-level fallback: Song/Type cells (and anywhere else not handled
-      // by a cell's own listener below) open the Comment editor, same as
-      // before this row grew per-column routing. # and Vol get their own
-      // listeners (with stopPropagation) further down, inside the
-      // paramsFound block -- there's nothing meaningful to toggle for
+      // by a cell's own listener below) open/toggle the Comment section,
+      // same as before this row grew per-column routing. # and Vol get
+      // their own listeners (with stopPropagation) further down, inside
+      // the paramsFound block -- there's nothing meaningful to toggle for
       // either without real slot params.
       tr.addEventListener("click", () => {
-        toggleEditor(entry, "comment");
+        openSection(entry, "comment");
       });
 
       tr.addEventListener("dragstart", (ev) => {
@@ -627,7 +750,7 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
         // listener above from also firing (same pattern as bankButton).
         volTd.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          toggleEditor(entry, "volume");
+          openSection(entry, "volume");
         });
         // Color used to be its own swatch column -- now shown as the "#"
         // cell's own background instead, freeing up a whole column. Real
@@ -640,7 +763,7 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
         // Comment-editor fallback -- same stopPropagation pattern as Vol.
         idxTd.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          toggleEditor(entry, "color");
+          openSection(entry, "color");
         });
       }
 
@@ -651,15 +774,13 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
       tr.append(idxTd, labelTd, typeTd, bankTd, volTd);
       tbody.appendChild(tr);
 
-      // Fixed order (Color, Comment, Volume) regardless of the order they
-      // were opened in, so several open at once on the same row don't
-      // reshuffle as OTHER rows' editors open/close elsewhere in the table --
-      // matches the columns' own left-to-right order (#, Song/Type, Vol).
-      const openTypes = expandedTypes.get(entry.index);
-      if (openTypes) {
-        if (openTypes.has("color")) tbody.appendChild(buildColorEditorRow(entry));
-        if (openTypes.has("comment")) tbody.appendChild(buildCommentEditorRow(entry));
-        if (openTypes.has("volume")) tbody.appendChild(buildVolumeEditorRow(entry));
+      // The editor panel, if this slot's is open -- see buildEditorRow()'s
+      // own comment. Shows all three accordion headers regardless of which
+      // are individually expanded, so an empty Set (every section
+      // collapsed, panel still open pending its Close button) is valid.
+      if (openPanels.has(entry.index)) {
+        const sections = expandedSections.get(entry.index) || new Set();
+        tbody.appendChild(buildEditorRow(entry, sections));
       }
     }
   }
@@ -689,7 +810,8 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
     currentSetlistIndex = Number(setlistSelect.value);
     filterText = "";
     filterInput.value = "";
-    expandedTypes.clear();  // don't carry an open editor over to a different Set List's song at the same index
+    openPanels.clear();  // don't carry an open editor panel over to a different Set List's song at the same index
+    expandedSections.clear();
     slotBytesCache.clear();
     releaseAllSlotLocks();
     await refreshEntries();
@@ -714,7 +836,8 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
       filterText = "";
       filterInput.value = "";
       filterInput.disabled = true;
-      expandedTypes.clear();
+      openPanels.clear();
+      expandedSections.clear();
       slotBytesCache.clear();
       releaseAllSlotLocks();
       infoEl.textContent = NO_DATASET_MESSAGE;
@@ -729,12 +852,13 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
 
     // Switching a pane to a different dataset must not leak state from
     // whatever was showing before -- a stale filter could hide entries in
-    // the new dataset entirely, and a stale expanded editor would reopen on
+    // the new dataset entirely, and a stale open panel would reopen on
     // whatever song now happens to share that index (and its raw-bytes
     // cache would be for the WRONG dataset's slot entirely).
     filterText = "";
     filterInput.value = "";
-    expandedTypes.clear();
+    openPanels.clear();
+    expandedSections.clear();
     slotBytesCache.clear();
     releaseAllSlotLocks();
 

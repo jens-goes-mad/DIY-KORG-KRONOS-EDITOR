@@ -1,5 +1,5 @@
 === STATE BLOCK — GOALS, ACHIEVEMENTS, BLIND SPOTS ===
-Date: 2026-08-05
+Date: 2026-08-06
 Status: Working prototype, git repo (github.com/jens-goes-mad/
         DIY-KORG-KRONOS-EDITOR, `main` branch) with a public Hugo/GitHub
         Pages docs site (jens-goes-mad.github.io/DIY-KORG-KRONOS-EDITOR)
@@ -571,6 +571,55 @@ full rationale):
       UI changes confirmed against real click-through by the project owner (this is what
       surfaced the padding-specificity and cross-pane-race issues above in the first
       place) rather than only the earlier static smoke test.
+  - **Setlist editor panel: real accordion + Close button (BUILT 2026-08-06)**: the
+    "several editor rows stacked under one slot" shape from the round above still read
+    as three unrelated table rows (no title/chevron affordance) with no single way to
+    close all of them -- re-clicking the same far-off column to collapse a section was
+    exactly the same "counterintuitive" complaint the previous round was meant to fix,
+    just moved one level down. Redesigned into a real accordion: ONE `<tr class=
+    "editor-row">` per slot (`pane.js`'s `buildEditorRow()`), containing all three
+    Color/Comment/Volume sections as collapsible items (chevron + title, title suffixed
+    with a live value summary when collapsed -- "Color — Blue", "Volume — 100") plus one
+    dedicated Close button (`closePanel()`) that's the only way to fully dismiss the
+    panel. Column clicks and clicking a section's own header now both go through the
+    same `openSection(entry, type)` -- ensure the panel is open (fetching bytes/codecs
+    and the cross-pane lock on first open only), then toggle that one section, never
+    closing the whole panel.
+    - State split in two: `openPanels` (which slots show a panel at all) vs.
+      `expandedSections` (which of an open panel's three items are individually
+      expanded) -- collapsing every section no longer auto-closes the panel; only the
+      Close button does, matching what was actually being asked for.
+    - The Font size button bar (XS/S/M/L/XL) -- present in the original standalone
+      `setlist-comment.js` component but never carried over when Comment editing moved
+      into this accordion section -- was brought back inside the Comment section,
+      above the textarea. Deliberately NOT immediate-apply like Color: Font size and
+      Comment text are encoded together by the same `encodeSetlistComment()` call, and
+      an immediate commit would trigger `commitSlotBytes()`'s `renderRows()`, which
+      rebuilds the section from the just-written bytes -- silently discarding an
+      unapplied Comment draft. Font size clicks instead update local pending state
+      (exactly like the textarea's own draft) until Apply commits both together.
+      `entry.fontSize` (already returned by the bridge, just never round-tripped
+      through an edit before) is now kept in sync by `commitSlotBytes()`, and
+      `mock_bridge.js`'s synthetic SBK1 bytes gained the matching bit-packing (byte+12
+      bits6-7 / byte+17 bit4) so Font size survives a close/reopen in mock mode too.
+    - Color's swatch grid also needed a fix here: `auto-fill`/`minmax(3.5em, ...)` was
+      sized for the old full-width panel, and came up short once Color's content sat
+      indented under an accordion header -- switched to a fixed 8-column grid (2 clean
+      rows of 8, buttons just shrink to fit) instead of trying to re-tune the minmax.
+    - Verified: every touched JS file `node --check`ed, CSS brace-balance checked,
+      backend build/`ctest` re-confirmed green (frontend-only round).
+  - **"Select: None/All/Invert" bank-filter control (BUILT 2026-08-06)**: a small
+    reusable component, `library.js`'s `createSelectControlRow()`, sitting between the
+    Filter input and the bank-filter buttons on both Programs and Combis (explicitly
+    requested to work on both, not just one) -- bulk-mutates that category's bank-filter
+    `Set` instead of requiring one click per bank. Takes getter functions
+    (`getPresent`/`getFilterSet`), not the `Set`s directly: `load()` reassigns
+    `programBankFilter`/`combiBankFilter` to a brand-new `Set` on every dataset load
+    rather than mutating in place, so a plain captured reference taken once at setup
+    time would silently go stale after the very first load. Wired up once per category
+    (unlike the bank buttons themselves, these three have no per-bank state of their
+    own to redraw). Invert only touches *present* banks -- absent ones have no button
+    and nothing to toggle.
   - **Explicitly not committed to being final**: both the project owner and this
     assistant agreed to revisit/rethink this shape as each piece (Program decoder now
     done; chunk-based component wiring next) proves itself against real tests and the
@@ -1347,9 +1396,22 @@ App/UI:
      `readComment()` nor `setComment()` does any trimming, so the cause
      isn't obvious from code inspection alone; repro steps needed (typed
      fresh via Apply vs. already present in the source file).
-  9. No save-back-to-file at all -- every edit (move/copy/comment) is
-     memory-only and lost on reopen. This is the single biggest gap
-     between "browser" and "editor."
+  9. No save-back-to-file at all -- every edit (move/copy/Comment/Color/
+     Volume/Font size/Program copy) writes into the loaded file's own
+     retained in-memory bytes now, correctly, but there's still no path
+     from those bytes back to disk. This is the single biggest gap between
+     "browser" and "editor," and -- explicitly flagged 2026-08-06, now that
+     there's real editing with nowhere for it to go -- the next thing to
+     scope, with a concrete, higher bar than just "write a file": the
+     project owner wants to load an edited backup back onto a real Kronos
+     unit, not just re-open it in this app. That likely means more than a
+     naive `data_` dump -- e.g. the file-header checksum flag (§1.1, byte
+     offset 8, confirmed present as `0x01` on the one real sample checked
+     so far, but where any such checksum would actually live and over what
+     byte range is completely uninvestigated, see Format blind spot list
+     above) might need to be computed/updated correctly for the hardware to
+     accept the file at all, not just for this app's own reader to accept
+     it. Not started -- needs real scoping before any code.
   10. Filter/search and row drag-swap/drag-copy interactions have been
       exercised by the project owner in the real app for file-open and
       name-lookup verification, but not explicitly confirmed end-to-end
