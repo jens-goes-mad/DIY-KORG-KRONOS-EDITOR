@@ -531,7 +531,15 @@ below is wired into `PcgFile.cpp` yet:
 - `src/bridge/EditorBridge.{h,cpp}` -- exposes parsed data (and edits: Set
   List move/copy, Program copy, and Set List slot Comment/Color/Volume --
   the latter three via `getSongRecordBytes`/`putSongRecordBytes`, writing
-  straight into the loaded file's own raw bytes) to the web UI.
+  straight into the loaded file's own raw bytes) to the web UI, plus
+  `saveFileAs()` to write a dataset's edited bytes back to a file
+  (`PcgFile::save()`, a verbatim write of the retained buffer -- no Save UI
+  wired up yet, see STATE.md).
+- `tools/generate_setlist_test_matrix.{js,cpp}` -- hardware-validation
+  helpers, not part of the shipped app: generate a matrix of Setlist
+  Comment/Color/Volume/Font-size test permutations into a scratch file, for
+  checking against a real Kronos by eye (see STATE.md's "First real
+  save-to-disk piece" entry).
 - See the top-level `README.md` for how to build/run the app, and
   `STATE.md` for current project status and the same open questions in
   project-planning form.

@@ -17,7 +17,11 @@ Status: Working prototype, git repo (github.com/jens-goes-mad/
         Comment row editors" and "Setlist editor UI polish + cross-pane
         edit lock + toasts" under "ARCHITECTURE" below), and a read-only
         Program/Combi library with byte-exact duplicate detection -- see
-        "PROGRAM/COMBI LIBRARY EDITOR" below. A
+        "PROGRAM/COMBI LIBRARY EDITOR" below. A save-to-disk building block
+        now exists too (`PcgFile::save()`/`saveFileAs()`, no UI yet), and
+        real-hardware validation of it is actively underway -- see "First
+        real save-to-disk piece, plus real-hardware validation tooling"
+        under "ARCHITECTURE" below, and Blind Spot #9. A
         componentized frontend pattern (small, standalone, byte-level-
         tested UI pieces) and a matching backend decoder/encoder
         architecture are now the deliberate direction -- see "ARCHITECTURE:
@@ -620,6 +624,63 @@ full rationale):
     (unlike the bank buttons themselves, these three have no per-bank state of their
     own to redraw). Invert only touches *present* banks -- absent ones have no button
     and nothing to toggle.
+  - **First real save-to-disk piece, plus real-hardware validation tooling (BUILT
+    2026-08-06)**: the "no save-back-to-file at all" blind spot (below) starts getting
+    closed, driven by a concrete, immediate need -- checking every Setlist edit this
+    project has built (Comment/Color/Volume/Font size) against an actual Kronos, not
+    just this app's own reader. Deliberately minimal, matching this project's "build
+    for a concrete need, not speculatively" rule:
+    - `PcgFile::save(path, error)` -- writes the retained `data_` buffer straight to
+      `path`, verbatim, no serialization step of its own. This is trivial specifically
+      *because* every edit already lands directly in `data_` the moment it happens
+      (`copyProgramFrom()`, `putSongRecordBytes()`) -- there's no separate in-memory
+      model that would need re-flattening into file bytes first.
+    - `EditorBridge::saveFileAs(datasetId, path)` -- the bridge counterpart, bound in
+      `main.cpp`. No Save dialog UI yet (no native Save panel, no dirty-tracking, no
+      keyboard shortcut) -- explicitly deferred until the write path is actually proven
+      against real hardware; building a polished Save button before knowing whether the
+      bytes it produces are even acceptable to a real Kronos would be solving the wrong
+      problem first.
+    - `tests/pcg_file_test.cpp` gained `testSaveRoundTrip()` -- save() then load() the
+      result, confirm Set List count/name/Comment and Program count all match the
+      pre-save state. Verified via this project's usual deliberate-break-then-restore
+      (temporarily require one extra Set List post-round-trip, confirmed the check
+      actually fails, restored).
+    - **Two ways to drive a batch of test edits, both explicitly built to exercise the
+      REAL production write path, not a parallel reimplementation** -- the whole point
+      of this exercise is validating that PcgFile/EditorBridge/the JS codecs are
+      correct, which a from-scratch script would only prove about itself:
+      - `tools/generate_setlist_test_matrix.js` -- a devtools-console script (pasted
+        into the real running app's WebView inspector, `enableDebugMode` already on in
+        `main.cpp`) that drives `getSongRecordBytes`/`putSongRecordBytes`/`saveFileAs`
+        plus the real `setlist-comment.js`/`setlist-slot-params.js` codecs via a cached
+        dynamic `import()`, same technique `pane.js` already uses.
+      - `tools/generate_setlist_test_matrix.cpp` -- a second, standalone CLI executable
+        (new CMake target, same minimal dependency set as `pcg_file_test`: only
+        `PcgFile.cpp`/`ProgramDecoder.cpp`/`CombiDecoder.cpp`, no CHOC/WebView) that
+        takes one argument (an input file path) and writes `<name>-test<ext>` next to
+        it -- faster to actually run (no need to launch the GUI app first). Its
+        Comment/Font-size/Volume ENCODING is necessarily a third expression of the same
+        confirmed byte layout (`PcgFile.cpp`'s masks are private to that translation
+        unit by design, and this tool has no WebView to run the JS codecs in) -- kept
+        deliberately byte-for-byte mirroring the JS codecs, with an explicit comment
+        flagging that if the confirmed encoding for these fields ever changes, this
+        needs to change with it.
+    - Both generate the same fixed matrix into one Set List's slots 010-024 (source
+      entry at slot 000 -- these constants are edit-in-place if a different setlist/slot
+      layout is ever needed): slots 10-14 vary Font size only (XS/S/M/L/XL, ascending),
+      15-19 vary Volume only (0/1/10/100/127), 20-24 vary both together (the same 5
+      pairings combined) -- each slot's Comment states exactly which value(s) it's
+      testing, so the result is legible directly on the Kronos's own screen without
+      cross-referencing anything.
+    - Verified end to end (not just "it compiles"): ran the CLI tool against a real
+      minimal KORG-magic file, then independently re-decoded the output with a fresh
+      Python script (not reusing any of this project's own code) -- confirmed all 15
+      test slots' Font size/Volume/Comment bytes exactly match what was requested, and
+      that the source slot and every other untouched slot in the file were unaffected.
+    - **Not yet done**: the actual real-hardware check this whole thing exists for --
+      load the generated file onto a real Kronos and confirm every slot reads back as
+      intended. That's the next step, by hand, outside this codebase.
   - **Explicitly not committed to being final**: both the project owner and this
     assistant agreed to revisit/rethink this shape as each piece (Program decoder now
     done; chunk-based component wiring next) proves itself against real tests and the
@@ -1396,22 +1457,23 @@ App/UI:
      `readComment()` nor `setComment()` does any trimming, so the cause
      isn't obvious from code inspection alone; repro steps needed (typed
      fresh via Apply vs. already present in the source file).
-  9. No save-back-to-file at all -- every edit (move/copy/Comment/Color/
-     Volume/Font size/Program copy) writes into the loaded file's own
-     retained in-memory bytes now, correctly, but there's still no path
-     from those bytes back to disk. This is the single biggest gap between
-     "browser" and "editor," and -- explicitly flagged 2026-08-06, now that
-     there's real editing with nowhere for it to go -- the next thing to
-     scope, with a concrete, higher bar than just "write a file": the
-     project owner wants to load an edited backup back onto a real Kronos
-     unit, not just re-open it in this app. That likely means more than a
-     naive `data_` dump -- e.g. the file-header checksum flag (§1.1, byte
-     offset 8, confirmed present as `0x01` on the one real sample checked
-     so far, but where any such checksum would actually live and over what
-     byte range is completely uninvestigated, see Format blind spot list
-     above) might need to be computed/updated correctly for the hardware to
-     accept the file at all, not just for this app's own reader to accept
-     it. Not started -- needs real scoping before any code.
+  9. **First piece BUILT 2026-08-06, real-hardware validation still pending**:
+     `PcgFile::save()`/`EditorBridge::saveFileAs()` (see "ARCHITECTURE" above)
+     write the retained bytes straight to disk -- a naive verbatim `data_`
+     dump, no Save UI wired up (no dialog, no dirty-tracking), and critically
+     **not yet confirmed a real Kronos will actually accept the result**. The
+     project owner's actual bar is higher than "this app can re-open the
+     file": loading it back onto real hardware. Two tools
+     (`tools/generate_setlist_test_matrix.{js,cpp}`) generate a matrix of
+     Comment/Color/Volume/Font-size test permutations across 15 Set List
+     slots specifically to check that by eye on a real unit -- verified so
+     far only against this project's own independent re-decode of the
+     output bytes, NOT against real hardware yet (that's the actual open
+     question). If the hardware rejects the file, the file-header checksum
+     flag (§1.1, byte offset 8, confirmed present as `0x01` on the one real
+     sample checked so far, but where any such checksum would actually live
+     and over what byte range is completely uninvestigated, see Format blind
+     spot list above) is the prime suspect to chase down next.
   10. Filter/search and row drag-swap/drag-copy interactions have been
       exercised by the project owner in the real app for file-open and
       name-lookup verification, but not explicitly confirmed end-to-end

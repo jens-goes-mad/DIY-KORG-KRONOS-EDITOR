@@ -352,6 +352,19 @@ same property the individual `.test.html` codec harnesses give you, one level up
 stateful, multi-component *feature* -- not just one pure function -- that's still fully
 testable without the rest of this project's native toolchain.
 
+### Postscript: the same principle, applied to hardware validation
+
+`tools/generate_setlist_test_matrix.{js,cpp}` -- generating a matrix of Setlist edits to
+check against a real Kronos by eye (full writeup in `STATE.md`) -- is the same "reuse the
+real path, don't build a parallel one" idea from above, just applied one level further
+out. It would have been easy to write a quick one-off script with its own from-scratch
+byte math to produce the test file faster; that was deliberately rejected, because the
+entire point of the exercise is checking whether *this project's own* decode/encode
+logic produces bytes real hardware accepts -- a parallel implementation would only prove
+its own math was self-consistent, never whether the app's actual code is correct. Both
+tools call the exact same `PcgFile`/`EditorBridge`/JS-codec functions a real user's
+click would.
+
 Nothing here claims the architecture is finished or that every future component will fit
 this shape perfectly -- it's a pattern being learned by doing, one real component at a
 time, same as the file format itself.

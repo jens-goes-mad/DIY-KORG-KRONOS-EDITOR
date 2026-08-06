@@ -534,7 +534,13 @@ Recorded here for later, even though nothing below is wired into
   exposes parsed data (and edits: Set List move/copy, Program copy, and Set
   List slot Comment/Color/Volume -- the latter three via
   `getSongRecordBytes`/`putSongRecordBytes`, writing straight into the
-  loaded file's own raw bytes) to the web UI.
+  loaded file's own raw bytes) to the web UI, plus `saveFileAs()` to write a
+  dataset's edited bytes back to a file (`PcgFile::save()`, a verbatim write
+  of the retained buffer -- no Save UI wired up yet, see `STATE.md`).
+- [`tools/generate_setlist_test_matrix.{js,cpp}`](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/tree/main/tools) --
+  hardware-validation helpers, not part of the shipped app: generate a
+  matrix of Setlist Comment/Color/Volume/Font-size test permutations into a
+  scratch file, for checking against a real Kronos by eye.
 - See the top-level [`README.md`](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/blob/main/README.md)
   for how to build/run the app, and
   [`STATE.md`](https://github.com/jens-goes-mad/DIY-KORG-KRONOS-EDITOR/blob/main/STATE.md)

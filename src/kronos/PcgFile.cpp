@@ -213,6 +213,27 @@ bool PcgFile::load(const std::string& path, std::string& error) {
     return loadFromMemory(std::move(data), error);
 }
 
+bool PcgFile::save(const std::string& path, std::string& error) const {
+    if (data_.empty()) {
+        error = "No file loaded";
+        return false;
+    }
+
+    std::ofstream file(path, std::ios::binary);
+    if (!file) {
+        error = "Could not open file for writing: " + path;
+        return false;
+    }
+
+    file.write(reinterpret_cast<const char*>(data_.data()), static_cast<std::streamsize>(data_.size()));
+    if (!file) {
+        error = "Failed writing to file: " + path;
+        return false;
+    }
+
+    return true;
+}
+
 bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
     setlists_.clear();
 

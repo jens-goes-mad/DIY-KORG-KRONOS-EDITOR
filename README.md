@@ -57,11 +57,16 @@ First iteration scope (see `STATE.md` for current status):
 3. A Norton-Commander-style dual pane to copy songs between Set Lists, and
    swap/reorder songs within one, both via drag and drop.
 
-Nothing is written back to *disk* yet (no Save mechanism is wired up) --
-edits happen in memory, but as of Program drag-and-drop and the Setlist
-Comment/Color/Volume editors (see `STATE.md`) that increasingly means
-directly into a loaded file's own retained raw bytes, not just app-level
-bookkeeping layered on top of them.
+Edits happen in memory, but as of Program drag-and-drop and the Setlist
+Comment/Color/Volume/Font size editors (see `STATE.md`) that increasingly
+means directly into a loaded file's own retained raw bytes, not just
+app-level bookkeeping layered on top of them -- which is also, now, always
+what actually ends up on disk: a `saveFileAs(datasetId, path)` bridge method
+writes that same retained buffer straight to a file. There's no Save UI yet
+(no dialog, no dirty-tracking, no keyboard shortcut) -- for now it's a
+building block, first exercised by a devtools-console script
+(`tools/generate_setlist_test_matrix.js`) that generates a matrix of
+Setlist edits for checking against real Kronos hardware.
 
 ## Datasets: one loaded file, decoupled from which pane shows it
 

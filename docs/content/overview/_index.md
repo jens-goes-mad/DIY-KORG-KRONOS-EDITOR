@@ -115,11 +115,14 @@ corresponds to which on-screen label beyond the ones directly confirmed above.
 - Genuinely cross-platform: one CMake project builds on macOS (arm64 + Intel), Linux,
   and Windows, verified by CI on all four targets -- see [Building the app](/building).
 
-Nothing is written back to disk yet -- this is deliberately a read/browse/rearrange-in-
-memory tool for now. Actually deleting duplicate Programs and repointing Combis at a
-single kept copy is planned, but it needs the Combi Timbre reference work above finished
-first, plus a write-back mechanism this project has never built -- not something to bolt
-on carelessly to someone's real synth backup.
+A `saveFileAs()` bridge method can write a dataset's edited bytes back to a file (no Save
+UI yet -- no dialog, no dirty-tracking, currently exercised via a devtools-console
+script rather than a button), but actually deleting duplicate Programs and repointing
+Combis at a single kept copy is still planned, not built -- it needs the Combi Timbre
+reference work above finished first, and real-hardware validation of the write path
+(currently in progress, see `STATE.md`) before anything that deletes data is a good
+idea to add on top -- not something to bolt on carelessly to someone's real synth
+backup.
 
 ## Why
 

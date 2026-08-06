@@ -110,6 +110,7 @@ int main() {
                    [&bridge](const choc::value::ValueView& args) { return bridge.getSongRecordBytes(args); });
         view.bind("putSongRecordBytes",
                    [&bridge](const choc::value::ValueView& args) { return bridge.putSongRecordBytes(args); });
+        view.bind("saveFileAs", [&bridge](const choc::value::ValueView& args) { return bridge.saveFileAs(args); });
         view.bind("listPrograms",
                    [&bridge](const choc::value::ValueView& args) { return bridge.listPrograms(args); });
         view.bind("listCombis", [&bridge](const choc::value::ValueView& args) { return bridge.listCombis(args); });

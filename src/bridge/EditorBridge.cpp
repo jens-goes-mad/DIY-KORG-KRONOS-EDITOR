@@ -385,6 +385,18 @@ choc::value::Value EditorBridge::putSongRecordBytes(const choc::value::ValueView
     return makeOk();
 }
 
+choc::value::Value EditorBridge::saveFileAs(const choc::value::ValueView& args) {
+    const int datasetId = intArg(args, 0);
+    const std::string path = stringArg(args, 1);
+
+    auto* file = fileOf(datasetId);
+    if (file == nullptr) return makeError("Dataset " + std::to_string(datasetId) + " has no file loaded");
+
+    std::string error;
+    if (!file->save(path, error)) return makeError(error);
+    return makeOk();
+}
+
 choc::value::Value EditorBridge::listPrograms(const choc::value::ValueView& args) {
     const int datasetId = intArg(args, 0);
     auto* file = fileOf(datasetId);

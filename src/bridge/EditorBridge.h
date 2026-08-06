@@ -20,10 +20,12 @@
 // pointed at the same dataset edit the same in-memory file -- this is
 // deliberate, see docs/content/components/index.md's dataset section. Dataset
 // count is unbounded and nothing evicts a dataset except an explicit
-// closeDataset() call; nothing is ever written back to *disk* yet (no Save
-// mechanism exists) -- Setlist moveEntry()/copyEntry() only rearrange the
+// closeDataset() call. Setlist moveEntry()/copyEntry() only rearrange the
 // in-memory Setlist struct, but copyProgram() and putSongRecordBytes() write
-// directly into the dataset's own retained raw bytes -- see README.md/STATE.md.
+// directly into the dataset's own retained raw bytes -- see README.md/
+// STATE.md. saveFileAs() writes that same retained buffer straight to disk;
+// there's no real Save UI wired up yet (no dialog, no dirty-tracking), just
+// the bridge-level building block -- see saveFileAs()'s own doc comment.
 class EditorBridge {
 public:
     choc::value::Value openFile(const choc::value::ValueView& args);    // [path] -> {ok, datasetId, displayName, setlistCount}
@@ -85,6 +87,15 @@ public:
     // directly into a dataset's retained raw bytes rather than only
     // mutating in-memory bookkeeping.
     choc::value::Value putSongRecordBytes(const choc::value::ValueView& args);
+
+    // [datasetId, path] -> {ok} or {ok:false, error}. Writes the dataset's
+    // retained raw bytes straight to `path` via PcgFile::save() -- see that
+    // method's own doc comment for why this needs no serialization step of
+    // its own (every edit already lands directly in the retained buffer).
+    // Deliberately minimal for now: takes a plain path, no native Save
+    // dialog wired up yet (see STATE.md) -- callers (currently a devtools
+    // console script, not real app UI) supply an absolute path themselves.
+    choc::value::Value saveFileAs(const choc::value::ValueView& args);
 
     // Library browser (read-only) -- see docs/README.md and STATE.md's
     // Program/Combi Library Editor plan for scope/roadmap.

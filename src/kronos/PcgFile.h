@@ -190,6 +190,17 @@ public:
     // filesystem path to give us -- see README.md's "Open File" section).
     bool loadFromMemory(std::vector<uint8_t> data, std::string& error);
 
+    // Writes the retained raw bytes (data_) straight to `path`, verbatim --
+    // no re-serialization, no re-deriving anything. This is deliberately
+    // simple: every edit this app makes (copyProgramFrom(), putSongRecordBytes())
+    // already writes directly into data_ the moment it happens (see
+    // STATE.md's "ARCHITECTURE" section), so by the time save() is called
+    // data_ already IS the fully up-to-date file -- there is no separate
+    // in-memory model to serialize. Returns false and fills `error` if the
+    // path can't be opened for writing, or if no file is loaded (data_
+    // empty). Does not throw.
+    bool save(const std::string& path, std::string& error) const;
+
     const std::vector<Setlist>& setlists() const { return setlists_; }
     std::vector<Setlist>& setlists() { return setlists_; }
 

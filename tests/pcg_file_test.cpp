@@ -539,6 +539,52 @@ void testPcgFileEndToEnd() {
     }
 }
 
+// save() is deliberately trivial (a verbatim write of data_, see its own doc
+// comment) -- this test isn't about the write logic itself, it's proof that
+// a save()+load() round-trip actually reproduces the same file: catches
+// anything that would corrupt data_ before this point without needing to
+// byte-compare the whole buffer by hand.
+void testSaveRoundTrip() {
+    kronos::PcgFile pcg;
+    std::string error;
+    std::vector<uint8_t> data = buildSyntheticPcgFile();
+    bool loaded = pcg.loadFromMemory(std::move(data), error);
+    CHECK(loaded);
+    if (!loaded) return;
+
+    const char* path = "pcg_file_test_save_output.tmp";
+    bool saved = pcg.save(path, error);
+    CHECK(saved);
+    if (!saved) {
+        std::fprintf(stderr, "  save() error: %s\n", error.c_str());
+        return;
+    }
+
+    kronos::PcgFile reloaded;
+    std::string reloadError;
+    bool reloadedOk = reloaded.load(path, reloadError);
+    CHECK(reloadedOk);
+    if (reloadedOk) {
+        CHECK_EQ(reloaded.setlists().size(), pcg.setlists().size(),
+                 "save()+load() round-trips the same number of Set Lists");
+        if (!reloaded.setlists().empty() && !pcg.setlists().empty()) {
+            CHECK_EQ(reloaded.setlists()[0].name, pcg.setlists()[0].name,
+                     "save()+load() round-trips the Set List name");
+            CHECK_EQ(reloaded.setlists()[0].songs[0].comment, pcg.setlists()[0].songs[0].comment,
+                     "save()+load() round-trips song 0's Comment");
+        }
+        CHECK_EQ(reloaded.programs().size(), pcg.programs().size(),
+                 "save()+load() round-trips the same number of Programs");
+    }
+
+    std::remove(path);
+
+    // Rejected: nothing loaded (data_ empty) -- save() has nothing to write.
+    kronos::PcgFile empty;
+    std::string emptyError;
+    CHECK(!empty.save(path, emptyError));
+}
+
 }  // namespace
 
 int main() {
@@ -547,6 +593,7 @@ int main() {
     testDecodeCombiFields();
     testHashProgramRecord();
     testPcgFileEndToEnd();
+    testSaveRoundTrip();
 
     if (g_failures > 0) {
         std::fprintf(stderr, "\n%d check(s) FAILED\n", g_failures);

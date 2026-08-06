@@ -94,3 +94,15 @@ add_executable(pcg_file_test
 target_include_directories(pcg_file_test PRIVATE src)
 
 add_test(NAME pcg_file_test COMMAND pcg_file_test)
+
+# Standalone hardware-validation CLI tool, same minimal dependency set as
+# pcg_file_test above (no main.cpp/EditorBridge.cpp/CHOC) -- see
+# tools/generate_setlist_test_matrix.cpp's own header comment.
+add_executable(generate_setlist_test_matrix
+    tools/generate_setlist_test_matrix.cpp
+    src/kronos/PcgFile.cpp
+    src/kronos/ProgramDecoder.cpp
+    src/kronos/CombiDecoder.cpp
+)
+
+target_include_directories(generate_setlist_test_matrix PRIVATE src)
