@@ -365,6 +365,15 @@ its own math was self-consistent, never whether the app's actual code is correct
 tools call the exact same `PcgFile`/`EditorBridge`/JS-codec functions a real user's
 click would.
 
+It already paid off once, concretely: this project's working list of the 16 Set List
+color names/hex values was an unconfirmed guess (generic names like "Red"/"Blue"/
+"Black") until a Color-only test group went through this exact loop -- the real
+palette turned out to be a completely different, Korg-curated, muted set (Default,
+Charcoal, Brick, Burgundy, ...), in a different order, with none of the generic names
+present at all. See [the file format](/format) §4.5 for the confirmed table. That's
+the kind of wrong-in-a-way-nobody-would-guess result this whole approach exists to
+catch.
+
 Nothing here claims the architecture is finished or that every future component will fit
 this shape perfectly -- it's a pattern being learned by doing, one real component at a
 time, same as the file format itself.

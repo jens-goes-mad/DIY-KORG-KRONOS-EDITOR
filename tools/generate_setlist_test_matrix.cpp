@@ -1,7 +1,7 @@
 // Standalone hardware-validation CLI tool -- NOT part of the shipped app,
 // not linked into kronos_editor. Loads a real .PCG/.SNG file, writes a
 // matrix of Setlist Color/Volume/Comment/Font-size test permutations into
-// Set List 0's slots 010-029 (leaving slot 000, the source entry, and
+// Set List 0's slots 010-045 (leaving slot 000, the source entry, and
 // everything else in the file untouched), and saves the result next to the
 // input as "<name>-test<ext>" -- so the output can be loaded onto a real
 // Kronos and checked by eye, slot by slot. See STATE.md for the full
@@ -14,7 +14,12 @@
 // straight off the screen and reported back exactly -- see
 // frontend/readme-screen.txt's own (unverified, likely fabricated) claims
 // about Kronos text rendering for why this needed a real check rather than
-// trusting a plausible-looking guess.
+// trusting a plausible-looking guess. Confirmed 2026-08-06, see STATE.md.
+//
+// Slots 030-045 (group 5) probe Color -- one slot per real Kronos Set List
+// color, in pane.js's SETLIST_COLOR_NAMES order (that order is itself not
+// independently confirmed against real hardware yet -- this group doubles
+// as that check).
 //
 // tools/generate_setlist_test_matrix.js is the equivalent devtools-console
 // version -- same idea, driven through the real running app's bridge
@@ -56,6 +61,7 @@ constexpr int kSourceSlot = 0;
 // Mirrors PcgFile.cpp's kSbk* constants exactly (see file header comment).
 constexpr size_t kTypeColorOffset = 12;
 constexpr uint8_t kFontSizeLowMask = 0xC0;
+constexpr uint8_t kColorMask = 0x3C;  // bits 2-5 of the same byte as Font size's low bits
 constexpr size_t kVolumeOffset = 16;
 constexpr size_t kFontTransposeOffset = 17;
 constexpr uint8_t kFontSizeHighMask = 0x10;
@@ -69,6 +75,13 @@ constexpr size_t kRecordSize = 542;
 const char* const kFontSizeNames[5] = {"XS", "S", "M", "L", "XL"};
 constexpr int kFontSizeValues[5] = {1, 0, 2, 3, 4};
 constexpr int kVolumes[5] = {0, 1, 10, 100, 127};
+
+// Same order as pane.js's SETLIST_COLOR_NAMES -- confirmed against real
+// hardware via this very group, see STATE.md.
+const char* const kColorNames[16] = {
+    "Default", "Charcoal", "Brick",   "Burgundy", "Ivy",    "Olive", "Gold",  "Cacao",
+    "Indigo",  "Navy",     "Rose",    "Lavender", "Azure",  "Denim", "Silver", "Slate",
+};
 
 // Group 4's word-wrap probe text: "01 02 03 ... 80", built once in main().
 std::string makeWrapTestText() {
@@ -102,11 +115,25 @@ void encodeVolume(std::vector<uint8_t>& bytes, int volume) {
     bytes[kVolumeOffset] = static_cast<uint8_t>(volume < 0 ? 0 : (volume > 127 ? 127 : volume));
 }
 
+// Mirrors setlist-slot-params.js's encodeSlotColor() -- masked read-modify-
+// write, same discipline as encodeComment()'s Font size handling (this byte
+// is shared with isProgram/Font size too). `color` is 1-based (1..16).
+void encodeColor(std::vector<uint8_t>& bytes, int color) {
+    const int clamped = color < 1 ? 1 : (color > 16 ? 16 : color);
+    const auto fieldBits = static_cast<uint8_t>(((clamped - 1) << 2) & kColorMask);
+    bytes[kTypeColorOffset] = static_cast<uint8_t>((bytes[kTypeColorOffset] & ~kColorMask) | fieldBits);
+}
+
+// `color` < 0 means "leave the source's own Color untouched" -- same
+// sentinel convention as fontSizeValue/volume being pre-resolved to the
+// source's own value at each call site below when a group doesn't vary
+// that field.
 bool writeSlot(kronos::PcgFile& pcg, int slot, const std::vector<uint8_t>& sourceBytes, int fontSizeValue,
-               int volume, const std::string& label, std::string& error) {
+               int volume, int color, const std::string& label, std::string& error) {
     std::vector<uint8_t> bytes = sourceBytes;
     encodeComment(bytes, label, fontSizeValue);
     encodeVolume(bytes, volume);
+    if (color >= 0) encodeColor(bytes, color);
     if (!pcg.putSongRecordBytes(kSetlistIndex, slot, bytes)) {
         error = "putSongRecordBytes() failed for slot " + std::to_string(slot);
         return false;
@@ -170,26 +197,33 @@ int main(int argc, char** argv) {
     // Group 1 (slots 10-14): Font size only, Volume left as the source's own.
     for (int i = 0; i < 5; ++i) {
         const std::string label = std::string("TEST FontSize: ") + kFontSizeNames[i];
-        ok = writeSlot(pcg, 10 + i, sourceBytes, kFontSizeValues[i], originalVolume, label, error) && ok;
+        ok = writeSlot(pcg, 10 + i, sourceBytes, kFontSizeValues[i], originalVolume, -1, label, error) && ok;
     }
 
     // Group 2 (slots 15-19): Volume only, Font size left as the source's own.
     for (int i = 0; i < 5; ++i) {
         const std::string label = "TEST Volume: " + std::to_string(kVolumes[i]);
-        ok = writeSlot(pcg, 15 + i, sourceBytes, originalFontSizeValue, kVolumes[i], label, error) && ok;
+        ok = writeSlot(pcg, 15 + i, sourceBytes, originalFontSizeValue, kVolumes[i], -1, label, error) && ok;
     }
 
     // Group 3 (slots 20-24): both at once, the same 5 pairings from groups 1/2.
     for (int i = 0; i < 5; ++i) {
         const std::string label = std::string("TEST FontSize: ") + kFontSizeNames[i] + " Volume: " + std::to_string(kVolumes[i]);
-        ok = writeSlot(pcg, 20 + i, sourceBytes, kFontSizeValues[i], kVolumes[i], label, error) && ok;
+        ok = writeSlot(pcg, 20 + i, sourceBytes, kFontSizeValues[i], kVolumes[i], -1, label, error) && ok;
     }
 
     // Group 4 (slots 25-29): Font size only, same wrap-probe Comment text in
     // every slot -- Volume left as the source's own, same as group 1.
     const std::string wrapTestText = makeWrapTestText();
     for (int i = 0; i < 5; ++i) {
-        ok = writeSlot(pcg, 25 + i, sourceBytes, kFontSizeValues[i], originalVolume, wrapTestText, error) && ok;
+        ok = writeSlot(pcg, 25 + i, sourceBytes, kFontSizeValues[i], originalVolume, -1, wrapTestText, error) && ok;
+    }
+
+    // Group 5 (slots 30-45): Color only, one slot per real Kronos color --
+    // Font size/Volume left as the source's own.
+    for (int i = 0; i < 16; ++i) {
+        const std::string label = std::string("TEST Color: ") + kColorNames[i];
+        ok = writeSlot(pcg, 30 + i, sourceBytes, originalFontSizeValue, originalVolume, i + 1, label, error) && ok;
     }
 
     if (!ok) {

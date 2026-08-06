@@ -40,47 +40,67 @@ function abbreviateBankName(name) {
   return name.replace(/^INT-/, "I-").replace(/^USER-/, "U-");
 }
 
-// Real Kronos Set List slot color names (16 total, matching SlotParams'
-// 1-based `color` field -- see PcgFile.h §4.3), from the official Korg
-// manual. Order is NOT yet independently confirmed against a real Kronos --
-// this is the order they were given in (reads like the on-device menu
-// order), kept as the working assumption until cross-checked against real
-// hardware, per this project's "no guessing" standard -- see STATE.md.
+// Real Kronos Set List slot color names AND hex values (16 total, matching
+// SlotParams' 1-based `color` field -- see PcgFile.h §4.3) -- CONFIRMED
+// 2026-08-06 against a real Kronos unit (see STATE.md), via
+// tools/generate_setlist_test_matrix.{js,cpp}'s Group 5 (slots 030-045, one
+// real color per slot). Both name AND order were substantially wrong before
+// this: the earlier list ("Standard/Blue/Ivy/Gold/Rose/Azure/Red/Orange/
+// Yellow/Green/Cyan/Purple/Magenta/Brown/Black/White") was an unconfirmed
+// guess, and the real palette isn't generic named colors at all -- it's
+// Korg's own curated, muted set, e.g. no Red/Green/Blue/Black/White exist
+// as such. Hex values are the project owner's own on-screen reading, not a
+// pixel-perfect sample -- close enough to use directly rather than
+// substituting a "usual" hex for a similarly-named CSS color, since the
+// whole point is showing what THIS hardware actually renders, not a
+// generic "gold" or "navy."
 const SETLIST_COLOR_NAMES = [
-  "Standard", "Blue", "Ivy", "Gold", "Rose", "Azure", "Red", "Orange",
-  "Yellow", "Green", "Cyan", "Purple", "Magenta", "Brown", "Black", "White",
+  "Default", "Charcoal", "Brick", "Burgundy", "Ivy", "Olive", "Gold", "Cacao",
+  "Indigo", "Navy", "Rose", "Lavender", "Azure", "Denim", "Silver", "Slate",
 ];
 
-// This project's own muted approximation of each named color above (not
-// sampled from real hardware -- Korg's exact palette isn't known any more
-// than the ordering is), bumped up a bit from an earlier, darker pass (per
-// explicit feedback that they read as too dark/muted) while still dark
-// enough that the existing dim-gray cell text (.col-index) stays legible on
-// top of any of them. Same index (0-based here, color field is 1-based) as
-// SETLIST_COLOR_NAMES.
+// Same index (0-based here, color field is 1-based) as SETLIST_COLOR_NAMES.
 const SETLIST_COLOR_HEX = [
-  "#8e8e8e", // Standard (Grau/Dunkelgrau)
-  "#426bbd", // Blue (Blau)
-  "#507946", // Ivy (Efeu-Grün)
-  "#b6912d", // Gold (Gold/Gelb)
-  "#b6566e", // Rose (Rosa/Hellrot)
-  "#428db6", // Azure (Azurblau/Hellblau)
-  "#b64242", // Red (Rot)
-  "#b6792d", // Orange
-  "#b6a82d", // Yellow (Gelb)
-  "#428e46", // Green (Grün)
-  "#2da2a2", // Cyan (Cyan/Türkis)
-  "#7942b6", // Purple (Violett)
-  "#a242a2", // Magenta
-  "#79542d", // Brown (Braun)
-  "#262626", // Black (Schwarz)
-  "#a8a8a8", // White (Weiss) -- real white would wreck the dim-gray text's contrast, see .col-index
+  "#494c55", // Default
+  "#282b31", // Charcoal
+  "#af4350", // Brick
+  "#661b27", // Burgundy
+  "#929a33", // Ivy
+  "#233519", // Olive
+  "#aa8c3e", // Gold
+  "#723d3f", // Cacao
+  "#3759bf", // Indigo
+  "#0410ab", // Navy
+  "#9478c7", // Rose
+  "#745ad2", // Lavender
+  "#5588c2", // Azure
+  "#385f9c", // Denim
+  "#546180", // Silver
+  "#2a3149", // Slate
 ];
 
-// entry.color is 1-based -- falls back to Standard rather than guessing if
-// it's ever out of the confirmed 1..16 range.
+// Purely cosmetic UI legibility boost -- NOT a hardware value, just a
+// display-time brightening so the real palette's fairly dark/muted swatches
+// (SETLIST_COLOR_HEX above, confirmed against real hardware) don't
+// disappear into this app's own dark background. Per-channel multiply,
+// clamped -- SETLIST_COLOR_HEX itself stays the literal confirmed value,
+// only what's actually rendered gets adjusted.
+function brightenHex(hex, factor = 1.3) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const clamp = (v) => Math.min(255, Math.round(v * factor));
+  const toHex = (v) => v.toString(16).padStart(2, "0");
+  return `#${toHex(clamp(r))}${toHex(clamp(g))}${toHex(clamp(b))}`;
+}
+
+// entry.color is 1-based -- falls back to Default rather than guessing if
+// it's ever out of the confirmed 1..16 range. Returns the brightened
+// display version (brightenHex above) -- every current caller is a UI
+// swatch (the "#" cell background, the Color editor's 16 buttons), never a
+// place that needs the literal unmodified hardware value.
 function setlistColorHex(color) {
-  return SETLIST_COLOR_HEX[color - 1] || SETLIST_COLOR_HEX[0];
+  return brightenHex(SETLIST_COLOR_HEX[color - 1] || SETLIST_COLOR_HEX[0]);
 }
 
 function setlistColorName(color) {

@@ -31,6 +31,7 @@
    like that shows up grayed out in devtools rather than as a visible
    mistake.) */
 .table tr.is-selected {
+  padding: 10px 0, 10px, 10px;  /* matches .editor-row td above, so the row highlight and the editor panel's left border line up */
   background: var(--editor-accent);
   color: #fff;
 }
@@ -374,9 +375,13 @@ td.has-comment {
    above it. */
 .table.is-narrow .editor-row td {
   background: var(--panel);
-  padding: 8px 8px 8px 10px;
-  border-left: 1px solid var(--editor-accent);
+  /* border-left: 5px solid var(--editor-accent); */
   cursor: default;
+}
+
+.editor-row {
+  margin: 5px;
+  border-left: 3px solid var(--editor-accent);
 }
 
 /* `position: relative` anchor for .editor-panel-close below. */
@@ -508,7 +513,7 @@ td.has-comment {
 .color-swatch-button {
   border: 2px solid transparent;
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);  /* keeps the (empty) label area legible over every swatch color, incl. White */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);  /* keeps the (empty) label area legible over every swatch color -- the real confirmed palette (pane.js) is all fairly dark, but this stays cheap insurance */
 }
 
 /* Bulma's own .is-link border color marks the row's CURRENT color, same

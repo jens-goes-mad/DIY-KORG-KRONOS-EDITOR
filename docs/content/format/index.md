@@ -250,6 +250,46 @@ small transpose values because the high 3 bits (in `+13`) happened to
 still be 0 for those, and broke down for larger values because the high
 half lives in a completely different byte.
 
+### 4.5 Color names — CONFIRMED
+
+The `color` field (+12, bits 2-5, see §4.3) is 1-based, 1-16. Confirmed
+against real Kronos hardware (2026-08-06, via `tools/
+generate_setlist_test_matrix.{js,cpp}`'s Group 5, one real color written
+to a Set List slot per value 1-16, checked by eye on the device) -- and
+substantially different from this project's earlier working guess, which
+used generic named colors ("Red"/"Blue"/"Black"/"White"...) in what turned
+out to be the wrong order too. The real palette is Korg's own curated,
+muted set -- none of the generic names exist at all:
+
+| Value | Name | Hex (as read off the device) |
+|---|---|---|
+| 1 | Default | `#494c55` |
+| 2 | Charcoal | `#282b31` |
+| 3 | Brick | `#af4350` |
+| 4 | Burgundy | `#661b27` |
+| 5 | Ivy | `#929a33` |
+| 6 | Olive | `#233519` |
+| 7 | Gold | `#aa8c3e` |
+| 8 | Cacao | `#723d3f` |
+| 9 | Indigo | `#3759bf` |
+| 10 | Navy | `#0410ab` |
+| 11 | Rose | `#9478c7` |
+| 12 | Lavender | `#745ad2` |
+| 13 | Azure | `#5588c2` |
+| 14 | Denim | `#385f9c` |
+| 15 | Silver | `#546180` |
+| 16 | Slate | `#2a3149` |
+
+Hex values are the project owner's own on-screen reading, not a
+pixel-sampled measurement -- close enough to use directly (this app's UI
+brightens them a bit further for on-screen legibility, a purely cosmetic
+display-time adjustment, see `frontend/pane.js`'s `brightenHex()`), but not
+guaranteed pixel-perfect. **Open question, not yet investigated**: whether
+this palette (names and/or hex) is identical across every Kronos hardware
+variant/revision, or whether it differs by model (e.g. an original unit vs.
+a limited/"silver edition" unit) -- confirmed so far only on the one unit
+this project has access to.
+
 ## 5. Instrument-name cross-reference — CONFIRMED
 
 An SDB1 song name is just a label -- it can be (and often is) edited

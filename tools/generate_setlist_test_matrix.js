@@ -30,7 +30,7 @@
 //        await saveTestFile("/absolute/path/to/output.pcg")
 //      -- writes the whole dataset (your one real entry PLUS the 15 new
 //      test slots below, everything else untouched) to that path.
-//   7. Load output.pcg onto your Kronos and check slots 010-029 by eye.
+//   7. Load output.pcg onto your Kronos and check slots 010-045 by eye.
 //
 // Both functions default to SET LIST INDEX 0, SOURCE SLOT 0 (Kronos's own
 // 000-127 numbering) and the MOST RECENTLY OPENED dataset -- edit the
@@ -55,6 +55,14 @@ const TEST_MATRIX_VOLUMES = [0, 1, 10, 100, 127];
 // this is how to actually find out, not guess.
 const TEST_MATRIX_WRAP_TEXT = Array.from({ length: 80 }, (_, i) => String(i + 1).padStart(2, "0")).join(" ");
 
+// The 16 real Kronos Set List colors, confirmed against real hardware via
+// this very group -- see pane.js's SETLIST_COLOR_NAMES (kept in sync) and
+// STATE.md for the confirmation record.
+const TEST_MATRIX_COLOR_NAMES = [
+  "Default", "Charcoal", "Brick", "Burgundy", "Ivy", "Olive", "Gold", "Cacao",
+  "Indigo", "Navy", "Rose", "Lavender", "Azure", "Denim", "Silver", "Slate",
+];
+
 async function generateSetlistTestMatrix() {
   const datasets = await window.listDatasets();
   if (datasets.length === 0) throw new Error("No dataset open -- open your test file first.");
@@ -66,25 +74,26 @@ async function generateSetlistTestMatrix() {
   // page's own context, so a relative import() resolves the same way
   // pane.js's own dynamic import of these same two files already does.
   const { decodeSetlistComment, encodeSetlistComment } = await import("./components/kronos/setlist-comment.js");
-  const { encodeSlotVolume } = await import("./components/kronos/setlist-slot-params.js");
+  const { encodeSlotColor, encodeSlotVolume } = await import("./components/kronos/setlist-slot-params.js");
 
   const sourceResult = await window.getSongRecordBytes(datasetId, TEST_MATRIX_SETLIST_INDEX, TEST_MATRIX_SOURCE_SLOT);
   if (!sourceResult.ok) throw new Error(`Couldn't read the source slot: ${sourceResult.error}`);
   const sourceBytes = Uint8Array.from(sourceResult.bytes);
   const sourceDecoded = decodeSetlistComment(sourceBytes);
 
-  // Writes `sourceBytes` into `slot`, with `fontSize`/`volume` overridden
-  // where given (null/undefined leaves the source entry's own value
-  // untouched) and Comment set to `label` -- mirrors exactly what pane.js's
-  // buildColorSection()/buildCommentSection()/buildVolumeSection() already
-  // do per edit, just scripted across many slots instead of one click at a
-  // time.
-  async function writeSlot(slot, { fontSize, volume, label }) {
+  // Writes `sourceBytes` into `slot`, with `fontSize`/`volume`/`color`
+  // overridden where given (null/undefined leaves the source entry's own
+  // value untouched) and Comment set to `label` -- mirrors exactly what
+  // pane.js's buildColorSection()/buildCommentSection()/buildVolumeSection()
+  // already do per edit, just scripted across many slots instead of one
+  // click at a time.
+  async function writeSlot(slot, { fontSize, volume, color, label }) {
     let bytes = encodeSetlistComment(sourceBytes, {
       comment: label,
       fontSize: fontSize ?? sourceDecoded.fontSize,
     });
     if (volume != null) bytes = encodeSlotVolume(bytes, volume);
+    if (color != null) bytes = encodeSlotColor(bytes, color);
 
     const result = await window.putSongRecordBytes(datasetId, TEST_MATRIX_SETLIST_INDEX, slot, Array.from(bytes));
     if (!result.ok) throw new Error(`Slot ${slot}: ${result.error}`);
@@ -117,7 +126,16 @@ async function generateSetlistTestMatrix() {
     await writeSlot(25 + i, { fontSize, volume: null, label: TEST_MATRIX_WRAP_TEXT });
   }
 
-  console.log("Done -- 20 slots written (010-029). Now run: await saveTestFile(\"/absolute/path/to/output.pcg\")");
+  // Group 5 (slots 30-45): Color only, one slot per real Kronos color, in
+  // TEST_MATRIX_COLOR_NAMES' order -- Font size/Volume left as the source's
+  // own.
+  for (let i = 0; i < TEST_MATRIX_COLOR_NAMES.length; i++) {
+    const color = i + 1;  // SlotParams.color is 1-based
+    const name = TEST_MATRIX_COLOR_NAMES[i];
+    await writeSlot(30 + i, { fontSize: null, volume: null, color, label: `TEST Color: ${name}` });
+  }
+
+  console.log("Done -- 36 slots written (010-045). Now run: await saveTestFile(\"/absolute/path/to/output.pcg\")");
 }
 
 async function saveTestFile(path) {

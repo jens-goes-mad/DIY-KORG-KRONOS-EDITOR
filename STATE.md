@@ -713,6 +713,46 @@ full rationale):
       wrap differently) or reveal the actual screen resolution/font -- both remain
       unconfirmed; a longer single unbreakable "word" per size would be the natural next
       probe if that's ever needed for an in-app wrap-preview feature.
+  - **Color names/hex CORRECTED against real hardware, 2026-08-06** -- both the
+    biggest and most useful result from this whole test-matrix exercise so far. Added
+    Group 5 (slots 030-045, `tools/generate_setlist_test_matrix.{js,cpp}`) writing one
+    real Kronos color per slot 1-16, Comment stating which. Real-hardware result: the
+    byte encoding itself was already correct (color N reliably showed as the Nth entry
+    in the Kronos's own color list), but this project's working name list --
+    `"Standard/Blue/Ivy/Gold/Rose/Azure/Red/Orange/Yellow/Green/Cyan/Purple/Magenta/
+    Brown/Black/White"`, an unconfirmed guess -- was substantially wrong, in both name
+    AND order. The real palette is Korg's own curated, muted set, not generic named
+    colors at all (no Red/Green/Blue/Black/White exist as such):
+      1=Default, 2=Charcoal, 3=Brick, 4=Burgundy, 5=Ivy, 6=Olive, 7=Gold, 8=Cacao,
+      9=Indigo, 10=Navy, 11=Rose, 12=Lavender, 13=Azure, 14=Denim, 15=Silver, 16=Slate
+    -- with hex values the project owner read directly off the device (`#494c55`,
+    `#282b31`, `#af4350`, `#661b27`, `#929a33`, `#233519`, `#aa8c3e`, `#723d3f`,
+    `#3759bf`, `#0410ab`, `#9478c7`, `#745ad2`, `#5588c2`, `#385f9c`, `#546180`,
+    `#2a3149`, respectively) -- not pixel-sampled, but close enough to use directly per
+    explicit instruction ("treat as proposal," not substituted for a "usual" hex for a
+    similarly-named CSS color, since the whole point is showing what THIS hardware
+    actually renders). Full table now in `docs/README.md`/`docs/content/format/
+    index.md` §4.5, the canonical confirmed-format record.
+    - **Open question, explicitly flagged by the project owner, not yet investigated**:
+      whether this palette (names and/or hex) is identical across every Kronos
+      hardware variant/revision, or whether it differs by model (e.g. an original unit
+      vs. a limited/"silver edition" unit) -- confirmed so far only on the one unit
+      this project has access to. No way to resolve this without testing a second,
+      different unit (or finding it in Korg's own documentation) -- noted rather than
+      guessed at either way.
+    - `frontend/pane.js`'s `SETLIST_COLOR_NAMES`/`SETLIST_COLOR_HEX` updated to the
+      confirmed real values (replacing the guess), kept as the literal hardware value
+      -- unmodified, not re-brightened -- so it stays a trustworthy reference. A new
+      `brightenHex()` helper applies a purely cosmetic ~1.3x per-channel brightening
+      at the one point these values actually get rendered (`setlistColorHex()`, used
+      by the "#" cell background and the Color editor's 16 buttons) -- per explicit
+      request for more on-screen legibility, without letting that cosmetic choice
+      contaminate the confirmed-value record itself. `setlist-slot-params.test.html`'s
+      demo palette and both test-matrix tools' color-name labels updated to match.
+    - Verified: full rebuild + `ctest` green; re-ran the CLI tool against a fresh
+      minimal file and independently re-decoded the output (same Python cross-check
+      approach as every other group) -- all 16 Group 5 slots' Color bytes and Comment
+      labels match exactly, source slot and neighboring groups' slots unaffected.
   - **Explicitly not committed to being final**: both the project owner and this
     assistant agreed to revisit/rethink this shape as each piece (Program decoder now
     done; chunk-based component wiring next) proves itself against real tests and the
