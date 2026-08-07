@@ -95,7 +95,10 @@ corresponds to which on-screen label beyond the ones directly confirmed above.
   Close button to dismiss it, editing straight into the loaded file's own raw bytes
   (Color/Volume apply immediately, Comment+Font size via Apply) -- see
   [App architecture & components](/components) for exactly how a panel attaches,
-  writes back, and discards itself. If both panes point at the same Set List of the
+  writes back, and discards itself. The Comment box itself scales its on-screen font
+  size to match whichever Font size is selected, using real per-size character-width
+  ratios confirmed against a real Kronos -- a live approximation of how the text will
+  actually wrap on the device, not just a label picker. If both panes point at the same Set List of the
   same dataset, opening an editor on a slot already open in the other pane is blocked
   outright (with a popup explaining why) rather than risking one pane's edit silently
   overwriting the other's.

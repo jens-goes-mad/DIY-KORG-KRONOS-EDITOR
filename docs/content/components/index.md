@@ -374,6 +374,18 @@ present at all. See [the file format](/format) §4.5 for the confirmed table. Th
 the kind of wrong-in-a-way-nobody-would-guess result this whole approach exists to
 catch.
 
+It paid off a second time the same way, in the opposite direction -- confirmed data
+feeding back INTO the UI, not just correcting a guess. The word-wrap test group
+(Group 4, five Font sizes wrapping the same text) produced real per-size character-
+width ratios; `pane.js`'s Comment editor now scales its own font-size by those exact
+ratios so what you see while editing approximates what the real device would show,
+instead of a fixed, arbitrary textarea font. Confirmed side by side against a real
+Kronos: "nearly identical" at the calibrated reference width. The scaling is
+expressed as a ratio, not an absolute size, specifically because this editor's own
+width is resizable (unlike the Kronos's fixed screen) -- a good small example of the
+difference between reproducing a *measurement* versus reproducing the *relationship*
+a measurement revealed.
+
 Nothing here claims the architecture is finished or that every future component will fit
 this shape perfectly -- it's a pattern being learned by doing, one real component at a
 time, same as the file format itself.

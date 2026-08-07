@@ -490,7 +490,18 @@ td.has-comment {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 6px 8px;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* Proportional, not monospace -- deliberate, not a style preference. The
+     Font-size scaling in pane.js (commentEditorFontSizePx()) approximates
+     real Kronos wrap behavior, and the Kronos's own on-screen text is
+     proportional-width (varying letter widths), not fixed-width -- a
+     monospace preview font would wrap real prose at visually wrong
+     positions relative to the device even with the right font-SIZE ratio
+     applied, since every character would take equal width here but not
+     there. Helvetica/Arial is this project's best still-unconfirmed guess
+     at a close-enough real-world proportional font (see docs' skepticism
+     of frontend/readme-screen.txt's specific claims) -- good enough for a
+     visual approximation, not claimed pixel-exact. */
+  font-family: Helvetica, Arial, sans-serif;
   font-size: 13px;
   resize: vertical;
   overflow-y: hidden;  /* grown to fit content in JS instead of scrolling */

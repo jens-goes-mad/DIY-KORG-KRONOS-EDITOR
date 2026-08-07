@@ -1,5 +1,5 @@
 === STATE BLOCK — GOALS, ACHIEVEMENTS, BLIND SPOTS ===
-Date: 2026-08-06
+Date: 2026-08-07
 Status: Working prototype, git repo (github.com/jens-goes-mad/
         DIY-KORG-KRONOS-EDITOR, `main` branch) with a public Hugo/GitHub
         Pages docs site (jens-goes-mad.github.io/DIY-KORG-KRONOS-EDITOR)
@@ -21,7 +21,11 @@ Status: Working prototype, git repo (github.com/jens-goes-mad/
         now exists too (`PcgFile::save()`/`saveFileAs()`, no UI yet), and
         real-hardware validation of it is actively underway -- see "First
         real save-to-disk piece, plus real-hardware validation tooling"
-        under "ARCHITECTURE" below, and Blind Spot #9. A
+        under "ARCHITECTURE" below, and Blind Spot #9. The Comment editor's Font
+        size now drives a live wrap-preview (real per-size character-width ratios,
+        confirmed 2026-08-07 to render "nearly identical" to a real Kronos at a
+        ~600px textarea width) -- see "Comment editor: live Font-size wrap preview"
+        under "ARCHITECTURE" below. A
         componentized frontend pattern (small, standalone, byte-level-
         tested UI pieces) and a matching backend decoder/encoder
         architecture are now the deliberate direction -- see "ARCHITECTURE:
@@ -753,6 +757,65 @@ full rationale):
       minimal file and independently re-decoded the output (same Python cross-check
       approach as every other group) -- all 16 Group 5 slots' Color bytes and Comment
       labels match exactly, source slot and neighboring groups' slots unaffected.
+  - **Comment editor: live Font-size wrap preview, CONFIRMED against real hardware
+    2026-08-07** -- puts the Group 4 word-wrap data (tokens/line per Font size) to
+    direct use in the UI, not just as a recorded fact. `pane.js`'s Comment textarea
+    now scales its own `font-size` to match whichever Font size is selected (live,
+    before Apply, same as the pending-state pattern the rest of that section already
+    uses), so what the textarea shows approximates what the real device would show.
+    - `commentEditorFontSizePx(fontSize, containerWidthPx)`: the confirmed tokens/line
+      ratios (XS=40, S=35, M=30, L=19, XL=8) expressed as a font-size scale factor
+      relative to S (13px, the byte encoding's own true baseline) -- a RATIO, not an
+      absolute pixels-per-line target, since this pane's width is user-resizable
+      (unlike the Kronos's fixed physical screen) and no single "characters per line"
+      could be correct at every window size. The ratio itself stays correct at any
+      width; CSS text reflow handles the actual wrap for whatever width is currently
+      available.
+    - Width-responsive on top of that: the 13px-at-S baseline was specifically
+      confirmed correct at a ~600px textarea width (`COMMENT_EDITOR_REFERENCE_WIDTH_PX`),
+      so `commentEditorFontSizePx()` also scales by `currentWidth / 600` -- resizing
+      the main window keeps the preview calibrated instead of freezing at whatever
+      width happened to be current when a slot's editor was opened. Recomputed via a
+      `ResizeObserver` -- deliberately watching the row's flex CONTAINER, not the
+      textarea itself, since observing the textarea directly would create a feedback
+      loop (changing its own font-size changes its own height, which would
+      immediately re-trigger the same observer).
+    - Font changed from the previous monospace stack to `Helvetica, Arial, sans-serif`
+      -- a monospace preview would wrap real prose at visually wrong positions
+      relative to the real device even with the right font-SIZE ratio applied, since
+      every character would take equal width here but the Kronos's own rendering
+      (like most real UIs) is proportional-width. Still an unconfirmed guess at the
+      exact real font (see `frontend/readme-screen.txt`'s own unverified claims), just
+      a more realistic approximation than fixed-width.
+    - Incidental bug fix while in here: `autoSizeCommentEditor()`'s "never shrink
+      below 10 rows" floor used to be measured ONCE (via a `requestAnimationFrame`
+      callback) and cached in `textarea.minHeightPx` -- correct at the time Font size
+      was still fixed, but stale the moment Font size became switchable (10 rows at
+      XL is much taller than 10 rows at XS, and the cached floor wouldn't know that).
+      Fixed by re-deriving the floor fresh on every call instead: resetting
+      `style.height` to `"auto"` first falls back to the `<textarea rows=10>`
+      attribute's own intrinsic sizing, which already correctly reflects whatever
+      font-size is currently applied -- no cached value needed at all, and the old
+      `requestAnimationFrame`/`minHeightPx` machinery was removed entirely.
+    - `frontend/mock_bridge.js` gained a real test paragraph (`MOCK_WRAP_TEST_COMMENT`,
+      the project owner's own real Set List comment text) planted on Setlist 000 /
+      Song 000 -- that slot was otherwise blank in every mock dataset (index 0 has no
+      entry in `mockSongsByList`, deliberately, so it doubles as an always-empty
+      example elsewhere) -- so the live preview can be exercised in mock/browser mode
+      without the real native app.
+    - **CONFIRMED against real hardware**: at a Comment textarea width of ~600px, the
+      project owner reported the preview renders "nearly identical" to the same text
+      on a real Kronos. First real validation that a UI feature built directly from
+      this project's own confirmed hardware measurements (not a fabricated guess like
+      `readme-screen.txt`) actually looks right side by side with the real device.
+    - **Dev-environment note, not a code bug**: mock-mode testing hit stale-cache
+      confusion in Chrome twice this session (a change appearing to not apply at all)
+      -- both times resolved by testing in Firefox or an incognito window instead.
+      Python's `http.server` (used for the no-native-build dev loop) sends no
+      `Cache-Control` headers at all, so a plain reload isn't reliable; worth
+      defaulting to a private/incognito window (guaranteed empty cache) when a
+      frontend-only change seems to not be taking effect, before assuming it's a
+      real bug.
   - **Explicitly not committed to being final**: both the project owner and this
     assistant agreed to revisit/rethink this shape as each piece (Program decoder now
     done; chunk-based component wiring next) proves itself against real tests and the
@@ -1522,6 +1585,30 @@ Format:
      wrapping) found under `~/Documents/Sound Quest/` -- structurally
      different from the `KORG`/`PCG1` dialect this parser targets; never
      tested against it.
+  7. **UNCONFIRMED (project owner's own recollection, 2026-08-07, not yet
+     independently tested by this project)**: a Set List slot's NAME (SDB1,
+     the 24-byte field distinct from SBK1's Comment) must be a single line
+     -- no embedded line breaks -- and names longer than 24 characters get
+     truncated to fit on the real device. The 24-character figure matches
+     this project's own already-confirmed byte layout exactly
+     (`kRecordSize`(28) - `kMarkerSize`(4) = 24 bytes, see `PcgFile.cpp`'s
+     `readRecordName()`), which is a good consistency sign, but the actual
+     *behavior* on real hardware -- silent truncation vs. some other
+     handling when a user types past the limit -- hasn't been checked.
+  8. **UNCONFIRMED (same source/date as #7)**: the Comment field truncates
+     after 512 characters on the real device. Doesn't cleanly match this
+     project's own confirmed byte math: SBK1's Comment field spans
+     `RECORD_SIZE`(542) - `COMMENT_OFFSET`(18) = 524 bytes, minus 1 for the
+     NUL terminator (`setlist-comment.js`'s `encodeSetlistComment()` already
+     enforces this exact `RECORD_SIZE - COMMENT_OFFSET - 1` = 523-byte cap)
+     -- an 11-byte gap between the recalled 512 and the byte-derived 523
+     worth resolving: either the real device enforces a tighter UI-level
+     limit than the byte layout technically allows, or one of these two
+     numbers is slightly off (a rounded recollection vs. an exact byte
+     count). Not yet reconciled -- needs an isolated real-hardware test
+     (e.g. write exactly 512 and exactly 523 ASCII characters via this
+     project's own write path, see what the device actually shows/accepts)
+     before either number goes in `docs/README.md` as confirmed.
 
 App/UI:
   8. Leading spaces reportedly disappearing from Comment text somewhere in

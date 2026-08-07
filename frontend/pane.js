@@ -493,10 +493,66 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
   const COMMENT_EDITOR_MIN_ROWS = 10;
 
   // Grows the textarea to fit its content (no internal scrollbar) but never
-  // shrinks below COMMENT_EDITOR_MIN_ROWS worth of height.
+  // shrinks below COMMENT_EDITOR_MIN_ROWS worth of height -- self-contained
+  // and safe to call at any time, in any order: resetting to `height: auto`
+  // first falls back to the <textarea rows=N> attribute's own intrinsic
+  // sizing (browser-native, and correctly reflects whatever font-size is
+  // CURRENTLY applied, since `rows` is a text-metric-relative attribute,
+  // not a fixed pixel count) -- so `clientHeight` measured right after that
+  // reset already IS "N rows at the current font-size," fresh every call,
+  // no separately cached floor to go stale when font-size changes later.
   function autoSizeCommentEditor(textarea) {
     textarea.style.height = "auto";
-    textarea.style.height = `${Math.max(textarea.scrollHeight, textarea.minHeightPx)}px`;
+    const naturalRowsHeight = textarea.clientHeight;
+    textarea.style.height = `${Math.max(textarea.scrollHeight, naturalRowsHeight)}px`;
+  }
+
+  // Real per-Font-size relative character-width ratios, confirmed against
+  // actual Kronos hardware 2026-08-06 (STATE.md's Group 4 word-wrap probe --
+  // tokens/line at each size, using a fixed "NN " 3-char token: XS=40,
+  // S=35, M=30, L=19, XL=8). Expressed here as a font-size SCALE FACTOR
+  // relative to S (the byte encoding's own true baseline/default value),
+  // not as an absolute pixels-per-line target -- this pane's own width is
+  // user-resizable (stretching the main window resizes it, unlike the
+  // Kronos's fixed physical screen), so there's no single "characters per
+  // line" this editor could match exactly regardless of window size. A
+  // font-size RATIO stays correct at any pane width: CSS text reflow
+  // naturally re-wraps at whatever width happens to be available, and the
+  // RELATIVE size difference between Kronos Font sizes (XL always renders
+  // ~4.4x wider per character than S, on any screen) is what this
+  // reproduces -- not literal Kronos pixel/character counts. Also worth
+  // remembering: the confirmed ratio came from one specific numbered-token
+  // test string, not general prose, so real Comment text won't wrap at
+  // identical character positions, just at a proportionally similar rate.
+  const KRONOS_FONT_SIZE_TOKENS_PER_LINE = { XS: 40, S: 35, M: 30, L: 19, XL: 8 };
+  // The project owner confirmed S at 13px reads "nearly identical" to a
+  // real Kronos specifically when the Comment textarea itself is ~600px
+  // wide -- since the Kronos's own screen is a FIXED physical width but
+  // this pane's isn't, that 13px is only correct AT that one reference
+  // width. commentEditorFontSizePx() below scales it by the textarea's
+  // CURRENT width relative to this reference, so resizing the window keeps
+  // the preview calibrated instead of freezing at whatever the confirmed
+  // match happened to be measured at.
+  const COMMENT_EDITOR_BASE_PX = 13;
+  const COMMENT_EDITOR_REFERENCE_WIDTH_PX = 600;
+
+  function commentEditorFontSizePx(fontSize, containerWidthPx) {
+    const tokens = KRONOS_FONT_SIZE_TOKENS_PER_LINE[fontSize] || KRONOS_FONT_SIZE_TOKENS_PER_LINE.S;
+    const baseSize = COMMENT_EDITOR_BASE_PX * (KRONOS_FONT_SIZE_TOKENS_PER_LINE.S / tokens);
+    const widthScale = (containerWidthPx || COMMENT_EDITOR_REFERENCE_WIDTH_PX) / COMMENT_EDITOR_REFERENCE_WIDTH_PX;
+    return baseSize * widthScale;
+  }
+
+  // Applies the Font-size-driven, width-scaled font-size (see
+  // commentEditorFontSizePx()) AND re-measures height (a larger font wraps
+  // into more lines even with unchanged text) -- called on a Font size
+  // button click AND on every resize (see the ResizeObserver in
+  // buildCommentSection() below), so the preview updates live before
+  // Apply and stays accurate as the window/pane is stretched, not just at
+  // whatever width the editor happened to have when it was opened.
+  function applyCommentEditorFontSize(textarea, fontSize) {
+    textarea.style.fontSize = `${commentEditorFontSizePx(fontSize, textarea.clientWidth)}px`;
+    autoSizeCommentEditor(textarea);
   }
 
   // Comment editor -- click a row's Song/Type cell to expand a multiline-
@@ -530,6 +586,13 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
     const decoded = resolvedSlotCodecs.decodeSetlistComment(bytes);
     let pendingFontSize = decoded.fontSize;
 
+    const textarea = document.createElement("textarea");
+    textarea.className = "comment-editor";
+    textarea.rows = COMMENT_EDITOR_MIN_ROWS;
+    textarea.value = decoded.comment;
+    textarea.placeholder = "Comment (supports line breaks)...";
+    textarea.addEventListener("input", () => autoSizeCommentEditor(textarea));
+
     const fontBar = document.createElement("div");
     fontBar.className = "comment-fontsize-bar";
     const fontButtons = {};
@@ -544,17 +607,16 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
         for (const [otherSize, otherBtn] of Object.entries(fontButtons)) {
           otherBtn.classList.toggle("is-link", otherSize === size);
         }
+        // Live preview -- updates the textarea's own font-size (and
+        // re-wraps/re-measures its height) immediately on click, same as
+        // Color's immediate-apply elsewhere, even though the byte write
+        // itself still waits for Apply (see this function's own doc
+        // comment for why).
+        applyCommentEditorFontSize(textarea, size);
       });
       fontButtons[size] = btn;
       fontBar.appendChild(btn);
     }
-
-    const textarea = document.createElement("textarea");
-    textarea.className = "comment-editor";
-    textarea.rows = COMMENT_EDITOR_MIN_ROWS;
-    textarea.value = decoded.comment;
-    textarea.placeholder = "Comment (supports line breaks)...";
-    textarea.addEventListener("input", () => autoSizeCommentEditor(textarea));
 
     const applyBtn = document.createElement("button");
     applyBtn.type = "button";
@@ -569,20 +631,25 @@ function createSetlistPanel(container, { paneId, log, showToast, onDropEntry, ge
       await commitSlotBytes(entry, encoded);
     });
 
-    // Measured after the section is actually in the DOM (scrollHeight
-    // needs layout), and only then grown to fit content taller than 10
-    // rows -- safe to schedule before this element is inserted since
-    // renderRows() (the only caller) appends buildEditorRow()'s return
-    // value synchronously, well before the next paint this callback waits
-    // for.
-    requestAnimationFrame(() => {
-      textarea.minHeightPx = textarea.clientHeight;
-      autoSizeCommentEditor(textarea);
-    });
-
     const textRow = document.createElement("div");
     textRow.className = "comment-editor-text-row";
     textRow.append(textarea, applyBtn);
+
+    // Deliberately observes textRow (a flex row whose WIDTH is driven by
+    // the pane's own layout), not the textarea itself -- observing the
+    // textarea directly would create a feedback loop, since
+    // applyCommentEditorFontSize() changes the textarea's own font-size
+    // AND height, which would immediately re-trigger the very observer
+    // watching it. textRow's width never changes as a side effect of the
+    // textarea's height growing, so no such loop here. Also covers the
+    // very first layout (ResizeObserver fires once automatically as soon
+    // as an observed element gets its initial layout box), so no separate
+    // "wait for paint" step is needed the way the old minHeightPx capture
+    // once required.
+    const commentResizeObserver = new ResizeObserver(() => {
+      applyCommentEditorFontSize(textarea, pendingFontSize);
+    });
+    commentResizeObserver.observe(textRow);
 
     const section = document.createElement("div");
     section.className = "comment-editor-section";

@@ -27,6 +27,22 @@
     ["Pink Floyd"],
   ];
 
+  // Real Comment text the project owner confirmed renders "nearly identical"
+  // to an actual Kronos (pane.js's Font-size-driven wrap preview, see
+  // STATE.md) -- planted on Setlist 000 / Song 000 below so the preview can
+  // be exercised in mock/browser mode too, without the real native app.
+  // Exact whitespace/line breaks preserved as given, not reformatted.
+  const MOCK_WRAP_TEST_COMMENT =
+    "Intro (1): [e-#f-h]  oben bolero h, #c, e  rechts Tonleiter\n" +
+    "                 single note: a__   Ende: d__\n" +
+    "Str (2): D   A/#c   bm7   bm7 | G   D/#f   em7\n" +
+    "             #fm   G   D   A\n" +
+    "Ref (3): D   A/#c   em7 | em7   G   A |:2\n" +
+    "              D   A  em\n" +
+    "Str (2): wie Str1 | 1/2 Str1 | A D A\n" +
+    "Bridge (4): C+c, G+h, #A, F+a | C G dm A\n" +
+    "8 * Ref (bm / D im Wechsel)";
+
   const datasets = {};  // datasetId -> { displayName, setlists: [{index, name}], songs: {setlistIndex: [{index, label}]}, programs, combis }
   let nextDatasetId = 1;
 
@@ -182,6 +198,16 @@
       const titles = mockSongsByList[i - 1] || [];
       songs[s.index] = Array.from({ length: 16 }, (_, k) => makeFakeSong(k, titles[k] || ""));
     });
+
+    // Setlist 000's songs are otherwise all blank (index 0 has no entry in
+    // mockSongsByList, deliberately -- see the `titles[i - 1]` offset
+    // above), so Song 000 needs a real label of its own here to actually
+    // have paramsFound=true and be clickable at all.
+    if (songs[0] && songs[0][0]) {
+      songs[0][0] = makeFakeSong(0, "Wrap Test");
+      songs[0][0].comment = MOCK_WRAP_TEST_COMMENT;
+    }
+
     return { displayName: fileName, setlists, songs, programs: makeFakePrograms(), combis: makeFakeCombis() };
   }
 
