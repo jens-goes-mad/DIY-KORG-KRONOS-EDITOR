@@ -1,0 +1,412 @@
+========================================================================
+CX-3
+This file was generated automatically.  Do not edit by hand.
+========================================================================
+
+Components
+
+comp  sub                name
+----  ---  --------------------------------
+ 127    0  CX-3 Patch
+   0    0  Static 3-Band EQ
+   1    0  Common KeyTrack 1
+   2    0  Common KeyTrack 2
+   3    0  Static Pan/Output
+   4    0  Static AMS Mixer 1
+   5    0  Static AMS Mixer 2
+   6    0  Organ Osc
+
+
+CX-3 Patch (comp 127, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0              0..97  VoiceDelay
+    1       0               0..1  Drawbar Mode (Standard/EX)
+    2       0               0..1  Wheel Type
+    3       0              0..99  Overtone Level
+    4       0              0..99  Leakage Level
+    5       0              0..99  Noise Level
+    6       0               0..1  Wheel Brake
+    7       0              0..47  Wheel Brake AMS Source
+    8       0               0..1  Wheel Brake AMS Mode
+    9       0               0..1  Wheel Brake Speed
+   10       0            -60..12  Pitch Bend Range Up
+   11       0            -60..12  Pitch Bend Range Down
+   12       0               0..1  Split On/Off
+   13       0              0..47  Split On/Off AMS Source
+   14       0               0..1  Split On/Off AMS Mode
+   15       0              0..99  Key-On Click Level
+   16       0              0..99  Key-Off Click Level
+   17       0               0..1  Perc Enable
+   18       0              0..47  Perc Enable AMS Source
+   19       0               0..1  Perc Enable AMS Mode
+   20       0               0..1  Perc Level (Soft/Loud)
+   21       0              0..47  Perc Level AMS Source
+   22       0               0..1  Perc Level AMS Mode
+   23       0              0..99  Perc Loud Level
+   24       0              0..99  Perc Soft Level
+   25       0              0..99  Perc Loud Drawbar Attenuation
+   26       0               0..1  Perc Decay (Slow/Fast)
+   27       0              0..47  Perc Decay AMS Source
+   28       0               0..1  Perc Decay AMS Mode
+   29       0              0..99  Perc Fast Decay Time
+   30       0              0..99  Perc Slow Decay Time
+   31       0               0..1  Perc Harmonic (2nd/3rd)
+   32       0              0..47  Perc Harmonic AMS Source
+   33       0               0..1  Perc Harmonic AMS Mode
+   34       0               0..1  V/C Upper On/Off
+   35       0              0..47  V/C Upper On/Off AMS Source
+   36       0               0..1  V/C Upper On/Off AMS Mode
+   37       0               0..1  V/C Lower On/Off
+   38       0              0..47  V/C Lower On/Off AMS Source
+   39       0               0..1  V/C Lower On/Off AMS Mode
+   40       0             0..100  V/C Trim
+   41       0               0..1  V/C Mode (Preset/Custom)
+   42       0               0..5  [Preset] V/C Type
+   43       0              0..47  V/C Type AMS Source
+   44       0              -5..5  V/C Type AMS Intensity
+   45       0             0..100  [Custom] V/C Mix
+   46       0              0..47  V/C Mix AMS Source
+   47       0          -100..100  V/C Mix AMS Intensity
+   48       0             0..100  V/C Depth
+   49       0              0..47  V/C Depth AMS Source
+   50       0          -100..100  V/C Depth AMS Intensity
+   51       0             1..230  V/C Speed
+   52       0              0..47  V/C Speed AMS Source
+   53       0          -115..115  V/C Speed AMS Intensity
+   54       0              0..30  Expression Minimum
+   55       0              0..99  Expression Level
+   56       0              0..47  Expression AMS Source
+   57       0               0..3  Expression Mode
+   58       0               0..2  Amp Type
+   59       0              0..99  Amp Gain
+   60       0              0..47  Amp Gain AMS Source
+   61       0            -99..99  Amp Gain AMS Intensity
+   62       0            -10..10  Amp Tone Treble
+   63       0            -10..10  Amp Tone Middle
+   64       0            -10..10  Amp Tone Bass
+   65       0             0..127  Output Level
+   66       0              0..47  Output Level AMS Source
+   67       0          -127..127  Output Level AMS Intensity
+   68       0             0..100  Rotary Wet/Dry
+   69       0              0..47  Rotary Wet/Dry AMS Source
+   70       0          -100..100  Rotary Wet/Dry AMS Intensity
+   71       0               0..1  Rotary On
+   72       0              0..47  Rotary On AMS Source
+   73       0               0..1  Rotary On AMS Mode
+   74       0               0..1  Rotary Stop
+   75       0              0..47  Rotary Stop AMS Source
+   76       0               0..1  Rotary Stop AMS Mode
+   77       0               0..1  Rotary Fast
+   78       0              0..47  Rotary Fast AMS Source
+   79       0               0..1  Rotary Fast AMS Mode
+   80       0               0..1  Rotary Fast Overrides Stop
+   81       0             0..100  Horn Up Acceleration
+   82       0             0..100  Horn Down Acceleration
+   83       0             0..100  Horn Start Acceleration
+   84       0             0..100  Horn Stop Acceleration
+   85       0             0..100  Horn Slow Speed
+   86       0             0..100  Horn Fast Speed
+   87       0             0..100  Rotor Up Acceleration
+   88       0             0..100  Rotor Down Acceleration
+   89       0             0..100  Rotor Start Acceleration
+   90       0             0..100  Rotor Stop Acceleration
+   91       0             0..100  Rotor Slow Speed
+   92       0             0..100  Rotor Fast Speed
+   93       0             0..100  Horn/Rotor Balance
+   94       0             0..100  Horn Mic Distance
+   95       0             0..100  Horn Mic Spread
+   96       0             0..100  Rotor Mic Distance
+   97       0             0..100  Rotor Mic Spread
+   98       0            -19..18  Horn Stop Phase
+   99       0            -19..18  Rotor Stop Phase
+  100       0               0..1  Speaker Simulator
+  101       0               0..1  Rotary Off Output (Pre-/Post-Xover)
+  102       0               0..1  Amp & Rotary Version
+  103       0               0..6  Speaker Sim Type
+
+
+Static 3-Band EQ (comp 0, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..1  Bypass
+    1       0              0..99  InputTrim
+    2       0            -36..36  Low
+    3       0             0..165  MidFreq
+    4       0            -36..36  Mid
+    5       0            -36..36  High
+
+
+Common KeyTrack 1 (comp 1, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0             0..127  LowKey
+    1       0             0..127  MidKey
+    2       0             0..127  HighKey
+    3       0          -100..100  LowRamp
+    4       0          -100..100  MidLowRamp
+    5       0          -100..100  MidHighRamp
+    6       0          -100..100  HighRamp
+
+
+Common KeyTrack 2 (comp 2, sub 0)
+
+    see Common KeyTrack 1 (comp 1, sub 0)
+
+
+Static Pan/Output (comp 3, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..1  PanUseDrumkitSetting
+    1       0              0..77  PanAMSSource
+    2       0            -99..99  PanAMSIntensity
+    3       0             0..127  Pan
+    4       0             0..127  Send 1 Level
+    5       0             0..127  Send 2 Level
+    6       0             0..127  Patch Level
+    7       0               0..1  Patch Mute
+    8       0               0..1  Patch Solo (not stored)
+
+
+Static AMS Mixer 1 (comp 4, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..6  Mixer Type
+    1       0              0..77  Source A
+    2       0            -99..99  Amount A
+    3       0              0..77  Source B
+    4       0            -99..99  Amount B
+    5       0              0..77  Amt A x B: Source A (deprecated. use Source A)
+    6       0            -99..99  Amt A x B: Amount A (deprecated. use Amount A)
+    7       0              0..77  Amt A x B: Source B (deprecated. use Source B)
+    8       0            -99..99  Amt A x B: Amount B (deprecated. use Amount B)
+    9       0              0..77  Offset: Source (deprecated. use Source A)
+   10       0          -199..199  Offset: Amount
+   11       0          -199..199  Offset: Offset
+   12       0              0..77  Smoothing: Source (deprecated. use Source A)
+   13       0              0..99  Smoothing: Attack
+   14       0              0..99  Smoothing: Decay
+   15       0              0..77  Shape: Source (deprecated. use Source A)
+   16       0            -99..99  Shape: Shape
+   17       0               0..1  Shape: Mode
+   18       0              0..77  Quantize: Source (deprecated. use AMS Source A)
+   19       0              2..32  Quantize: Steps
+   20       0              0..77  Gate: Source
+   21       0            -99..99  Gate: Threshold
+   22       0               0..1  Gate: Control at Note-on only
+   23       0               0..1  Gate: Below Threshold Use AMS
+   24       0               0..1  Gate: At/Above Threshold Use AMS
+   25       0              0..77  Gate: Below Threshold AMS Source Select (deprecated. use Source A)
+   26       0              0..77  Gate: At/Above Threshold AMS Source Select (deprecated. use Source B)
+   27       0            -99..99  Gate: Below Threshold Fixed Value
+   28       0            -99..99  Gate: At/Above Threshold Fixed Value
+
+
+Static AMS Mixer 2 (comp 5, sub 0)
+
+    see Static AMS Mixer 1 (comp 4, sub 0)
+
+
+Organ Osc (comp 6, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0   0..12               0..8  Upper Drawbar
+    1   0..12               0..8  Lower Drawbar
+    2       0               0..1  Drawbar Level Curve
+    3       0             0..127  Split Point
+    4       0              -2..2  Upper Octave Shift
+    5       0              -2..2  Lower Octave Shift
+    6       0               1..5  Upper EX Drawbar Preset
+    7    0..3              0..72  Upper EX Drawbar Pitch
+    8       0               1..5  Lower EX Drawbar Preset
+    9    0..3              0..72  Lower EX Drawbar Pitch
+   10       0               0..1  Percussion Assign
+   11    0..4               0..8  EX Percussion Drawbar
+   12       0               0..1  Gate Type
+
+
+Message Formats:
+  F0 42 3g 68 43 <type> <comp> <sub> <param id> <index> <value> F7
+
+  <type>
+        09: HD-1 patch 1
+        0A: HD-1 patch 2
+        0B: EXi patch 1
+        0C: EXi patch 2
+  <comp>, <sub>
+        single-byte values from table
+  <param id>
+        pp: (7-bit) for parameter ids in the range of 0..126
+        7F pp pp: (14-bit, MSB first) for parameter ids in the range of 127..16383 (deprecated)
+  <index>
+        single-byte value from table
+  <value>
+        vv vv vv: 21-bit signed value, MSB first
+
+
+  F0 42 3g 68 44 <type> <comp> <sub> <param id> <index> <value type> <value> F7
+
+  <type>, <comp>, <sub>
+        (as above)
+  <param id>
+        pp: parameter id
+  <index>
+        (as above)
+  <value type>
+        02: 16-byte UUID
+  <value>
+        binary value converted to 7-bit sys/ex data (see *3 in KRONOS_MIDI_SysEx.txt)
+
+
+CX-3 Tone Adjust
+
+assign  type        value                      name
+------  ----  -----------------  --------------------------------
+     0     -                  -  Off
+    30   Rel            -99..99  Common LFO Speed
+    35   Abs              0..99  Common Step Seq Attack
+    36   Abs              0..99  Common Step Seq Decay
+
+    48   Abs               0..8  Upper Drawbar 1
+    49   Abs               0..8  Upper Drawbar 2
+    50   Abs               0..8  Upper Drawbar 3
+    51   Abs               0..8  Upper Drawbar 4
+    52   Abs               0..8  Upper Drawbar 5
+    53   Abs               0..8  Upper Drawbar 6
+    54   Abs               0..8  Upper Drawbar 7
+    55   Abs               0..8  Upper Drawbar 8
+    56   Abs               0..8  Upper Drawbar 9
+    57   Abs               0..8  Lower Drawbar 1
+    58   Abs               0..8  Lower Drawbar 2
+    59   Abs               0..8  Lower Drawbar 3
+    60   Abs               0..8  Lower Drawbar 4
+    61   Abs               0..8  Lower Drawbar 5
+    62   Abs               0..8  Lower Drawbar 6
+    63   Abs               0..8  Lower Drawbar 7
+    64   Abs               0..8  Lower Drawbar 8
+    65   Abs               0..8  Lower Drawbar 9
+    66   Abs               0..8  Upper EX Drawbar 1
+    67   Abs               0..8  Upper EX Drawbar 2
+    68   Abs               0..8  Upper EX Drawbar 3
+    69   Abs               0..8  Upper EX Drawbar 4
+    70   Abs               0..8  Lower EX Drawbar 1
+    71   Abs               0..8  Lower EX Drawbar 2
+    72   Abs               0..8  Lower EX Drawbar 3
+    73   Abs               0..8  Lower EX Drawbar 4
+    74   Abs              0..99  Noise Level
+    75   Abs              0..99  Leakage Level
+    76   Abs               0..1  Wheel Brake
+    77   Abs              0..99  Overtone Level
+    78   Abs              0..99  Key-On Click Level
+    79   Abs               0..1  Perc Enable
+    80   Abs               0..1  Perc Level (Soft/Loud)
+    81   Abs               0..1  Perc Decay (Slow/Fast)
+    82   Abs               0..1  Perc Harmonic (2nd/3rd)
+    83   Abs               0..8  EX Perc Drawbar 1
+    84   Abs               0..8  EX Perc Drawbar 2
+    85   Abs               0..8  EX Perc Drawbar 3
+    86   Abs               0..8  EX Perc Drawbar 4
+    87   Abs               0..8  EX Perc Drawbar 5
+    88   Abs               0..5  V/C Type
+    89   Abs               0..1  V/C Upper On/Off
+    90   Abs               0..1  V/C Lower On/Off
+    91   Abs              0..99  Expression Level
+    92   Abs              0..99  Amp Gain
+    93   Abs            -10..10  Amp Tone Bass
+    94   Abs            -10..10  Amp Tone Middle
+    95   Abs            -10..10  Amp Tone Treble
+    96   Abs               0..1  Rotary On
+    97   Abs               0..1  Rotary Stop
+    98   Abs               0..1  Rotary Fast
+    99   Abs               0..1  Split On/Off
+
+
+CX-3 AMS Sources
+
+src                name
+---  --------------------------------
+  0  Off
+  1  AMS Mixer 1
+  2  AMS Mixer 2
+  3  Common Step Seq
+  4  Common LFO
+  5  Keytrack 1
+  6  Keytrack 2
+  7  Note Number
+  8  Velocity
+  9  Exp Velocity
+ 10  Poly Aftertouch
+ 11  Aftertouch
+ 12  JSX
+ 13  JS+Y (CC#1)
+ 14  JS-Y (CC#2)
+ 15  JS+Y + AT/2
+ 16  JS-Y + AT/2
+ 17  Pedal (CC#4)
+ 18  Ribbon (CC#16)
+ 19  Slider (CC#18)
+ 20  Knob5 (CC#17)
+ 21  Knob6 (CC#19)
+ 22  Knob7 (CC#20)
+ 23  Knob8 (CC#21)
+ 24  Knob5 [+]
+ 25  Knob6 [+]
+ 26  Knob7 [+]
+ 27  Knob8 [+]
+ 28  Damper (CC#64)
+ 29  PortaSW (CC#65)
+ 30  Sostenuto (CC#66)
+ 31  Soft Pdl (CC#67)
+ 32  SW1 (CC#80)
+ 33  SW2 (CC#81)
+ 34  FootSW (CC#82)
+ 35  MIDI Ctl (CC#83)
+ 36  Vector JS+X (CC#85)
+ 37  Vector JS-X (CC#86)
+ 38  Vector JS+Y (CC#87)
+ 39  Vector JS-Y (CC#88)
+ 40  Tempo
+ 41  Off
+ 42  Off
+ 43  Off
+ 44  Off
+ 45  Off
+ 46  Off
+ 47  Off
+ 48  Off
+ 49  Off
+ 50  Off
+ 51  Off
+ 52  Off
+ 53  Off
+ 54  Off
+ 55  Off
+ 56  Off
+ 57  Off
+ 58  Off
+ 59  Off
+ 60  Off
+ 61  Off
+ 62  Off
+ 63  Off
+ 64  Off
+ 65  Off
+ 66  Off
+ 67  Off
+ 68  Off
+ 69  Off
+ 70  Off
+ 71  Off
+ 72  Off
+ 73  Off
+ 74  Off
+ 75  Off
+ 76  Off
+ 77  Off
+

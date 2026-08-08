@@ -8,8 +8,13 @@ Status: Working prototype, git repo (github.com/jens-goes-mad/
         cross-reference, now including Font size/Transpose/Combi Timbre
         references) is reverse-engineered and wired into a real CHOC app
         with drag-and-drop open and two independent panes, each with its
-        own dataset selector and a Setlist/Programs/Combis/Duplicates
-        category navbar -- browse/filter/swap/copy Set Lists, editable
+        own dataset selector and a Setlist/Programs/Combis/Duplicates/
+        Internals category navbar (Internals: read-only bank/chunk
+        diagnostics -- which Program/Combi banks and top-level chunks a
+        loaded dataset actually has, since a real backup can apparently be
+        saved with only a subset of data included; surfaced a significant
+        pre-existing gap while being built -- see Format Blind Spot #9)
+        -- browse/filter/swap/copy Set Lists, editable
         Comment/Color/Volume fields (all three writing straight into a
         loaded file's own raw bytes, independently open per row, safely
         blocked from being opened on the same slot in both panes at once
@@ -21,7 +26,7 @@ Status: Working prototype, git repo (github.com/jens-goes-mad/
         now exists too (`PcgFile::save()`/`saveFileAs()`, no UI yet), and
         real-hardware validation of it is actively underway -- see "First
         real save-to-disk piece, plus real-hardware validation tooling"
-        under "ARCHITECTURE" below, and Blind Spot #9. The Comment editor's Font
+        under "ARCHITECTURE" below, and App/UI Blind Spot #9. The Comment editor's Font
         size now drives a live wrap-preview (real per-size character-width ratios,
         confirmed 2026-08-07 to render "nearly identical" to a real Kronos at a
         ~600px textarea width) -- see "Comment editor: live Font-size wrap preview"
@@ -700,7 +705,7 @@ full rationale):
       actually accepted by the hardware, not just by this app's own reader. (Only
       tested so far against a minimal SDB1/SBK1-only file, not a full real backup with
       its original PRG1/CMB1/etc. content intact -- worth confirming that case too
-      before trusting this broadly, see Blind Spot #9.) Every slot 010-024 read back
+      before trusting this broadly, see App/UI Blind Spot #9.) Every slot 010-024 read back
       exactly as written. Group 4's wrap points, read directly off the screen (each
       line's last token number, project owner's own report, one typo corrected in a
       follow-up): every Font size wraps at a perfectly constant tokens-per-line count,
@@ -816,6 +821,347 @@ full rationale):
       defaulting to a private/incognito window (guaranteed empty cache) when a
       frontend-only change seems to not be taking effect, before assuming it's a
       real bug.
+  - **"Internals" pane -- read-only bank/chunk diagnostics, BUILT 2026-08-07**: a
+    5th per-pane category (alongside Setlist/Programs/Combis/Duplicates),
+    prompted by a real concern -- the project owner can apparently choose which
+    data gets included when saving a backup from a real Kronos, so a loaded
+    dataset might genuinely be missing whole banks, with nothing in the existing
+    UI to reveal that (the Programs/Combis tables would just look thinner, with
+    no way to tell "fewer patches exist" from "a whole bank is gone"). Phase 1
+    only -- explicitly scoped down from also letting a user INITIALIZE a missing
+    bank/patch with default data, which needs its own dedicated work first (see
+    "Deferred" below).
+    - **A significant finding surfaced while building this, not before**: bank
+      "index" throughout this ENTIRE codebase turns out to be nothing more than
+      file-order position among however many PRG1/CBK1 sub-bank chunks were
+      found -- not a confirmed bank identity. See Format Blind Spot #9 for the
+      full explanation; this is a real gap in EVERY feature that labels a bank
+      (Programs/Combis tables, Timbre cross-referencing, Program copy), not
+      something specific to this new pane -- the Internals pane is just the
+      first place that had to be honest about it in the UI itself, rather than
+      silently assuming position-equals-identity like everything before it.
+    - Backend: `PcgFile::topLevelChunkTags()` (a new, simple non-recursive walk
+      of PCG1's immediate children, reusing the existing `readChunk()` helper --
+      this project never previously needed to ask "which top-level chunks exist
+      at all," only "where's the ONE I already know how to parse"),
+      `programBankInfo()`/`combiBankInfo()` (richer siblings of
+      `programBankTypes()`, adding record count/stride, derived from the same
+      already-retained `programBankLocations_`/`combiBankLocations_` -- no new
+      parsing). All three carry doc comments spelling out the file-order-vs-
+      identity caveat directly, not just in STATE.md.
+    - Bridge: `EditorBridge::getDatasetInternals(datasetId)` bundles all three
+      into one response, bound in `main.cpp`.
+    - Frontend: new `frontend/internals.js` (`createInternalsPanel()`), a peer
+      content renderer to `library.js`/`pane.js`'s `createSetlistPanel()` --
+      same "read datasetId via a getter, own no dataset-select" contract as
+      both. Loaded AFTER `pane.js` in `index.html` specifically so it can
+      reference `PROGRAM_BANK_NAMES`/`COMBI_BANK_NAMES`/`NO_DATASET_MESSAGE`
+      directly (classic `<script>` tags share one top-level `let`/`const`
+      scope -- the same thing `app.js` already relies on to call `pane.js`'s
+      `kronosNumber()`/`formatBankNumber()` with no import). First built as a
+      flat pair of static tables; reshaped the same day after the project
+      owner pointed out it wasn't following this project's own component-
+      reuse architecture (Setlist/library.js already establish an Entry-row +
+      `.editor-row` expand/collapse shape). Now: one Entry row per Topic
+      ("Top-level chunks" / "Program banks (PRG1)" / "Combi banks (CMB1)"),
+      each with a one-line summary ("N of M found"); clicking a topic toggles
+      an `.editor-row` directly below it (several topics can be open at
+      once, the same "independently toggleable" model a Setlist row's own
+      Color/Comment/Volume sections use) holding that topic's detail --
+      chunk badges (struck-through if missing), or (Program/Combi banks,
+      reshaped again the same day, see below) a bank button grid. Each
+      topic's detail is wrapped the same way a multi-section accordion
+      would be, so a second section (e.g. an "Initialize bank" action once
+      Phase 1.5 has real ground truth) can be added to a topic later
+      without restructuring. The file-order caveat is still shown directly
+      in the pane, and the "N of 20/14 expected banks found" summary still
+      deliberately stops short of naming which specific bank(s) are
+      missing (see the finding above).
+    - **Bank detail reshaped a second time, same day**: from a table (name/
+      Present-or-Missing/type/record-count columns) to the exact same
+      bank-filter-button grid Programs/Combis already use
+      (`library.js`'s `renderBankFilterRow()`: `.bank-filter-row` CSS
+      grid, `.button.is-small.bank-filter-button`, "Bank (Engine)" caption
+      when an engine type is known) -- reusing that look wholesale rather
+      than a bespoke table, per direct request. Semantics differ from the
+      real filter buttons on purpose, since this isn't a filter: **Present
+      = deactivated** (`disabled`, plain -- nothing to do, the bank
+      already has data) vs **Missing = enabled** (`is-warning`, a real
+      clickable button) as a preview of a future "click to initialize this
+      bank" action -- NOT YET implemented (Phase 1.5, still blocked on
+      real Init-Program bytes), so today's click just calls the app's
+      existing `showToast()` ("Initializing ... isn't built yet -- see
+      STATE.md") rather than doing nothing silently or pretending to work.
+      Buttons are grouped into 4 rows via `internals.js`'s new
+      `bankNameRows()` (a small regex split, not new bridge/backend data):
+      I-* (INT letter banks), the lone G(d) bank, U-* (single-letter USER
+      banks), U-** (double-letter USER banks) -- a row that's empty for a
+      given category (Combis have no G(d), no double-letter USER banks,
+      see `docs/README.md` §5.1/§5.2) is dropped rather than shown blank.
+      Record counts/columns dropped entirely as part of the cleanup --
+      the caption already carries what mattered (name + engine). Removed
+      the now-dead `.internals-status-present`/`.internals-status-missing`
+      CSS this replaced; no other new CSS needed beyond one thin
+      `.internals-bank-groups` spacing rule, everything else reuses
+      `.bank-filter-row`/`.bank-filter-button`/Bulma's `.is-warning` as-is.
+    - `frontend/mock_bridge.js` gained a fake `getDatasetInternals` returning
+      only 2 of 20 Program banks / 2 of 14 Combi banks and a partial
+      top-level-chunk list on purpose, so the "N of M found" shortfall
+      messaging has something real to exercise in mock mode too.
+    - Verified: `pcg_file_test.cpp` extended (`topLevelChunkTags()`'s exact file
+      order, `programBankInfo()`/`combiBankInfo()`'s record counts per the
+      synthetic fixture), deliberately broken then restored per this project's
+      standard practice; full app + test target build clean; every touched JS
+      file `node --check`ed. Both same-day reshapes (Entry-row, then the
+      bank-button-grid) re-verified all of the above (backend untouched by
+      either) plus a CSS brace-balance check and a `curl` confirmation
+      against the running static dev server that it was actually serving
+      the new `internals.js`/`style.css`.
+    - **Deferred, explicitly out of scope this round** (per direct agreement):
+      initializing a missing bank/patch with default data. Writing a default
+      patch into an EXISTING bank's already-present-but-unused slot is a
+      same-class operation to `copyProgramFrom()` (a fixed-size in-place
+      overwrite) and could follow once real "Init Program" byte data is pulled
+      from the project owner's own Kronos, the same ground-truth-first approach
+      as everything else this session -- not attempted yet since that reference
+      data doesn't exist in this project yet. Creating an ENTIRELY MISSING bank
+      (a new chunk that doesn't exist in the file at all) is a different, much
+      riskier class of operation -- it would need to grow the file and update
+      chunk-size fields up the whole hierarchy, and directly collides with
+      several still-unconfirmed structural facts (the `used`/count header
+      field's real meaning, the unexplained 4-byte chunk prefix, and the
+      file-header checksum flag) -- explicitly agreed to treat as its own later,
+      dedicated research phase, not bundled into this one.
+  - **Combi-usage counting extended from 4 to 8 confirmed banks, 2026-08-08**:
+    prompted by a direct question -- "why only INT-A..D, we have all banks
+    identified" -- while explaining why Duplicates showed "n/a" for Combi
+    references outside that range (blind spot #18 above). The two "identified"
+    senses turned out to be different: bank *names* (file-order index ->
+    "USER-D") are fully identified for all 20/14 banks (§5.2/§5.1); a Combi
+    Timbre's own *raw bank code* -- a completely separate number space -- is
+    independently confirmed for only 8 individual banks (docs/README.md §6.2:
+    INT-A..D = 0..3, plus USER-A=17/USER-D=20/USER-F=22/USER-AA=24). Checking
+    the code turned up a real, fixable gap: `timbreBankName()` already knew
+    all 8 codes, but `isConfirmedTimbreProgramBank()` only covered 4 (INT-A..D,
+    where the file-order index and raw code happen to coincide) -- the other 4
+    confirmed codes existed but were never wired into the Combi-usage-counting
+    path at all.
+    - `src/kronos/PcgFile.cpp`: replaced the three separate, easily-
+      desynced encodings of this data (a switch in `timbreBankName()`, a
+      range check in `isConfirmedTimbreProgramBank()`, and two ad hoc raw-
+      code/file-order-index conflations in `combiUsagesForProgram()`/
+      `combiUsageCounts()`) with one shared table, `kConfirmedTimbreBanks`
+      (8 `{programBankIndex, rawBankCode, name}` rows), plus two small
+      translation helpers (`confirmedTimbreCodeForProgramBank()`/
+      `programBankForConfirmedTimbreCode()`, internal linkage, not in the
+      header -- nothing outside this file needs the raw translation itself).
+      `combiUsagesForProgram(bank, number)` now translates the file-order
+      `bank` to its confirmed raw code before comparing against
+      `TimbreRef::rawBankCode`, instead of assuming they're the same
+      number (only true for INT-A..D); `combiUsageCounts()` translates the
+      other direction. `isConfirmedTimbreProgramBank()`'s public signature/
+      semantics are unchanged, so `EditorBridge.cpp` and the frontend
+      needed no changes on the backend-boundary side.
+    - `frontend/library.js`: found the *same* raw-code/file-order-index
+      conflation independently re-implemented on the frontend, in
+      `formatTimbreRef()` (the expanded Combi row's per-Timbre engine-
+      type/Program-name lookup) -- its own `isConfirmedTimbreProgramBank()`
+      mirror was a plain `bank <= 3` check applied directly to
+      `t.rawBankCode`, and `getProgramBankType(t.rawBankCode)`/
+      `programs.find(p => p.bank === t.rawBankCode ...)` both compared a
+      raw Timbre code directly against file-order Program bank data. Fixed
+      the same way as the backend: a mirrored `CONFIRMED_TIMBRE_BANKS`
+      table plus `programBankForConfirmedTimbreCode()`, used throughout
+      `formatTimbreRef()`. Every "INT-A..D so far" tooltip/note string in
+      this file (Programs table's #CMB `n/a` tooltip, the Program usage
+      panel's Combi-unavailable note, the expanded Combi row's own note,
+      the new Duplicates button comment) updated to say "8 individually-
+      verified banks (INT-A..D, USER-A/D/F/AA)" instead.
+    - Verified: extended `tests/pcg_file_test.cpp`'s synthetic CBK1 fixture
+      with a second Timbre (raw code 20 = USER-D, file-order index 11 --
+      deliberately one of the 4 newly-wired banks, not one of the original
+      INT-A..D range, so the test actually exercises the translation
+      rather than a case where it's a no-op) plus new assertions:
+      `isConfirmedTimbreProgramBank(11)` true, `(4)` (INT-E, unconfirmed)
+      false, `combiUsagesForProgram(11, 7)` finds the synthetic reference,
+      `combiUsagesForProgram(4, 7)` returns nothing rather than a guess,
+      `combiUsageCounts()[11][7] == 1`. Deliberately broken (expected count
+      2 instead of 1) then restored, confirming the test actually catches a
+      real regression; full app + `pcg_file_test` build clean.
+  - **Chunk header fixed to its real 12-byte shape, 2026-08-08 -- resolves
+    this project's oldest open question, and the PRG1/CMB1/GLB1
+    Internals-pane bug from the same day**: prompted by the project owner
+    adding a large new folder of official Korg SysEx parameter
+    documentation (`docs/external/KORG/`) and asking to cross-reference it
+    against this project's own findings. `SetList.txt`'s per-field byte
+    offsets, once compared precisely (a hand-arithmetic attempt got this
+    wrong twice before switching to an actual script -- worth remembering:
+    verify offset math by running it, not by reasoning through it), showed
+    a *consistent* +4 discrepancy against every one of this project's own
+    confirmed SBK1 field offsets. Separately,
+    `docs/external/Synthify-Kronos-PCG-File-Structures.xlsx` -- already in
+    this project's references, just not previously read for this detail --
+    turned out to directly state the answer: "A Chunk has a header
+    consisting of three 4-byte sized objects... TAG1... size... dwX...
+    Data." This project's own model had the extra 4-byte field on the
+    *wrong side* of the tag: not an ambiguous prefix sometimes appearing
+    *before* the tag (the old `readChunk()`'s "try position 0, then
+    position+4" logic), but a fixed, unambiguous third header word
+    (`dwX`, meaning still unknown) always *after* `size` and *before*
+    content. Every chunk's header is 12 bytes, full stop, no ambiguity.
+    - `src/kronos/PcgFile.cpp`: `readChunk()` rewritten around the real,
+      unambiguous structure -- tag always at `pos`, `contentStart` always
+      `pos+12` (was `p+8`, missing `dwX`), the old dual-position trial
+      loop removed entirely. `collectChunks()`'s and `topLevelChunkTags()`'s
+      own loop guards (`pos+8 <= end`) updated to `pos+12` to match.
+    - **Same root cause as the PRG1/CMB1/GLB1 Internals-pane bug reported
+      this session**: a `contentStart` computed 4 bytes short silently
+      self-corrected often enough in a *deep, unscoped* recursive search
+      (finding `MBK1`/`PBK1` anywhere in the file, regardless of exact
+      boundaries) that it went unnoticed, but a *strict* top-level walk
+      (`topLevelChunkTags()`) has zero tolerance for drift -- one short
+      chunk desyncs every sibling after it. This is why Program/Combi bank
+      data always displayed correctly while the Internals pane's chunk
+      badges did not.
+    - `tests/pcg_file_test.cpp`: **the fixture itself was part of the
+      problem** -- it built a flat sibling list (`SDB1`, `SBK1`, `PBK1`,
+      ... all top-level, no nesting at all), which is not how a real file
+      is shaped and never exercised the bug. Reshaped to the real
+      hierarchy (`PCG1 > SLS1 > (SDB1, SBK1)`, `PCG1 > PRG1 > (PBK1,
+      MBK1)`, `PCG1 > CMB1 > (CBK1)`, with a `DIV1` sibling first) --
+      `appendChunk()` also gained the real `dwX` field (previously an
+      8-byte tag+size-only header). `topLevelChunkTags()`'s own expected
+      value updated from the old flat 5-tag list to the real 4 top-level
+      tags (`DIV1`, `SLS1`, `PRG1`, `CMB1`) -- SDB1/SBK1/PBK1/MBK1/CBK1 are
+      correctly nested now, not top-level.
+    - **Verified two ways, not just "tests pass"**: (1) the reshaped
+      fixture, decoded through the *old* buggy 8-byte-header math (a
+      temporary revert), doesn't just fail one assertion -- it fails to
+      load *at all* ("No SDB1 chunk found"), since the nested search never
+      finds SDB1 inside SLS1's now-misaligned bounds. Confirms this was a
+      real, load-bearing bug, not a cosmetic offset difference, and that
+      the new fixture is a genuine regression test for it, not just a
+      differently-shaped one. (2) The project owner's own "child sizes sum
+      to the parent" description of the format was verified structurally:
+      each wrapping chunk's declared `size` in the fixture is
+      *constructed* as the exact byte-length of its children (via nested
+      `appendChunk()` calls building up `sls1Content`/`prg1Content`/
+      `cmb1Content` before wrapping each in its own chunk), and the whole
+      file round-trips correctly end to end -- proving the parser
+      correctly relies on that invariant, not just that the invariant is
+      plausible.
+    - Verified: deliberate-break-then-restore on the reshaped fixture
+      (above); full `cmake --build build` (all three targets) clean;
+      `ctest` clean.
+  - **SECOND bug found the same day, immediately after attempting to
+      commit the above**: the project owner interrupted a `commit and
+      push` request -- "the app enters an infinity loop reading
+      setlist_test_2.PCG" (a real 36MB file, located just outside the repo,
+      first real-file access this project has had in this environment).
+      This turned out to be exactly the right call: it caught a second,
+      independent, more consequential bug the synthetic-only test suite
+      could never have caught, because the synthetic fixture encoded the
+      *same wrong assumption* on both the write and read side, so it could
+      never disagree with itself.
+    - **Root cause**: SDB1/SBK1/PBK1/MBK1/CBK1's own record-array header
+      (the "count/numRecords/bytesPerRecord" 3-field, 12-byte shape this
+      project had documented since early on) never actually existed as a
+      3-field header -- it's 2 fields, 8 bytes (`numRecords`,
+      `bytesPerRecord`), confirmed directly against the real 36MB file: at
+      the corrected chunk-content boundary, SDB1's first 8 bytes read
+      128/3612 (exactly the real numSetlists/bytesPerSetlist), and the
+      real Set List name "Preload Set List" begins exactly 8 bytes in, not
+      12. The old, wrong 3-field reading had been silently
+      **canceling out** against the OTHER bug (the chunk-header fix above)
+      the whole time: reading 4 bytes too early at the chunk level, then
+      discarding an extra bogus 4-byte field at the record level, landed
+      on the exact same real absolute byte position either way -- which is
+      *why* real Set List names, Program names, and everything else this
+      project had already verified against real data kept working despite
+      neither individual assumption being correct. Fixing only the
+      chunk-level bug broke that accidental cancellation and exposed this
+      one. Confirmed via a battery of hand-written diagnostic probes
+      against all 5 real `.PCG` files available locally (not committed,
+      `.gitignore`'d, built ad hoc with `clang++` per this project's
+      standard practice) -- after this fix: `programBankInfo()`=20 banks,
+      `combiBankInfo()`=14 banks, `setlists()`=128, `programs()`=2,560,
+      `combis()`=1,792, all exactly matching real physical maximums (before
+      the fix: 4 banks, 6 banks, 0 setlists, 19,840/46,860 -- garbage,
+      inflated by the same record-boundary corruption `collectChunks()`'s
+      recursive-into-everything search was quietly absorbing). Load time
+      for the 36MB file: ~3 seconds, not infinite -- the reported "infinite
+      loop" was this corrupted, ever-growing false-positive chunk search,
+      not a true non-terminating loop.
+    - `topLevelChunkTags()` needed one more, separate fix on top: `PCG1`
+      itself is a real chunk starting at byte 16 (its own declared size
+      exactly spans the rest of the file, confirmed against real data),
+      not implicitly consumed by the 16-byte file header as this project
+      had assumed without ever checking -- `topLevelChunkTags()` now reads
+      `PCG1` first and returns *its* children.
+    - `src/kronos/PcgFile.cpp`: all four record-array header readers
+      (SDB1, SBK1, the PBK1/MBK1 program-bank loop, CBK1) changed from
+      reading a discarded field + two more at `contentStart+4`/`+8` (with
+      `recordsStart`/`setlistsStart` = `contentStart+12`) to reading two
+      fields directly at `contentStart+0`/`+4` (`recordsStart`/
+      `setlistsStart` = `contentStart+8`). A consistent, still-unexplained
+      4 bytes are left over between the last record and each chunk's own
+      declared end in every case checked -- flagged, not guessed at.
+    - `tests/pcg_file_test.cpp`: every synthetic bank/setlist header
+      (`sdb1`, `sbk1`, `pbk1BankA`, `pbk1BankB`, `cbk1BankA`) had its
+      bogus leading `pushU32BE` removed to match; `buildSyntheticPcgFile()`
+      also gained a real `PCG1` wrapper around everything (previously
+      `DIV1` sat directly at byte 16, which is not what a real file does).
+      Deliberately broken (a wrong offset) then restored, confirming the
+      test suite actually catches this class of bug now.
+    - **Two more fixes landed the same round, from the project owner's own
+      direct byte-level walkthrough of `SetList.txt`'s bit table** (not
+      more cross-referencing guesswork -- explicit confirmation, field by
+      field): (1) SBK1's Performance Type (byte +12) is genuinely 2 bits
+      (`kSbkTypeMask = 0x03`), not the 1 bit this project originally
+      decoded -- `isProgram` is now `(typeColor & 0x03) == 1`, correct for
+      Program/Combi either way (bit 0 alone already distinguished those
+      two) and no longer silently misreads the unused value 3 as Program;
+      Song (value 2) still isn't separately represented anywhere in the
+      app (nothing needs it yet), but the *read* is now correct rather
+      than accidentally-right. (2) Comment is confirmed **512 bytes**, not
+      524 (`kSbkRecordSize - 18`, this project's original assumption) --
+      fixed in both `PcgFile.cpp`'s `readComment()`/`kSbkCommentMaxLength`
+      and, critically, `frontend/components/kronos/setlist-comment.js`'s
+      encoder, which previously both allowed writing up to 523 characters
+      *and* zero-filled all the way to the record's own end (542) on every
+      edit -- both of which would have clobbered the record's trailing 12
+      bytes (of genuinely unknown purpose) on a sufficiently long comment.
+      This was flagged as a real write-corruption risk earlier the same
+      day and deliberately left unfixed pending exactly this kind of
+      direct confirmation, per this project's standing rule.
+    - `tests/pcg_file_test.cpp`'s synthetic fixture also needed a related
+      fix: `garbageBit1`, a parameter that deliberately poked byte +12's
+      bit 1 to prove Color-decoding correctly ignores bits it doesn't own,
+      no longer makes sense now that bit 1 is a real part of Type --
+      removed (every bit of that byte is now owned by something real, so
+      there's nothing left to garbage-test there). Deliberately broken
+      (wrong Type comparison) then restored to confirm the test still
+      catches a real regression.
+    - `frontend/components/kronos/setlist-comment.test.js`: one assertion
+      ("shortening the comment zero-fills the rest of the record") updated
+      to check only through the real 512-byte comment boundary, not the
+      full 542-byte record -- the trailing 12 bytes are deliberately left
+      untouched now, not zeroed.
+    - Verified end to end: full `cmake --build build` clean, `ctest`
+      clean, the headless `setlist-comment.test.js` clean, and a final
+      re-run of the ad hoc real-file probes against all 5 locally-available
+      `.PCG` files (36MB and 9.3MB alike) confirming correct, fast
+      (`<3.1s` for the 36MB file), sane results throughout.
+    - **Explicitly deferred, per direct agreement**: now that raw-byte
+      editing (Setlist Color/Volume/Comment, Program copy) is on solid
+      ground again, reordering/swapping entries -- Setlist slots first,
+      later Programs/Combis -- looks straightforward as a *fixed-size,
+      in-place* operation (swap two records' raw bytes, update whichever
+      reference bytes point at them), no file growth involved. Deliberately
+      not started: the explicit agreement is to keep proving out "edit what
+      we already have" (this round's fixes included) before taking on
+      anything more complex, matching this project's existing "small
+      iterations, no guessing" discipline rather than a scope change.
   - **Explicitly not committed to being final**: both the project owner and this
     assistant agreed to revisit/rethink this shape as each piece (Program decoder now
     done; chunk-based component wiring next) proves itself against real tests and the
@@ -1430,7 +1776,9 @@ for a while.
       "already in memory anyway" per the request: `programs` is the exact array this
       panel already fetched for its own Programs table, just searched by
       (bank, number), no new bridge call. Both are gated to
-      `isConfirmedTimbreProgramBank()`'s same bank 0-3 (INT-A..D) range
+      `isConfirmedTimbreProgramBank()`'s confirmed range (at the time, bank 0-3 /
+      INT-A..D only -- **extended 2026-08-08 to 8 banks total, INT-A..D plus
+      USER-A/D/F/AA, see the ARCHITECTURE entry below**)
       `EditorBridge::combiUsagesForProgram()`/`combiUsageCounts()` already use for
       the #CMB column -- outside that range, a Timbre's raw bank code isn't
       confirmed to mean the same thing as a Program's own `.bank` field at all, so
@@ -1609,6 +1957,38 @@ Format:
      (e.g. write exactly 512 and exactly 523 ASCII characters via this
      project's own write path, see what the device actually shows/accepts)
      before either number goes in `docs/README.md` as confirmed.
+  9. **NEWLY SURFACED, 2026-08-07, while building the Internals pane (see
+     "ARCHITECTURE" below)**: every Program/Combi bank "index" this project uses
+     anywhere (`ProgramInfo::bank`, `programBankTypes()`, the whole Programs/
+     Combis tables, Timbre cross-referencing, `copyProgramFrom()`'s destination
+     checks -- literally everywhere) is actually just that bank's POSITION among
+     however many PRG1/CBK1 sub-bank chunks were found, in file order --
+     `PcgFile.cpp`'s PRG1-parsing loop assigns `bankIdx` purely as a loop
+     counter, with no reference to any per-chunk identity field. This has been
+     silently correct so far only because every real file examined happened to
+     contain a complete, canonically-ordered set of banks. The project owner's
+     own observation (saving a backup apparently lets you choose which data to
+     include) means that assumption may not hold in general: a file missing,
+     say, canonical bank 4 would silently relabel every later bank as one
+     position earlier than its real identity, everywhere in this app, with no
+     way currently to detect it. Directly related to blind spot #4 above (label-
+     per-index confidence) and #2 (the `used`/count header field) -- and each
+     PRG1/CBK1 sub-bank chunk's own first 4 bytes (currently read and discarded,
+     "meaning not understood yet") are a real candidate for a per-chunk bank-
+     identity field that would fix this properly. Not yet investigated with
+     real test data that's actually missing a known bank -- the Internals pane
+     surfaces the current (possibly wrong, if anything's missing) file-order
+     numbering honestly rather than hiding the uncertainty.
+     **Confirmed directly, 2026-08-07** (real hardware behavior, see
+     `docs/README.md` §5/§5.2): engine assignment (HD-1/EXi) is a global,
+     per-bank setting -- a bank can never mix engines -- and bank storage is
+     all-or-nothing, always exactly 128 slots, never partial. This doesn't
+     resolve the file-order-vs-identity gap above, but it does sharpen it: a
+     "missing bank" can only mean a whole PRG1/CBK1 sub-bank chunk absent
+     entirely, never a partially-saved or mixed-engine one -- so whatever
+     eventually identifies a bank properly (e.g. the unexplored first-4-bytes
+     field above) only ever has to answer a binary present/absent question
+     per bank, not a "how much of it is there" one.
 
 App/UI:
   8. Leading spaces reportedly disappearing from Comment text somewhere in
@@ -1713,17 +2093,38 @@ App/UI:
       the `drop` handler (not just the pane that received the drop) to
       cover the sibling-pane case directly, regardless of exact event
       delivery order for a given drag session.
-  18. Library's Duplicates tab shows "n/a" for a duplicate Program's Combi
-      reference count -- noticed during the same click-through. Reading
-      `EditorBridge::findDuplicatePrograms()` shows no logic difference
+  18. **PARTIALLY RESOLVED (2026-08-08)**: Library's Duplicates tab showed
+      "n/a" for a duplicate Program's Combi reference count -- noticed
+      during an earlier click-through, and confirmed NOT a bug: reading
+      `EditorBridge::findDuplicatePrograms()` showed no logic difference
       from the Programs tab's (also gated on
-      `isConfirmedTimbreProgramBank(program.bank)`, i.e. INT-A..D only, see
-      docs/README.md's Combi Timbre references section) -- so this may
-      simply be the same, already-documented caveat resurfacing because
-      real duplicate Programs (often "Init Program"-style placeholders)
-      tend to sit in banks outside INT-A..D, not a new bug. Not confirmed
-      either way against a concrete case yet -- if a duplicate group ever
-      shows "n/a" for a Program that IS in INT-A..D, that would indicate a
+      `isConfirmedTimbreProgramBank(program.bank)`), and real duplicate
+      Programs (often "Init Program"-style placeholders) do tend to sit
+      outside the confirmed range -- the honest "don't know" case working
+      as designed. Since then, the confirmed range itself was widened (see
+      the ARCHITECTURE entry below) from INT-A..D (4 banks) to 8 banks
+      total (INT-A..D plus USER-A/D/F/AA), using ground truth
+      (docs/README.md §6.2) that was already independently confirmed but
+      not yet wired into the Combi-usage-counting logic. **Still open**:
+      every bank beyond those 8 remains genuinely unconfirmed, so "n/a"
+      for a duplicate in, say, INT-E or USER-B is still correct, honest
+      behavior, not a bug -- if a duplicate group ever shows "n/a" for a
+      Program in one of the now-8 confirmed banks, that would indicate a
       real, distinct bug worth re-investigating.
+  19. **Cosmetic, low-priority, unconfirmed**: possible padding-top
+      inconsistency in the Internals pane (2026-08-08) -- the project
+      owner reported the "Top-level chunks" topic's `.internals-chunk-row`
+      shows the `padding-top: 8px` gap under its topic-row title
+      correctly, but wasn't sure whether "Program banks"/"Combi banks"
+      (`.internals-bank-groups`, same CSS property, same mechanism) show
+      the same gap. Code inspection found no structural reason the two
+      would differ, and this was folded into a broader debugging thread
+      that turned up a real, confirmed, separate bug in the same report
+      (`.internals-empty[hidden]` losing to Bulma's `.help{display:block}`,
+      see App/UI blind spot list resolution history and `style.css`) --
+      that real bug was fixed; this specific padding question was
+      explicitly marked cosmetic/not worth chasing further right now.
+      Revisit by comparing the two sections directly in the real app if it
+      resurfaces.
 
 === END STATE BLOCK ===

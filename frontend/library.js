@@ -85,6 +85,12 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
   let duplicateGroups = [];
   let expandedProgramKey = null;  // `${bank}-${number}` of the one expanded usage row, if any
   let expandedCombiKey = null;    // `${bank}-${number}` of the one expanded Timbre row, if any
+  // Joined `${bank}-${number}` lists identifying which duplicate groups are
+  // expanded -- a Set, not a single key like expandedProgramKey/
+  // expandedCombiKey above, since several groups can usefully be compared
+  // open at once (same independently-toggleable model as the Internals
+  // pane's expandedTopics / a Setlist row's own accordion sections).
+  const expandedDuplicateKeys = new Set();
   // Bank-filter state, per category -- `present` is which bank indices
   // actually have entries in the current dataset (recomputed on every
   // load()), `filter` is which of those are currently "pressed" (shown),
@@ -271,9 +277,10 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
     if (unavailable) {
       td.className = "col-refs-unavailable";
       td.title =
-        "Combi usage is only confirmed correct for INT-A..D so far -- other banks would risk a wrong " +
-        "count due to the Combi-internal bank numbering not matching this bank's index everywhere. " +
-        "See docs/README.md's Combi Timbre references section.";
+        "Combi usage is only confirmed correct for 8 individually-verified banks so far (INT-A..D, " +
+        "USER-A/D/F/AA) -- other banks would risk a wrong count due to the Combi-internal bank " +
+        "numbering not matching this bank's index everywhere. See docs/README.md's Combi Timbre " +
+        "references section.";
     }
     return td;
   }
@@ -322,8 +329,8 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
         const note = document.createElement("div");
         note.className = "usage-note";
         note.textContent =
-          "Combi usage: not available for this bank yet -- only confirmed for INT-A..D so far. " +
-          "See docs/README.md's Combi Timbre references section.";
+          "Combi usage: not available for this bank yet -- only confirmed for 8 individually-verified " +
+          "banks so far (INT-A..D, USER-A/D/F/AA). See docs/README.md's Combi Timbre references section.";
         box.appendChild(note);
       } else {
         const combiHeading = document.createElement("div");
@@ -443,17 +450,34 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
     panel.appendChild(table);
   }
 
-  // Mirrors PcgFile::isConfirmedTimbreProgramBank() (INT-A..D, bank 0-3) --
-  // the one range where a Timbre's raw bank code is confirmed to directly
-  // index the SAME Program bank space as ProgramInfo.bank (this is already
-  // the assumption EditorBridge::combiUsagesForProgram()/combiUsageCounts()
-  // bake in for the #CMB column; every other bank is explicitly flagged as
-  // unconfirmed there too -- see refCell()'s "unavailable" tooltip above).
-  // Outside this range, rawBankCode isn't known to mean the same thing as a
-  // Program's own .bank field at all, so looking up its type/name would be
-  // a guess, not a lookup -- exactly what this project doesn't do.
-  function isConfirmedTimbreProgramBank(bank) {
-    return bank >= 0 && bank <= 3;
+  // Mirrors PcgFile.cpp's kConfirmedTimbreBanks -- the 8 individually-
+  // confirmed Program-bank <-> Combi-Timbre-raw-code pairs (docs/README.md
+  // §6.2), kept as one small table here too so this mirror can't drift out
+  // of sync with the backend's own list as more codes get confirmed later.
+  // INT-A..D coincide (both number spaces use 0..3); USER-A/D/F/AA use a
+  // *different* number in each space (e.g. USER-D is Program bank index 11
+  // but Timbre code 20) -- a Timbre's rawBankCode must be translated to a
+  // Program bank index before it can be compared against ProgramInfo.bank
+  // (getProgramBankType()'s map, the `programs` array's own .bank field)
+  // at all; outside this table, rawBankCode isn't known to mean the same
+  // thing as a Program's own .bank field, so looking up its type/name
+  // would be a guess, not a lookup -- exactly what this project doesn't do.
+  const CONFIRMED_TIMBRE_BANKS = [
+    { programBankIndex: 0, rawBankCode: 0 },
+    { programBankIndex: 1, rawBankCode: 1 },
+    { programBankIndex: 2, rawBankCode: 2 },
+    { programBankIndex: 3, rawBankCode: 3 },
+    { programBankIndex: 8, rawBankCode: 17 },
+    { programBankIndex: 11, rawBankCode: 20 },
+    { programBankIndex: 13, rawBankCode: 22 },
+    { programBankIndex: 14, rawBankCode: 24 },
+  ];
+
+  // The confirmed Program bank index for a Timbre's raw bank code, or null
+  // if that code isn't independently confirmed yet.
+  function programBankForConfirmedTimbreCode(rawBankCode) {
+    const entry = CONFIRMED_TIMBRE_BANKS.find((b) => b.rawBankCode === rawBankCode);
+    return entry ? entry.programBankIndex : null;
   }
 
   // Formats one Timbre's Program reference for display: the confirmed bank
@@ -470,13 +494,13 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
   // as "this Combi references that Program."
   function formatTimbreRef(t) {
     if (t.isDefault) return "--";
-    const confirmed = isConfirmedTimbreProgramBank(t.rawBankCode);
+    const programBank = programBankForConfirmedTimbreCode(t.rawBankCode);
     const bank = t.bankName ? abbreviateBankName(t.bankName) : `code ${t.rawBankCode}`;
     let ref = `${bank} ${kronosNumber(t.number)}`;
-    if (confirmed) {
-      const bankType = getProgramBankType(t.rawBankCode);
+    if (programBank !== null) {
+      const bankType = getProgramBankType(programBank);
       if (bankType) ref += ` (${bankType})`;
-      const program = programs.find((p) => p.bank === t.rawBankCode && p.number === t.number);
+      const program = programs.find((p) => p.bank === programBank && p.number === t.number);
       if (program && program.name) ref += ` — "${program.name}"`;
     }
     return t.status === "Off" ? `${ref} (off)` : ref;
@@ -507,8 +531,8 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
     note.className = "usage-note";
     note.textContent =
       "Some raw bank codes aren't identified yet -- shown as \"code N\" rather than guessed, and for the " +
-      "same reason engine type/Program name are only shown for the confirmed INT-A..D range. " +
-      "See STATE.md's Phase 2 notes.";
+      "same reason engine type/Program name are only shown for the 8 individually-confirmed banks " +
+      "(INT-A..D, USER-A/D/F/AA). See STATE.md's Phase 2 notes.";
     td.appendChild(note);
 
     tr.appendChild(td);
@@ -555,12 +579,64 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
     panel.appendChild(table);
   }
 
+  // One duplicate group's expanded detail -- every copy in the group as its
+  // own button (same `.bank-filter-row`/`.bank-filter-button` look
+  // Programs/Combis' bank filters and the Internals pane's bank grid
+  // already use, see internals.js's buildBankButtonGrid()), captioned the
+  // same "Bank Number (Engine)" way `formatBankNumber()` already produces
+  // elsewhere. Every button here represents a real, present copy (unlike
+  // Internals' present-vs-missing buttons), so none are disabled -- all are
+  // equally valid candidates for the not-yet-built "which copy to keep"
+  // action, hence no color styling either. Deliberately just a placeholder
+  // for now: pressing one only reports that duplicate handling isn't built
+  // yet, per direct agreement -- the real keep/delete/repoint logic is a
+  // separate, later iteration (STATE.md).
+  function buildDuplicateGroupRow(group) {
+    const tr = document.createElement("tr");
+    tr.className = "editor-row";
+    const td = document.createElement("td");
+    td.colSpan = 2;
+
+    const wrap = document.createElement("div");
+    wrap.className = "duplicate-copies";
+    const row = document.createElement("div");
+    row.className = "bank-filter-row";
+    for (const p of group) {
+      const label = formatBankNumber({ isProgram: true, bank: p.bank, number: p.number }, p.bankType);
+      // Combi usage is only confirmed correct for 8 individually-verified
+      // banks (INT-A..D, USER-A/D/F/AA -- see refCell's own comment above)
+      // -- "n/a" here matches the old table's fallback
+      // rather than showing a potentially-wrong count.
+      const combiText = p.combiUsageCountAvailable ? `#${p.combiUsageCount}` : "n/a";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "button is-small bank-filter-button";
+      // Visible on the button itself, not just a hover-only title -- a
+      // native app's tooltips are far less discoverable than a browser's.
+      btn.textContent = `${label} (Combi ${combiText} / Set List #${p.setlistUsageCount})`;
+      btn.title = `${label} -- Combi: ${combiText} / Set List: #${p.setlistUsageCount}`;
+      btn.addEventListener("click", () => {
+        showToast(`Duplicate handling for "${label}" isn't built yet -- see STATE.md.`);
+      });
+      row.appendChild(btn);
+    }
+    wrap.appendChild(row);
+    td.appendChild(wrap);
+    tr.appendChild(td);
+    return tr;
+  }
+
   function renderDuplicatesPanel() {
     const panel = panels.duplicates;
     const needle = filterInput.value.trim().toLowerCase();
     panel.innerHTML = "";
 
-    if (duplicateGroups.length === 0) {
+    const visibleGroups = duplicateGroups.filter((group) => {
+      const groupName = group[0].name || "(empty)";
+      return !needle || groupName.toLowerCase().includes(needle);
+    });
+
+    if (visibleGroups.length === 0) {
       const empty = document.createElement("div");
       empty.className = "usage-empty";
       empty.textContent = "No byte-exact duplicate Programs found.";
@@ -568,42 +644,42 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
       return;
     }
 
-    for (const group of duplicateGroups) {
+    // Same Entry-row + `.editor-row` expand/collapse shape as the Programs/
+    // Combis usage rows just above (buildUsageRow()/buildTimbreRow()) --
+    // one row per duplicate group, click to reveal its copies. Several
+    // groups can be open at once (expandedDuplicateKeys, a Set), unlike
+    // expandedProgramKey/expandedCombiKey's single-selection model above --
+    // see the Set's own declaration comment for why.
+    const table = document.createElement("table");
+    table.className = "table is-fullwidth is-hoverable is-narrow";
+    table.innerHTML = colgroupHtml([8, 4]) + "<thead><tr><th>Name</th><th>Copies</th></tr></thead><tbody></tbody>";
+    const tbody = table.querySelector("tbody");
+
+    for (const group of visibleGroups) {
       const groupName = group[0].name || "(empty)";
-      if (needle && !groupName.toLowerCase().includes(needle)) continue;
+      const key = group.map((p) => `${p.bank}-${p.number}`).join(",");
+      const isOpen = expandedDuplicateKeys.has(key);
 
-      const box = document.createElement("div");
-      box.className = "duplicate-group";
+      const tr = document.createElement("tr");
+      const nameTd = document.createElement("td");
+      nameTd.textContent = groupName;
+      const countTd = document.createElement("td");
+      countTd.textContent = `${group.length} identical copies`;
+      tr.append(nameTd, countTd);
 
-      const title = document.createElement("div");
-      title.className = "duplicate-group-title";
-      title.textContent = `"${groupName}" -- ${group.length} identical copies`;
-      box.appendChild(title);
+      tr.dataset.entryKey = key;
+      if (isOpen) tr.classList.add("is-selected");
+      tr.addEventListener("click", () => {
+        if (expandedDuplicateKeys.has(key)) expandedDuplicateKeys.delete(key);
+        else expandedDuplicateKeys.add(key);
+        renderDuplicatesPanel();
+      });
+      tbody.appendChild(tr);
 
-      const table = document.createElement("table");
-      table.className = "table is-fullwidth is-hoverable is-narrow";
-      table.innerHTML =
-        colgroupHtml([2.6, 1.3, 1.3]) +
-        "<thead><tr><th>Bank</th><th title=\"Set List references\">#STL</th>" +
-        "<th title=\"Combi references\">#CMB</th></tr></thead><tbody></tbody>";
-      const tbody = table.querySelector("tbody");
-
-      for (const p of group) {
-        const tr = document.createElement("tr");
-        tr.append(
-          // Unlike the Programs table, Duplicates has no separate Type
-          // column -- worth showing here since two byte-exact duplicates
-          // could in principle sit in banks of different engine types.
-          bankCell(true, p.bank, p.number, p.bankType),
-          refCell(String(p.setlistUsageCount), false),
-          p.combiUsageCountAvailable ? refCell(String(p.combiUsageCount), false) : refCell("n/a", true)
-        );
-        tbody.appendChild(tr);
-      }
-
-      box.appendChild(table);
-      panel.appendChild(box);
+      if (isOpen) tbody.appendChild(buildDuplicateGroupRow(group));
     }
+
+    panel.appendChild(table);
   }
 
   function renderCurrentTab() {
@@ -663,6 +739,7 @@ function createLibraryPanels(root, { log, getDatasetId, getProgramBankType, onDr
   function onDatasetChanged() {
     expandedProgramKey = null;
     expandedCombiKey = null;
+    expandedDuplicateKeys.clear();
     load();
   }
 

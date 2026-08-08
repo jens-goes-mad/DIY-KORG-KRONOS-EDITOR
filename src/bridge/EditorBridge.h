@@ -121,6 +121,15 @@ public:
     // than only mutating in-memory bookkeeping -- see STATE.md.
     choc::value::Value copyProgram(const choc::value::ValueView& args);
 
+    // [datasetId] -> {ok, topLevelChunks:[...], programBanks:[{index,
+    // bankType, numRecords, bytesPerRecord}...], combiBanks:[{index,
+    // numRecords, bytesPerRecord}...]} or {ok:false, error}. Backs the
+    // "Internals" pane -- see PcgFile::topLevelChunkTags()/
+    // programBankInfo()/combiBankInfo()'s own doc comments, especially the
+    // caveat that `index` is file-order position, not a confirmed-stable
+    // bank identity.
+    choc::value::Value getDatasetInternals(const choc::value::ValueView& args);
+
 private:
     struct Dataset {
         kronos::PcgFile file;

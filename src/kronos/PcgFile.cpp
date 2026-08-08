@@ -34,28 +34,36 @@ struct ChunkInfo {
     std::string tag;
 };
 
-// Every chunk record in this format is preceded by one extra 4-byte field of
-// unknown purpose before its [4-char tag][u32be size][content] header --
-// try the direct position first, then the position shifted by 4 bytes.
-// See README.md ("Open questions") for what this prefix field might be.
+// Every chunk in this format has a fixed 12-byte header: a 4-char tag, a
+// u32be content size, and a 4-byte field of still-unknown purpose ("dwX")
+// -- CONFIRMED via docs/external/Synthify-Kronos-PCG-File-Structures.xlsx,
+// which independently documents this exact structure ("TAG1, size, dwX,
+// Data"). This corrects this project's own earlier model (an AMBIGUOUS
+// 4-byte field sometimes preceding the tag, tried at two candidate
+// positions) -- the unknown field is not a prefix before the tag at all,
+// it's the third word of a fixed header, right after size and right
+// before content. See docs/README.md §1 for the full story of how this
+// was found (cross-referencing two independent official/community
+// documents against this project's own byte-level findings) and its
+// real-world consequence: every top-level chunk's `contentStart` was
+// previously computed 4 bytes too early (`p+8`, tag+size only, missing
+// dwX), which drifted the whole-file top-level walk (topLevelChunkTags())
+// out of sync after the first chunk or two -- see the Internals pane's
+// Format Blind Spot notes in STATE.md.
 std::optional<ChunkInfo> readChunk(const std::vector<uint8_t>& data, size_t pos, size_t end) {
-    for (int prefixLen : {0, 4}) {
-        size_t p = pos + prefixLen;
-        if (p + 8 > end) continue;
-        if (!looksLikeTag(&data[p])) continue;
+    if (pos + 12 > end) return std::nullopt;
+    if (!looksLikeTag(&data[pos])) return std::nullopt;
 
-        uint32_t size = readU32BE(&data[p + 4]);
-        size_t contentStart = p + 8;
-        size_t contentEnd = contentStart + size;
-        if (contentEnd < contentStart || contentEnd > end) continue;
+    uint32_t size = readU32BE(&data[pos + 4]);
+    size_t contentStart = pos + 12;
+    size_t contentEnd = contentStart + size;
+    if (contentEnd < contentStart || contentEnd > end) return std::nullopt;
 
-        ChunkInfo info;
-        info.contentStart = contentStart;
-        info.contentEnd = contentEnd;
-        info.tag.assign(reinterpret_cast<const char*>(&data[p]), 4);
-        return info;
-    }
-    return std::nullopt;
+    ChunkInfo info;
+    info.contentStart = contentStart;
+    info.contentEnd = contentEnd;
+    info.tag.assign(reinterpret_cast<const char*>(&data[pos]), 4);
+    return info;
 }
 
 // Depth-first walk collecting every chunk anywhere in the hierarchy whose
@@ -68,7 +76,7 @@ void collectChunks(const std::vector<uint8_t>& data, size_t start, size_t end,
                     const std::function<bool(const std::string&)>& wanted, std::vector<ChunkInfo>& out, int depth) {
     if (depth > 64) return;
     size_t pos = start;
-    while (pos + 8 <= end) {
+    while (pos + 12 <= end) {
         auto chunk = readChunk(data, pos, end);
         if (!chunk) break;
         if (wanted(chunk->tag)) out.push_back(*chunk);
@@ -109,7 +117,10 @@ std::string readRecordName(const uint8_t* data, size_t off, size_t end) {
 // (or writing) one field never touches bits that belong to another.
 constexpr size_t kSbkHeaderSize = 40;
 constexpr size_t kSbkRecordSize = 542;
-constexpr size_t kSbkTypeColorOffset = 12;  // bit0: 1=Program/0=Combi; bits2-5: (color-1); bits6-7: Font size low 2 bits
+constexpr size_t kSbkTypeColorOffset = 12;  // bits0-1: Type (0=Combi/1=Program/2=Song); bits2-5: (color-1); bits6-7: Font size low 2 bits
+constexpr uint8_t kSbkTypeMask = 0x03;           // bits 0-1 -- Performance Type, confirmed 2 bits wide via
+                                                  // docs/external/KORG/SetList.txt (2026-08-08), not the single
+                                                  // bit this project originally assumed -- see docs/README.md
 constexpr uint8_t kSbkTypeColorMask = 0x3F;      // bits 0-5 -- Type+Color's own bits
 constexpr uint8_t kSbkFontSizeLowMask = 0xC0;    // bits 6-7 of +12
 constexpr size_t kSbkBankOffset = 13;       // bits0-4: bank; bits5-7: Transpose high 3 bits
@@ -122,14 +133,25 @@ constexpr size_t kSbkFontTransposeOffset = 17;   // bit4: Font size high bit; bi
 constexpr uint8_t kSbkFontSizeHighMask = 0x10;   // bit 4 of +17
 constexpr uint8_t kSbkTransposeLowMask = 0xE0;   // bits 5-7 of +17
 constexpr size_t kSbkCommentOffset = 18;
+// 512 bytes, confirmed via docs/external/KORG/SetList.txt (2026-08-08) --
+// NOT kSbkRecordSize-18(=524), this project's original assumption before
+// that source was available. The remaining 12 bytes at the very end of
+// each 542-byte song record (530..541) are not comment space -- same
+// width as the 12 unexplained bytes at the record's own start (+0..+11),
+// a symmetric shape this project doesn't have an explanation for yet.
+// Getting this wrong isn't just a decode inaccuracy: the encoder
+// (frontend/components/kronos/setlist-comment.js) writes into this same
+// span, so a too-generous bound here risked a long comment overwriting
+// whatever those trailing 12 bytes actually are.
+constexpr size_t kSbkCommentMaxLength = 512;
 
 // The Comment field can contain embedded \r\n line breaks, so unlike
 // readRecordName() this only stops at a genuine NUL byte, not otherwise.
-// Scans to the end of the 542-byte record (kSbkRecordSize), the largest
-// this field could possibly be.
+// Scans up to kSbkCommentMaxLength bytes, the largest this field could
+// possibly be.
 std::string readComment(const uint8_t* data, size_t songOff, size_t end) {
     size_t start = songOff + kSbkCommentOffset;
-    size_t recordEnd = songOff + kSbkRecordSize;
+    size_t recordEnd = songOff + kSbkCommentOffset + kSbkCommentMaxLength;
     if (start >= end) return {};
     const uint8_t* commentStart = data + start;
     const uint8_t* scanEnd = data + std::min(recordEnd, end);
@@ -145,7 +167,15 @@ SlotParams readSlotParams(const uint8_t* data, size_t songOff, size_t end) {
     uint8_t bankByte = data[songOff + kSbkBankOffset];
     uint8_t fontTransposeByte = data[songOff + kSbkFontTransposeOffset];
 
-    params.isProgram = (typeColor & 0x01) != 0;
+    // Was `(typeColor & 0x01) != 0` -- only bit 0. Confirmed 2 bits wide
+    // (0=Combi/1=Program/2=Song) via docs/external/KORG/SetList.txt
+    // (2026-08-08) -- isProgram still only distinguishes "is this a
+    // Program slot" (true for exactly type==1), so a Song slot (type==2)
+    // isn't separately represented here yet (nothing else in this app
+    // handles a third slot type), but the read is now correct rather than
+    // accidentally-right: the old bit-0-only check would have also
+    // treated the unused/invalid value 3 as a Program.
+    params.isProgram = (typeColor & kSbkTypeMask) == 1;
     params.color = ((typeColor & kSbkTypeColorMask) >> 2) + 1;
     params.bank = bankByte & kSbkBankMask;
     params.number = data[songOff + kSbkNumberOffset];
@@ -177,29 +207,70 @@ SlotParams readSlotParams(const uint8_t* data, size_t songOff, size_t end) {
 // independently explaining a byte this project had first read from its own
 // sample but the project owner had misremembered the Program number for).
 // See docs/README.md's "Combi Timbre references" section for the full
-// derivation. Every code below is a directly-verified byte value, from one
+// derivation. Every entry below is a directly-verified byte value, from one
 // source or the other -- not an extrapolation. That said, the two anchors
 // on each side (INT-A..D=0..3, USER-A=17/USER-D=20/USER-F=22/USER-AA=24)
 // strongly imply a contiguous INT-A..G=0..6 / USER-A..G=17..23 scheme;
 // deliberately not added below until each individual code is confirmed the
-// same way as these -- everything else returns "" so the UI shows the raw
-// numeric code instead of a guessed name.
+// same way as these.
+//
+// `programBankIndex` is this project's own PBK1 file-order Program bank
+// index (ProgramInfo::bank, see docs/README.md §5.2); `rawBankCode` is the
+// completely separate number a Combi Timbre slot's own byte actually
+// stores (TimbreRef::rawBankCode). The two coincide for INT-A..D (both use
+// 0..3) but diverge for every other confirmed bank (e.g. USER-D is
+// file-order index 11 but Timbre code 20) -- one shared table so
+// timbreBankName()/isConfirmedTimbreProgramBank() and the two Combi-usage
+// functions below can't drift out of sync with each other as more codes
+// get confirmed later.
+struct ConfirmedTimbreBank {
+    int programBankIndex;
+    int rawBankCode;
+    const char* name;
+};
+constexpr ConfirmedTimbreBank kConfirmedTimbreBanks[] = {
+    {0, 0, "INT-A"},    {1, 1, "INT-B"},    {2, 2, "INT-C"},    {3, 3, "INT-D"},
+    {8, 17, "USER-A"},  {11, 20, "USER-D"}, {13, 22, "USER-F"}, {14, 24, "USER-AA"},
+};
+
 std::string timbreBankName(int rawBankCode) {
-    switch (rawBankCode) {
-        case 0: return "INT-A";
-        case 1: return "INT-B";
-        case 2: return "INT-C";
-        case 3: return "INT-D";
-        case 17: return "USER-A";
-        case 20: return "USER-D";
-        case 22: return "USER-F";
-        case 24: return "USER-AA";
-        default: return "";
+    for (const auto& b : kConfirmedTimbreBanks) {
+        if (b.rawBankCode == rawBankCode) return b.name;
     }
+    // Unconfirmed code -- the UI shows the raw numeric code instead of a
+    // guessed name (see the doc comment above for why the implied
+    // contiguous pattern isn't used here).
+    return "";
 }
 
 bool isConfirmedTimbreProgramBank(int programBank) {
-    return programBank >= 0 && programBank <= 3;
+    for (const auto& b : kConfirmedTimbreBanks) {
+        if (b.programBankIndex == programBank) return true;
+    }
+    return false;
+}
+
+// Internal linkage -- pure implementation detail of combiUsagesForProgram()/
+// combiUsageCounts() below, not declared in PcgFile.h since nothing outside
+// this file needs the raw-code translation itself, only its effect.
+//
+// The confirmed Timbre raw bank code for a PBK1 file-order Program bank
+// index, or -1 if that bank isn't independently confirmed yet -- see
+// kConfirmedTimbreBanks above.
+static int confirmedTimbreCodeForProgramBank(int programBank) {
+    for (const auto& b : kConfirmedTimbreBanks) {
+        if (b.programBankIndex == programBank) return b.rawBankCode;
+    }
+    return -1;
+}
+
+// Reverse of the above -- the confirmed PBK1 file-order Program bank index
+// for a Timbre's raw bank code, or -1 if that code isn't confirmed yet.
+static int programBankForConfirmedTimbreCode(int rawBankCode) {
+    for (const auto& b : kConfirmedTimbreBanks) {
+        if (b.rawBankCode == rawBankCode) return b.programBankIndex;
+    }
+    return -1;
 }
 
 bool PcgFile::load(const std::string& path, std::string& error) {
@@ -253,12 +324,11 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
     // Kronos), not just one -- see README.md for how this was derived by
     // searching the file for known song/Set List names.
     for (const auto& sdb : sdbChunks) {
-        if (sdb.contentStart + 12 > sdb.contentEnd) continue;
+        if (sdb.contentStart + 8 > sdb.contentEnd) continue;
 
-        readU32BE(&data[sdb.contentStart]);  // "used" count -- meaning not fully understood yet, unused here
-        uint32_t numSetlists = readU32BE(&data[sdb.contentStart + 4]);
-        uint32_t bytesPerSetlist = readU32BE(&data[sdb.contentStart + 8]);
-        size_t setlistsStart = sdb.contentStart + 12;
+        uint32_t numSetlists = readU32BE(&data[sdb.contentStart]);
+        uint32_t bytesPerSetlist = readU32BE(&data[sdb.contentStart + 4]);
+        size_t setlistsStart = sdb.contentStart + 8;
 
         constexpr uint32_t kSongsPerSetlist = 128;  // 1 name record + 128 song records per Set List
         if (bytesPerSetlist != (kSongsPerSetlist + 1) * kRecordSize) continue;  // doesn't match the known layout
@@ -294,12 +364,11 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
     sbkSongsStart_.assign(setlists_.size(), static_cast<size_t>(-1));
 
     for (const auto& sbk : sbkChunks) {
-        if (sbk.contentStart + 12 > sbk.contentEnd) continue;
+        if (sbk.contentStart + 8 > sbk.contentEnd) continue;
 
-        readU32BE(&data[sbk.contentStart]);  // count -- meaning not understood yet, unused here
-        uint32_t numSetlists = readU32BE(&data[sbk.contentStart + 4]);
-        uint32_t bytesPerSetlist = readU32BE(&data[sbk.contentStart + 8]);
-        size_t setlistsStart = sbk.contentStart + 12;
+        uint32_t numSetlists = readU32BE(&data[sbk.contentStart]);
+        uint32_t bytesPerSetlist = readU32BE(&data[sbk.contentStart + 4]);
+        size_t setlistsStart = sbk.contentStart + 8;
 
         constexpr uint32_t kSongsPerSetlist = 128;
         if (bytesPerSetlist != kSbkHeaderSize + kSongsPerSetlist * kSbkRecordSize) continue;
@@ -341,12 +410,11 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
 
     for (size_t bankIdx = 0; bankIdx < cbkChunks.size(); ++bankIdx) {
         const auto& chunk = cbkChunks[bankIdx];
-        if (chunk.contentStart + 12 > chunk.contentEnd) continue;
+        if (chunk.contentStart + 8 > chunk.contentEnd) continue;
 
-        readU32BE(&data[chunk.contentStart]);  // meaning not understood yet, unused here
-        uint32_t numRecords = readU32BE(&data[chunk.contentStart + 4]);
-        uint32_t bytesPerRecord = readU32BE(&data[chunk.contentStart + 8]);
-        size_t recordsStart = chunk.contentStart + 12;
+        uint32_t numRecords = readU32BE(&data[chunk.contentStart]);
+        uint32_t bytesPerRecord = readU32BE(&data[chunk.contentStart + 4]);
+        size_t recordsStart = chunk.contentStart + 8;
 
         if (bytesPerRecord == 0) continue;
         if (recordsStart + static_cast<size_t>(bytesPerRecord) * numRecords > chunk.contentEnd) continue;
@@ -388,12 +456,11 @@ bool PcgFile::loadFromMemory(std::vector<uint8_t> data, std::string& error) {
 
     for (size_t bankIdx = 0; bankIdx < programBankChunks.size(); ++bankIdx) {
         const auto& chunk = programBankChunks[bankIdx];
-        if (chunk.contentStart + 12 > chunk.contentEnd) continue;
+        if (chunk.contentStart + 8 > chunk.contentEnd) continue;
 
-        readU32BE(&data[chunk.contentStart]);  // meaning not understood yet, unused here
-        uint32_t numRecords = readU32BE(&data[chunk.contentStart + 4]);
-        uint32_t bytesPerRecord = readU32BE(&data[chunk.contentStart + 8]);
-        size_t recordsStart = chunk.contentStart + 12;
+        uint32_t numRecords = readU32BE(&data[chunk.contentStart]);
+        uint32_t bytesPerRecord = readU32BE(&data[chunk.contentStart + 4]);
+        size_t recordsStart = chunk.contentStart + 8;
 
         if (bytesPerRecord == 0) continue;
         if (recordsStart + static_cast<size_t>(bytesPerRecord) * numRecords > chunk.contentEnd) continue;
@@ -484,13 +551,17 @@ std::vector<std::vector<int>> PcgFile::setlistUsageCounts(bool isProgram) const 
 
 std::vector<CombiUsage> PcgFile::combiUsagesForProgram(int bank, int number) const {
     std::vector<CombiUsage> usages;
-    if (!isConfirmedTimbreProgramBank(bank)) return usages;
+    // `bank` is a PBK1 file-order index; a Timbre's own rawBankCode uses a
+    // different number space that only coincides with it for INT-A..D --
+    // translate before comparing, see kConfirmedTimbreBanks's doc comment.
+    const int rawCode = confirmedTimbreCodeForProgramBank(bank);
+    if (rawCode < 0) return usages;
 
     for (const auto& combi : combis_) {
         bool referenced = false;
         bool active = false;
         for (const auto& t : combi.timbres) {
-            if (t.isDefault || t.rawBankCode != bank || t.number != number) continue;
+            if (t.isDefault || t.rawBankCode != rawCode || t.number != number) continue;
             referenced = true;
             if (t.status != TimbreStatus::Off) active = true;
         }
@@ -503,8 +574,14 @@ std::vector<std::vector<int>> PcgFile::combiUsageCounts() const {
     std::vector<std::vector<int>> counts;
     for (const auto& combi : combis_) {
         for (const auto& t : combi.timbres) {
-            if (t.isDefault || !isConfirmedTimbreProgramBank(t.rawBankCode)) continue;
-            int bank = t.rawBankCode;
+            if (t.isDefault) continue;
+            // Reverse direction from combiUsagesForProgram() above -- t.rawBankCode
+            // is the Timbre's own number space, translate to this project's
+            // PBK1 file-order index before indexing `counts` by it (callers,
+            // e.g. EditorBridge::listPrograms(), index this table by
+            // ProgramInfo::bank, a file-order index).
+            const int bank = programBankForConfirmedTimbreCode(t.rawBankCode);
+            if (bank < 0) continue;
             int number = t.number;
             if (bank >= static_cast<int>(counts.size())) counts.resize(bank + 1);
             if (number >= static_cast<int>(counts[bank].size())) counts[bank].resize(number + 1, 0);
@@ -546,6 +623,50 @@ std::vector<PcgFile::ProgramBankTypeEntry> PcgFile::programBankTypes() const {
 std::optional<ProgramBankType> PcgFile::programBankTypeAt(int bank) const {
     if (bank < 0 || bank >= static_cast<int>(programBankLocations_.size())) return std::nullopt;
     return programBankLocations_[static_cast<size_t>(bank)].bankType;
+}
+
+std::vector<std::string> PcgFile::topLevelChunkTags() const {
+    std::vector<std::string> tags;
+    if (data_.size() < 16) return tags;
+
+    // Byte 16 is PCG1 itself (the whole-file root container, confirmed via
+    // a real file: its own declared size exactly spans the rest of the
+    // file), not its children -- DIV1/SLS1/PRG1/CMB1/etc. are one level
+    // further in, at PCG1's own contentStart. "Top-level" here means
+    // PCG1's direct children, which is what every other top-level tag in
+    // this format (and the Internals pane) actually means.
+    auto pcg1 = readChunk(data_, 16, data_.size());
+    if (!pcg1) return tags;
+
+    size_t pos = pcg1->contentStart;
+    while (pos + 12 <= pcg1->contentEnd) {
+        auto chunk = readChunk(data_, pos, pcg1->contentEnd);
+        if (!chunk) break;
+        tags.push_back(chunk->tag);
+        pos = chunk->contentEnd + (chunk->contentEnd % 2);
+    }
+    return tags;
+}
+
+std::vector<PcgFile::ProgramBankInfo> PcgFile::programBankInfo() const {
+    std::vector<ProgramBankInfo> result;
+    result.reserve(programBankLocations_.size());
+    for (size_t i = 0; i < programBankLocations_.size(); ++i) {
+        const auto& loc = programBankLocations_[i];
+        result.push_back({static_cast<int>(i), loc.bankType, static_cast<int>(loc.numRecords),
+                           static_cast<int>(loc.bytesPerRecord)});
+    }
+    return result;
+}
+
+std::vector<PcgFile::CombiBankInfo> PcgFile::combiBankInfo() const {
+    std::vector<CombiBankInfo> result;
+    result.reserve(combiBankLocations_.size());
+    for (size_t i = 0; i < combiBankLocations_.size(); ++i) {
+        const auto& loc = combiBankLocations_[i];
+        result.push_back({static_cast<int>(i), static_cast<int>(loc.numRecords), static_cast<int>(loc.bytesPerRecord)});
+    }
+    return result;
 }
 
 std::optional<ProgramInfo> PcgFile::decodeProgram(int bank, int number) const {

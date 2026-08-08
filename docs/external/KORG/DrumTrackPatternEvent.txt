@@ -1,0 +1,11 @@
+ 1 DRUM TRACK PATTERN EVENT DATA
+ Object Version: 0
+
+ It's simply an array of the event data (8byte/event. See 'EVENT DATA FORMAT IN SONG' in 
+ SongEvent.txt). The total number of the events per pattern, is valiable and the 
+ events are sent as separated packet. Single packet can have up to 3000 events.
+
+ ex)
+  o If there are 1000 events in a pattern, all the events are sent in a single F0~F7 packet.
+  o If there are 5000 events in a pattern, you'll see two F0~F7 packets. 1st packet has 3000 events, and 
+    2nd has 2000 events.

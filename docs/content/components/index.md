@@ -352,6 +352,48 @@ same property the individual `.test.html` codec harnesses give you, one level up
 stateful, multi-component *feature* -- not just one pure function -- that's still fully
 testable without the rest of this project's native toolchain.
 
+## Case study: Internals -- a read-only pane that surfaced an architectural gap
+
+`pane.js`'s category navbar (Setlist/Programs/Combis/Duplicates) mounts each category as
+a sibling "peer content renderer" against a shared `createPane()` shell -- one function
+per category (`createSetlistPanel`, `createLibraryPanels`, ...), each given the same
+`{getDatasetId, log}`-style contract and an `onDatasetChanged()` lifecycle hook,
+switched between by `switchCategory()`. Internals (`frontend/internals.js`) is a new
+category built the same way: no new architecture needed, just another peer alongside
+the existing ones, backed by three small read-only `PcgFile` accessors
+(`topLevelChunkTags()`/`programBankInfo()`/`combiBankInfo()`) and one bridge method
+(`getDatasetInternals()`).
+
+It's a useful case study less for how it was built (routine) than for what building it
+found. The pane exists to answer a concrete question -- "which banks does this dataset
+actually contain?" -- because a backup tool that lets you choose what to save could
+plausibly omit banks entirely. Answering that question required looking closely at how
+this project labels a Program/Combi bank at all, and turned up something previously
+unnoticed: every bank "index" anywhere in this codebase is just that bank's *position*
+among however many bank sub-chunks were found in the file, in scan order -- never a
+value read from the bytes themselves. It has been silently correct in every file this
+project has examined only because those files happened to contain a complete,
+canonically-ordered set of banks; nothing currently distinguishes that from a file
+genuinely missing one. See [the file format reference](/format) for the open question
+this leaves (and the untouched first-4-bytes-per-chunk field that's a real candidate
+fix). The pane itself is honest about the limit this implies: it reports *how many* of
+the expected banks were found, but deliberately doesn't claim to know *which* bank a
+shortfall corresponds to, since that identity isn't something this project can
+currently confirm.
+
+It's a case study for *how* it was built too, just a day later than the rest of this
+story: the first cut shipped as two flat static `<table>`s, which skipped over an
+interaction pattern this app had already established elsewhere -- Setlist's accordion
+sections and `library.js`'s Program/Combi usage rows both use the same "click an Entry
+row, an `.editor-row` appears directly below it holding the detail" shape. Reshaped the
+same day into exactly that: one Entry row per topic ("Top-level chunks" / "Program
+banks" / "Combi banks"), each expandable independently, its detail wrapped the same way
+a multi-section accordion would be -- no new CSS needed, and it leaves a ready slot for
+a second section (an "Initialize bank" action) once Phase 1.5 has real ground truth to
+build one with. The general rule this follows: default to reusing an established
+pattern when it's cheap and fits naturally, and say so explicitly -- as a documented
+refactor, not a silent one-off -- on the rare occasion something genuinely doesn't fit.
+
 ### Postscript: the same principle, applied to hardware validation
 
 `tools/generate_setlist_test_matrix.{js,cpp}` -- generating a matrix of Setlist edits to

@@ -79,8 +79,8 @@ corresponds to which on-screen label beyond the ones directly confirmed above.
 
 - A Norton-Commander-style dual pane: each pane independently picks which already-open
   **dataset** (loaded file) to show from its own selector, and a per-pane category
-  navbar (Setlist / Programs / Combis / Duplicates) switches what that pane is
-  browsing -- so two panes can show different categories of the same dataset, the same
+  navbar (Setlist / Programs / Combis / Duplicates / Internals) switches what that pane
+  is browsing -- so two panes can show different categories of the same dataset, the same
   category of two different datasets side by side, or anything in between. Point both
   panes at the same dataset to rearrange one backup (edits show up in both
   immediately, dragging a Set List row between them swaps/copies it); point them at
@@ -107,6 +107,19 @@ corresponds to which on-screen label beyond the ones directly confirmed above.
   above the bank buttons bulk-toggles the filter instead of clicking each bank one by
   one), see which Set List slots reference a given Program, and find Programs that are
   byte-for-byte duplicates of each other (down to the raw record hash).
+- **Internals**: a read-only diagnostics view of which top-level chunks and which
+  Program/Combi banks a dataset actually contains -- built after noticing that a
+  backup tool letting you choose what data to save could plausibly omit banks
+  entirely, with nothing in the app able to tell you so. Building it surfaced a
+  real, previously-unknown gap: every Program/Combi bank "index" this project uses
+  anywhere is just that bank's position among however many bank sub-chunks were
+  found, in file order, not a confirmed identity tied to any byte in the file --
+  see [the file format reference](/format) for the open question this leaves
+  unresolved. The pane is deliberately honest about this: it reports how many of
+  the expected banks were found without claiming to know *which* bank a shortfall
+  corresponds to. Initializing an empty bank/patch is a planned follow-up, waiting
+  on real Init-Program byte data from actual Kronos hardware before it's built,
+  per this project's no-guessing rule.
 - Opens a file via a real native Open dialog (fixed a long-standing macOS z-order bug
   by calling `NSOpenPanel` directly rather than through the WebView's own broken
   delegate) -- opening the same path twice reuses the existing dataset instead of

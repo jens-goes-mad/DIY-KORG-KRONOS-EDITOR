@@ -213,6 +213,26 @@ body {
   }
 }
 
+/* Bulma's own `.tabs` defaults to horizontal-scroll-on-overflow
+   (`overflow-x: auto`, `white-space: nowrap` -- never wraps its own
+   items), fine when 4 tabs comfortably fit the half-width column above,
+   but a 5th (Internals) can overflow it, and since there's no visible
+   scrollbar affordance here, that just reads as the tab bar being cut
+   off. Override to wrap onto a second line instead, matching this pane's
+   own "stack rather than clip" responsive approach used everywhere else
+   (`.pane-header-row` above). `.tabs.pane-category-tabs` (two classes on
+   the same element pane.js already renders) is enough specificity to beat
+   Bulma's plain `.tabs` rule regardless of stylesheet order. */
+.tabs.pane-category-tabs {
+  overflow: visible;
+  overflow-x: visible;
+  white-space: normal;
+}
+
+.tabs.pane-category-tabs ul {
+  flex-wrap: wrap;
+}
+
 /* Visual styling (background/border/color/padding/disabled opacity) for
    .setlist-select/.dataset-select/.filter-input comes entirely from
    Bulma's own .select/.input classes (index.html/pane.js) -- checked
@@ -669,16 +689,38 @@ td.has-comment {
   font-style: italic;
 }
 
-.duplicate-group {
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 10px;
-  margin-bottom: 12px;
+/* Duplicates' expanded group detail (library.js's buildDuplicateGroupRow())
+   -- reuses `.bank-filter-row`/`.bank-filter-button` as-is, same as the
+   Internals pane's bank grid. padding-top for the same reason as
+   `.internals-chunk-row`/`.internals-bank-groups` in the Internals block
+   below -- no accordion-header of its own inside `.editor-row td` to
+   supply the gap under the group's title row. */
+.duplicate-copies {
+  padding: 8px 10px 0;
 }
 
-.duplicate-group-title {
-  font-weight: 600;
-  margin-bottom: 6px;
+/* Bulma's own `.button` forces `white-space: nowrap` -- fine for the short
+   bank-name captions `.bank-filter-button` was built for, but these
+   buttons' captions also carry Combi/Set List reference counts and run
+   much longer, so left uncorrected the text would overflow its own
+   button rather than wrap. */
+.duplicate-copies .bank-filter-button {
+  white-space: normal;
+  text-align: left;
+}
+
+/* Wider, and capped at 4 columns instead of `.bank-filter-row`'s plain
+   `auto-fill` (which would happily pack 6-8 of these short-ish captions
+   into one row) -- `max(14em, 100%/4)` makes each column's minimum the
+   LARGER of a fixed floor (14em) or a quarter of the available width, so
+   on a wide pane exactly 4 fit per row (100%/4 wins once the pane is wide
+   enough), and as the pane narrows it reflows down through 3/2/1 on its
+   own once 14em stops fitting 4 abreast -- no fixed breakpoints to
+   maintain, since this pane can be resized to any width, not just a
+   handful of device sizes the way a Bootstrap col-*-md/col-*-xs grid
+   targets. */
+.duplicate-copies .bank-filter-row {
+  grid-template-columns: repeat(auto-fit, minmax(max(14em, 100%/4), 1fr));
 }
 
 /* Transient popups -- app.js's showToast(). Fixed to the viewport (not a
@@ -722,4 +764,91 @@ td.has-comment {
 .toast-visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Internals pane (internals.js) -- read-only data, but the same clickable
+   Entry-row/.editor-row expand shape library.js's Program/Combi usage rows
+   and pane.js's Setlist accordion sections use (see internals.js's own
+   header comment), not a one-off layout, even though there's nothing here
+   to edit yet. */
+.internals-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;  /* same reasoning as .entries-scroll/.library-body -- no horizontal scrollbar, ever */
+}
+
+.internals-caveat {
+  background: var(--panel);
+  border-left: 3px solid var(--bulma-warning);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* Bulma's own `.help` sets `display: block` unconditionally (author-origin
+   CSS), which beats the native `[hidden]` attribute's UA-stylesheet
+   `display: none` regardless of specificity -- so internals.js's own
+   `emptyEl.hidden = true` never actually hid ".internals-empty help",
+   leaving the "No dataset selected" message visible on top of real content
+   even once a dataset was loaded. Same `[hidden]`-vs-author-CSS bug class
+   as `.bank-filter-row[hidden]`/`.select-control-row[hidden]` below --
+   this is the third instance of it in this file. */
+.internals-empty[hidden] {
+  display: none;
+}
+
+.internals-summary {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* .accordion-content (shared with pane.js's Setlist sections) has zero top
+   padding -- fine there, since its own accordion-header supplies the gap
+   via its bottom padding, but Internals' topic detail has no header of its
+   own inside .accordion-content, so without this the first row/badge sits
+   flush against the topic row above it. */
+.internals-chunk-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 8px;
+  margin-bottom: 8px;
+}
+
+.internals-chunk-badge {
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+}
+
+.internals-chunk-badge.is-present {
+  color: var(--text);
+  border-color: var(--bulma-success);
+}
+
+.internals-chunk-badge.is-missing {
+  color: var(--text-dim);
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.internals-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+/* Program/Combi bank detail, inside a topic's .accordion-content --
+   reuses .bank-filter-row/.bank-filter-button as-is (style.css's own
+   Library rules above), grouped into the 4 rows internals.js's
+   bankNameRows() computes (I-*/G(d)/U-*/U-**); the last row's own
+   .bank-filter-row margin-bottom is harmless trailing space inside
+   .accordion-content's own bottom padding. padding-top for the same
+   reason as .internals-chunk-row above -- no header of its own to supply
+   the gap under the topic row's title. */
+.internals-bank-groups {
+  padding-top: 8px;
 }

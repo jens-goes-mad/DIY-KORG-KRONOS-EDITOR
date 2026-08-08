@@ -70,6 +70,14 @@ struct Setlist {
 // NOT YET independently verified against a real Kronos backup by this
 // project's own "no guessing" standard -- see docs/external/README.md's
 // caveat before trusting this for anything beyond its own unit test.
+//
+// One thing IS confirmed directly (real hardware behavior, 2026-08-07,
+// see docs/README.md §5.2): engine assignment is a global, per-BANK
+// setting on the unit -- Programs within one bank can never mix engines,
+// and a bank's storage is all-or-nothing (always exactly 128 slots, never
+// partially saved). That's exactly why this type is tracked once per bank
+// here, never per record -- confirmed behavior, even though the specific
+// MBK1=EXi/PBK1=HD-1 tag mapping itself remains externally sourced only.
 enum class ProgramBankType { Hd1, Exi };
 
 // One Program's table row: `bank`/`name`/`number` are raw Kronos fields,
@@ -134,14 +142,18 @@ struct TimbreRef {
 std::string timbreBankName(int rawBankCode);
 
 // Whether `programBank` (this project's PBK1 file-order Program bank
-// index, see ProgramInfo::bank) is confirmed to line up with the *same*
-// numbering a Combi Timbre's raw bank code uses (TimbreRef::rawBankCode)
-// -- true only for INT-A..D (0..3), the range independently verified in
-// both schemes (see docs/README.md §6.2). Every other Program bank
-// (INT-E..G, every USER bank) has a Timbre code that's confirmed to sit
-// at a *different* index than its PBK1 file-order position (e.g. USER-D
-// is file-order index 11 but Timbre code 20) -- counting Combi usage for
-// those would silently produce wrong numbers, so it's not attempted.
+// index, see ProgramInfo::bank) has an independently-confirmed Combi
+// Timbre raw bank code (TimbreRef::rawBankCode) -- true for the 8 banks in
+// PcgFile.cpp's kConfirmedTimbreBanks table (INT-A..D, USER-A/D/F/AA, see
+// docs/README.md §6.2). The two numbering schemes coincide for INT-A..D
+// (both use 0..3) but diverge for the other 4 (e.g. USER-D is file-order
+// index 11 but Timbre code 20) -- combiUsagesForProgram()/
+// combiUsageCounts() translate between the two via that same table rather
+// than assuming they're numerically equal, so Combi usage counting is
+// correct for all 8, not just the range where the numbers happen to
+// match. Every other Program bank has no confirmed Timbre code at all yet
+// -- counting Combi usage for those would be a guess, so it's not
+// attempted.
 bool isConfirmedTimbreProgramBank(int programBank);
 
 // One Combi, from CMB1's CBK1 banks (see docs/README.md §5.1). No
@@ -225,6 +237,58 @@ public:
     // already knows the one bank it cares about. nullopt if `bank` is out of
     // range for this file.
     std::optional<ProgramBankType> programBankTypeAt(int bank) const;
+
+    // Every top-level chunk tag actually found directly under PCG1 (DIV1,
+    // SLS1, PRG1, CMB1, DKT1, WSQ1, GLB1, DPI1 are the ones this format is
+    // known to use -- see docs/README.md), in file order, duplicates
+    // included if a tag genuinely appears more than once. For "Internals"-
+    // style diagnostics: a real backup can apparently be saved with only a
+    // subset of this data included (the project owner's own observation),
+    // so this is how a caller can tell "was there ever a DKT1/WSQ1/GLB1
+    // chunk in this file at all" -- something the rest of this class never
+    // needed to ask before now, since it only ever looked for chunks it
+    // already knew how to parse.
+    std::vector<std::string> topLevelChunkTags() const;
+
+    // One entry per Program/Combi bank actually present in this file --
+    // richer than programBankTypes()/ProgramBankTypeEntry (adds record
+    // count/stride), for an "Internals" view that wants to show what's
+    // actually in a bank, not just its engine type.
+    //
+    // IMPORTANT, NOT YET RESOLVED: `index` is this bank's POSITION among
+    // however many PRG1 sub-bank chunks were found, in file order -- NOT a
+    // confirmed-stable bank identity. This project has always assumed a
+    // real file contains all 20 Program banks / 14 Combi banks in one
+    // fixed canonical order (see PROGRAM_BANK_NAMES/COMBI_BANK_NAMES in
+    // frontend/pane.js), so position-equals-identity has been silently
+    // correct so far -- but if a real backup can genuinely omit banks (see
+    // topLevelChunkTags()'s own comment), that assumption breaks: a file
+    // missing, say, canonical bank 4 would have this method return only
+    // 19 entries, and its index-5-onward entries would actually BE
+    // canonical banks 5-19's data, silently mislabeled as 4-18 by every
+    // caller that assumes index-equals-canonical-position (ProgramInfo::
+    // bank, the whole Programs/Combis table, Timbre cross-referencing,
+    // copyProgramFrom()'s destination checks -- all of it). Each PRG1/CBK1
+    // sub-bank chunk's own first 4 bytes (currently read and discarded,
+    // "meaning not understood yet" -- see PcgFile.cpp) are a plausible
+    // candidate for a real per-chunk bank-identity field that would let
+    // this be fixed properly; not yet investigated with real test data
+    // that's actually missing a known bank. See STATE.md.
+    struct ProgramBankInfo {
+        int index = 0;
+        ProgramBankType bankType = ProgramBankType::Hd1;
+        int numRecords = 0;
+        int bytesPerRecord = 0;
+    };
+    std::vector<ProgramBankInfo> programBankInfo() const;
+
+    // Same caveat as ProgramBankInfo -- see its own doc comment.
+    struct CombiBankInfo {
+        int index = 0;
+        int numRecords = 0;
+        int bytesPerRecord = 0;
+    };
+    std::vector<CombiBankInfo> combiBankInfo() const;
 
     // Why a copy can be rejected -- see copyProgramFrom()'s own doc comment.
     // Kept as a plain enum (not an exception) so EditorBridge can map each

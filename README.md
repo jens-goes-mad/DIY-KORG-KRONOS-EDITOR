@@ -95,7 +95,7 @@ never silently overwrites whatever a pane was already showing. See
 block for the full before/after and why this replaced the old
 one-file-per-pane model.
 
-## Per-pane categories: Setlist / Programs / Combis / Duplicates
+## Per-pane categories: Setlist / Programs / Combis / Duplicates / Internals
 
 Each pane has its own category navbar, not a separate top-level tab -- so two
 panes can independently show different categories of the same dataset, the
@@ -124,6 +124,17 @@ between.
   that part needs a currently-unparsed piece of the format (a Combi's
   internal Timbre-to-Program references) and a safe write-back mechanism
   this app has never had, so it's deliberately not built yet.
+- **Internals**: read-only diagnostics showing which top-level chunks and
+  which Program/Combi banks a dataset actually contains -- since a backup
+  tool that lets you choose what to save could plausibly omit banks, with
+  nothing else in the app able to tell you. Building it surfaced a real gap:
+  every bank "index" this project uses anywhere is just that bank's position
+  among however many bank sub-chunks were found in the file, not a confirmed
+  identity tied to the bytes themselves -- see the file format doc's open
+  questions for the details. The pane reports how many of the expected banks
+  were found without claiming to know which specific bank is missing.
+  Initializing an empty bank/patch is a planned follow-up, waiting on real
+  Init-Program byte data pulled from actual Kronos hardware first.
 
 ![DIY Kronos Editor - Combi](README-Combi.png)
 
@@ -241,8 +252,9 @@ src/
 frontend/
   index.html, app.js, style.css   -- topbar (global Open button) + shared wiring
   datasets.js                  -- shared dataset registry (open files, decoupled from pane) -- see Datasets above
-  pane.js                      -- pane shell (dataset selector + Setlist/Programs/Combis/Duplicates category nav) + Setlist UI
+  pane.js                      -- pane shell (dataset selector + Setlist/Programs/Combis/Duplicates/Internals category nav) + Setlist UI
   library.js                   -- Programs/Combis/Duplicates category content, embedded per-pane (not a separate tab)
+  internals.js                 -- Internals category content: which chunks/banks a dataset contains, embedded per-pane
   mock_bridge.js              -- fake in-memory backend for plain-browser dev (no native build needed)
   vendor/bulma.min.css         -- vendored Bulma (CSS only, no JS/build-step dependency) -- see docs/content/components
   components/kronos/          -- standalone, byte-level-tested UI pieces (see Architecture direction above)

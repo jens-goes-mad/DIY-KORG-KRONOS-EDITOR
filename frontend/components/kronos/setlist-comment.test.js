@@ -6,7 +6,14 @@
 //
 // Exits non-zero on any failed assertion, for CI/ctest-style usage.
 
-import { RECORD_SIZE, FONT_SIZES, decodeSetlistComment, encodeSetlistComment } from "./setlist-comment.js";
+import {
+  RECORD_SIZE,
+  COMMENT_OFFSET,
+  COMMENT_MAX_LENGTH,
+  FONT_SIZES,
+  decodeSetlistComment,
+  encodeSetlistComment,
+} from "./setlist-comment.js";
 import { ROLLING_IN_THE_DEEP_RECORD_HEX, hexToBytes } from "./test-fixtures.js";
 
 let failures = 0;
@@ -63,7 +70,15 @@ check(
   Array.from(edited.slice(0, 12)),
   Array.from(realRecord.slice(0, 12))
 );
-check("shortening the comment zero-fills the rest of the record", edited.slice(18 + 5).every((b) => b === 0), true);
+// Only through COMMENT_OFFSET+COMMENT_MAX_LENGTH (530), not RECORD_SIZE
+// (542) -- the trailing 12 bytes (530..541) aren't comment space, see
+// COMMENT_MAX_LENGTH's own comment, and encodeSetlistComment() must leave
+// them untouched rather than zero them.
+check(
+  "shortening the comment zero-fills the rest of the comment field (not past it)",
+  edited.slice(COMMENT_OFFSET + 5, COMMENT_OFFSET + COMMENT_MAX_LENGTH).every((b) => b === 0),
+  true
+);
 
 let threw = false;
 try {

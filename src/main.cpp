@@ -121,6 +121,8 @@ int main() {
         view.bind("getProgramBankTypes",
                    [&bridge](const choc::value::ValueView& args) { return bridge.getProgramBankTypes(args); });
         view.bind("copyProgram", [&bridge](const choc::value::ValueView& args) { return bridge.copyProgram(args); });
+        view.bind("getDatasetInternals",
+                   [&bridge](const choc::value::ValueView& args) { return bridge.getDatasetInternals(args); });
     };
 
     auto webView = std::make_unique<choc::ui::WebView>(options);

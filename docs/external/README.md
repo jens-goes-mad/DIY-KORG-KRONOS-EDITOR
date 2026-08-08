@@ -91,3 +91,45 @@ that exploration doesn't live only in chat history.
   but re-verify the mechanism itself against a real backup's actual chunk tags/strides
   before relying on it for anything beyond its own unit test, per this project's usual
   "no guessing" standard.
+- **Contradicted, 2026-08-08, NOT yet resolved**: `docs/external/KORG/Prog_HD-1.txt` (see
+  below) states "HD-1 Program Size: 3706 byte" and `Prog_EXi.txt` states "EXi Program
+  Size: 4960 byte" -- the exact opposite pairing from this file's own 4960(HD-1)/
+  3706(EXi) figures that `classifyProgramBankType()` currently uses. This project's code
+  has never been checked against a real file's actual stride either way, so which source
+  is right (or whether both are, for different OS/hardware revisions) is genuinely
+  unknown -- flagging here rather than guessing which to trust.
+
+## `KORG/` folder -- official Korg SysEx parameter documentation
+
+- **Origin**: not yet documented here -- added directly to the repo 2026-08-08; where
+  exactly these were sourced from still needs recording (ask before assuming/citing a
+  URL, per this project's own rule against guessing sources).
+- **Contents**: `SetList.txt`, `Prog_HD-1.txt`, `Prog_EXi.txt`, `Prog_EXi_Common.txt`,
+  `CombiAndSongTimbreSet.txt`, `Global.txt`, `DrumKit.txt`, `DrumTrackPattern.txt`,
+  `DrumTrackPatternEvent.txt`, `Effect.txt`, `Song.txt`, `SongControl.txt`,
+  `SongEvent.txt`, `WaveSequence.txt`, `KARMA_GE_RTP.txt`, `KRONOS_MIDI_SysEx.txt`, plus
+  a `SysExParams/VoiceModels/` subfolder (one file per sound engine: `AL-1`, `CX-3`,
+  `EP-1`, `HD-1`, `MOD-7`, `MS-20EX`, `PolysixEX`, `SGX-1`, `STR-1`, `Off`). Each
+  top-level file documents one SysEx-addressable object's exact byte layout: offset, bit
+  range, parameter name, valid data range, and human-readable value meaning.
+- **Why it matters here**: these are Korg's own official SysEx parameter tables, not a
+  third party's reverse-engineering -- and they turned out to describe the *same* records
+  this project parses on disk, byte-for-byte, once the chunk-header fix above (§1.2's
+  12-byte header, `docs/README.md`) is accounted for. Already used to: confirm the 12-byte
+  chunk header structure (cross-referenced against `Synthify-Kronos-PCG-File-Structures.xlsx`
+  above); confirm the SBK1 slot "Performance Type" field is 2 bits (`prog/combi/song`), not
+  the single bit this project's `isProgram` read assumed (`SetList.txt`); locate a strong
+  candidate for byte +17's previously-unexplained bits 0-3 (`SetList.txt`, "Keyboard
+  Track"); locate Program Category/Sub-Category's byte offset, previously "not located in
+  raw bytes at all" (`Prog_HD-1.txt`, offset 2568); and give the full per-Timbre parameter
+  layout for Combis (`CombiAndSongTimbreSet.txt`) -- Volume, Pan, Transpose, Detune,
+  Delay, Sends, bus routing, per-Timbre Drum Kit patch assignment, Chord settings,
+  MIDI channel, and Filter/Knob enable bits, none of which this project had decoded before.
+- **Caution**: SysEx wire-format offsets are not automatically on-disk PCG offsets --
+  every specific offset claim taken from these files needs the same real-byte
+  cross-checking this project already applies to everything else before being marked
+  CONFIRMED in `docs/README.md`, not copied over at face value. Most of the material in
+  this folder (Global, DrumKit, WaveSequence, Effect, SongControl, the per-engine
+  SysExParams/VoiceModels files) hasn't been cross-checked against this project's own
+  findings yet at all -- see STATE.md for what's been mined so far vs. what's still
+  unexplored.

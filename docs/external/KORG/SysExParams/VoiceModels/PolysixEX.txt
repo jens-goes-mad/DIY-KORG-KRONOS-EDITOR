@@ -1,0 +1,613 @@
+========================================================================
+PolysixEX
+This file was generated automatically.  Do not edit by hand.
+========================================================================
+
+Components
+
+comp  sub                name
+----  ---  --------------------------------
+ 127    0  PolysixEX Patch
+   0    0  Static Stereo 3-Band EQ
+   1    0  Common KeyTrack 1
+   2    0  Common KeyTrack 2
+   3    0  Static Pan/Output
+   4    0  AMS Mixer 1
+   5    0  AMS Mixer 2
+   6    0  AMS Mixer 3
+   7    0  AMS Mixer 4
+   8    0  MG
+   9    0  LFO 1
+  10    0  LFO 2
+  11    0  Polysix EG
+  12    0  EG 2
+  13    0  EG 3
+  14    0  Pitch Mod
+  15    0  Polysix Synth
+
+
+PolysixEX Patch (comp 127, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0              0..97  VoiceDelay
+    1       0            0..1000  PWM Speed
+    2       0              0..77  PWM Speed AMS Source
+    3       0        -1000..1000  PWM Speed AMS Intensity
+    4       0              0..77  PWM Speed AMS Int Mod Source
+    5       0        -1000..1000  PWM Speed AMS Int Mod Intensity
+    6       0               0..3  Effect Mode
+    7       0              0..77  Effect Mode AMS Source
+    8       0              -3..3  Effect Mode AMS Intensity
+    9       0            0..1000  Effect Spread
+   10       0              0..77  Effect Spread AMS Source
+   11       0        -1000..1000  Effect Spread AMS Intensity
+   12       0              0..77  Effect Spread AMS Int Mod Source
+   13       0        -1000..1000  Effect Spread AMS Int Mod Intensity
+   14       0            0..1000  Effect Speed/Intensity
+   15       0              0..77  Effect Speed/Intensity AMS Source
+   16       0        -1000..1000  Effect Speed/Intensity AMS Intensity
+   17       0              0..77  Effect Speed/Intensity AMS Int Mod Source
+   18       0        -1000..1000  Effect Speed/Intensity AMS Int Mod Intensity
+   19       0            0..1000  Volume
+   20       0              0..77  Volume AMS Source
+   21       0        -1000..1000  Volume AMS Intensity
+   22       0              0..77  Volume AMS Int Mod Source
+   23       0        -1000..1000  Volume AMS Int Mod Intensity
+   24       0               0..1  Arp Enable
+   25       0              0..77  Arp Enable AMS Source
+   26       0               0..1  Arp Enable AMS SWitch Mode
+   27       0               0..1  Arp Key Sync
+   28       0            0..1000  Arp Speed
+   29       0              0..77  Arp Speed AMS Source
+   30       0        -1000..1000  Arp Speed AMS Intensity
+   31       0              0..77  Arp Speed AMS Int Mod Source
+   32       0        -1000..1000  Arp Speed AMS Int Mod Intensity
+   33       0               0..1  Arp Tempo Sync
+   34       0               0..9  Arp Base Note
+   35       0              0..15  Arp Tempo Sync Times
+   36       0              0..77  Arp Tempo Sync Times AMS Source
+   37       0            -15..15  Arp Tempo Sync Times AMS Intensity
+   38       0              0..77  Arp Tempo Sync Times AMS Int Mod Source
+   39       0            -15..15  Arp Tempo Sync Times AMS Int Mod Intensity
+   40       0               0..2  Arp Range
+   41       0              0..77  Arp Range AMS Source
+   42       0              -2..2  Arp Range AMS Intensity
+   43       0               0..2  Arp Mode
+   44       0              0..77  Arp Mode AMS Source
+   45       0              -2..2  Arp Mode AMS Intensity
+   46       0               0..1  Arp Latch
+   47       0              0..77  Arp Latch AMS Source
+   48       0               0..1  Arp Latch AMS SWitch Mode
+
+
+Static Stereo 3-Band EQ (comp 0, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..1  Bypass
+    1       0              0..99  InputTrim
+    2       0            -36..36  Low
+    3       0             0..165  MidFreq
+    4       0            -36..36  Mid
+    5       0            -36..36  High
+
+
+Common KeyTrack 1 (comp 1, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0             0..127  LowKey
+    1       0             0..127  MidKey
+    2       0             0..127  HighKey
+    3       0          -100..100  LowRamp
+    4       0          -100..100  MidLowRamp
+    5       0          -100..100  MidHighRamp
+    6       0          -100..100  HighRamp
+
+
+Common KeyTrack 2 (comp 2, sub 0)
+
+    see Common KeyTrack 1 (comp 1, sub 0)
+
+
+Static Pan/Output (comp 3, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..1  PanUseDrumkitSetting
+    1       0              0..77  PanAMSSource
+    2       0            -99..99  PanAMSIntensity
+    3       0             0..127  Pan
+    4       0             0..127  Send 1 Level
+    5       0             0..127  Send 2 Level
+    6       0             0..127  Patch Level
+    7       0               0..1  Patch Mute
+    8       0               0..1  Patch Solo (not stored)
+
+
+AMS Mixer 1 (comp 4, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..6  Mixer Type
+    1       0              0..77  Source A
+    2       0            -99..99  Amount A
+    3       0              0..77  Source B
+    4       0            -99..99  Amount B
+    5       0              0..77  Amt A x B: Source A (deprecated. use Source A)
+    6       0            -99..99  Amt A x B: Amount A (deprecated. use Amount A)
+    7       0              0..77  Amt A x B: Source B (deprecated. use Source B)
+    8       0            -99..99  Amt A x B: Amount B (deprecated. use Amount B)
+    9       0              0..77  Offset: Source (deprecated. use Source A)
+   10       0          -199..199  Offset: Amount
+   11       0          -199..199  Offset: Offset
+   12       0              0..77  Smoothing: Source (deprecated. use Source A)
+   13       0              0..99  Smoothing: Attack
+   14       0              0..99  Smoothing: Decay
+   15       0              0..77  Shape: Source (deprecated. use Source A)
+   16       0            -99..99  Shape: Shape
+   17       0               0..1  Shape: Mode
+   18       0              0..77  Quantize: Source (deprecated. use AMS Source A)
+   19       0              2..32  Quantize: Steps
+   20       0              0..77  Gate: Source
+   21       0            -99..99  Gate: Threshold
+   22       0               0..1  Gate: Control at Note-on only
+   23       0               0..1  Gate: Below Threshold Use AMS
+   24       0               0..1  Gate: At/Above Threshold Use AMS
+   25       0              0..77  Gate: Below Threshold AMS Source Select (deprecated. use Source A)
+   26       0              0..77  Gate: At/Above Threshold AMS Source Select (deprecated. use Source B)
+   27       0            -99..99  Gate: Below Threshold Fixed Value
+   28       0            -99..99  Gate: At/Above Threshold Fixed Value
+
+
+AMS Mixer 2 (comp 5, sub 0)
+
+    see AMS Mixer 1 (comp 4, sub 0)
+
+
+AMS Mixer 3 (comp 6, sub 0)
+
+    see AMS Mixer 1 (comp 4, sub 0)
+
+
+AMS Mixer 4 (comp 7, sub 0)
+
+    see AMS Mixer 1 (comp 4, sub 0)
+
+
+MG (comp 8, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..1  Key Sync
+    1       0            0..1000  Frequency
+    2       0              0..77  Frequency AMS Source
+    3       0        -1000..1000  Frequency AMS Intensity
+    4       0              0..77  Frequency AMS Int Mod Source
+    5       0        -1000..1000  Frequency AMS Int Mod Intensity
+    6       0               0..1  Tempo Sync
+    7       0               0..9  Base Note
+    8       0              0..15  Tempo Sync Times
+    9       0              0..77  Tempo Sync Times AMS Source
+   10       0            -15..15  Tempo Sync Times AMS Intensity
+   11       0              0..77  Tempo Sync Times AMS Int Mod Source
+   12       0            -15..15  Tempo Sync Times AMS Int Mod Intensity
+   13       0            0..1000  Delay
+   14       0              0..77  Delay AMS Source
+   15       0        -1000..1000  Delay AMS Intensity
+   16       0              0..77  Delay AMS Int Mod Source
+   17       0        -1000..1000  Delay AMS Int Mod Intensity
+
+
+LFO 1 (comp 9, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0              0..17  Waveform
+    1       0            -36..37  Start Phase
+    2       0            -99..99  Shape
+    3       0              0..77  Shape AMS Source
+    4       0            -99..99  Shape AMS Intensity
+    5       0              0..99  Frequency
+    6       0              0..99  FrequencyFine
+    7       0               0..1  Stop
+    8       0            -99..99  Offset
+    9       0               0..1  KeySync
+   10       0              0..99  Fade
+   11       0              0..99  Delay
+   12       0              0..77  FrequencyAMS1Source
+   13       0            -99..99  FrequencyAMS1Intensity
+   14       0              0..77  FrequencyAMS1ModSource
+   15       0            -99..99  FrequencyAMS1ModIntensity
+   16       0              0..77  FrequencyAMS2Source
+   17       0            -99..99  FrequencyAMS2Intensity
+   18       0               0..1  MIDITempoSync
+   19       0               0..9  MIDITempoSyncBaseNote
+   20       0              1..32  MIDITempoSyncTimes
+
+
+LFO 2 (comp 10, sub 0)
+
+    see LFO 1 (comp 9, sub 0)
+
+
+Polysix EG (comp 11, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0            0..1000  Attack Time
+    1       0              0..77  Attack Time AMS Source
+    2       0        -1000..1000  Attack Time AMS Intensity
+    3       0              0..77  Attack Time AMS Int AMS Source
+    4       0        -1000..1000  Attack Time AMS Int AMS Intensity
+    5       0            0..1000  Decay Time
+    6       0              0..77  Decay Time AMS Source
+    7       0        -1000..1000  Decay Time AMS Intensity
+    8       0              0..77  Decay Time AMS Int AMS Source
+    9       0        -1000..1000  Decay Time AMS Int AMS Intensity
+   10       0            0..1000  Sustain Level
+   11       0              0..77  Sustain Level AMS Source
+   12       0        -1000..1000  Sustain Level AMS Intensity
+   13       0              0..77  Sustain Level AMS Int AMS Source
+   14       0        -1000..1000  Sustain Level AMS Int AMS Intensity
+   15       0            0..1000  Release Time
+   16       0              0..77  Release Time AMS Source
+   17       0        -1000..1000  Release Time AMS Intensity
+   18       0              0..77  Release Time AMS Int AMS Source
+   19       0        -1000..1000  Release Time AMS Int AMS Intensity
+
+
+EG 2 (comp 12, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0            -99..99  Start Level
+            1                     Attack Level
+            2                     Breakpoint Level
+            3                     Sustain Level
+            4                     Release Level
+    1       0              0..99  Attack Time
+            1                     Decay Time
+            2                     Slope Time
+            3                     Release Time
+    2       0              0..10  Attack Curve
+            1                     Decay Curve
+            2                     Slope Curve
+            3                     Release Curve
+    3       0              0..77  LevelModAMS1Source
+    4       0            -99..99  Start Lvl Mod Intens
+            1                     Attack Lvl Mod Intens
+            2                     Breakpoint Lvl Mod Intens
+    5       0              0..77  LevelModAMS2Source
+    6       0            -99..99  Start Lvl Mod Intens
+            1                     Attack Lvl Mod Intens
+            2                     Breakpoint Lvl Mod Intens
+    7       0              0..77  TimeModAMS1Source
+    8       0            -99..99  Attack Time Mod Intens
+            1                     Decay Time Mod Intens
+            2                     Slope Time Mod Intens
+            3                     Release Time Mod Intens
+    9       0              0..77  TimeModAMS2Source
+   10       0            -99..99  Attack Time Mod Intens
+            1                     Decay Time Mod Intens
+            2                     Slope Time Mod Intens
+            3                     Release Time Mod Intens
+   11       0              0..77  TimeModAMS3Source
+   12       0            -99..99  Attack Time Mod Intens
+            1                     Decay Time Mod Intens
+            2                     Slope Time Mod Intens
+            3                     Release Time Mod Intens
+   13       0              0..77  ResetAMSSource
+   14       0            -99..99  ResetAMSThreshold
+
+
+EG 3 (comp 13, sub 0)
+
+    see EG 2 (comp 12, sub 0)
+
+
+Pitch Mod (comp 14, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0            0..1200  Bend Range
+
+
+Polysix Synth (comp 15, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..2  Octave
+    1       0              0..77  Octave AMS Source
+    2       0              -2..2  Octave AMS Intensity
+    3       0        -2400..2400  Transpose
+    4       0              0..77  Transpose AMS Source
+    5       0        -4800..4800  Transpose AMS Int
+    6       0              0..77  Transpose AMS Int Mod Source
+    7       0        -4800..4800  Transpose AMS Int Mod Int
+    8       0          -500..500  Tune
+    9       0              0..77  Tune AMS Source
+   10       0        -1000..1000  Tune AMS Int
+   11       0              0..77  Tune AMS Int Mod Source
+   12       0        -1000..1000  Tune AMS Int Mod Int
+   13       0            0..1000  Vibrato Int
+   14       0              0..77  Vibrato Int AMS Source
+   15       0        -1000..1000  Vibrato Int AMS Int
+   16       0              0..77  Vibrato Int AMS Int Mod Source
+   17       0        -1000..1000  Vibrato Int AMS Int Mod Int
+   18       0               0..2  Waveform
+   19       0              0..77  Waveform AMS Source
+   20       0              -2..2  Waveform AMS Intensity
+   21       0            0..1000  Pulse Width
+   22       0              0..77  Pulse Width AMS Source
+   23       0        -1000..1000  Pulse Width AMS Int
+   24       0              0..77  Pulse Width AMS Int Mod Source
+   25       0        -1000..1000  Pulse Width AMS Int Mod Int
+   26       0               0..2  Sub Osc
+   27       0              0..77  Sub Osc AMS Source
+   28       0              -2..2  Sub Osc AMS Intensity
+   29       0            0..1000  Cutoff
+   30       0              0..77  Cutoff AMS Source
+   31       0        -1000..1000  Cutoff AMS Int
+   32       0              0..77  Cutoff AMS Int Mod Source
+   33       0        -1000..1000  Cutoff AMS Int Mod Int
+   34       0            0..1000  Resonance
+   35       0              0..77  Resonance AMS Source
+   36       0        -1000..1000  Resonance AMS Int
+   37       0              0..77  Resonance AMS Int Mod Source
+   38       0        -1000..1000  Resonance AMS Int Mod Int
+   39       0          -500..500  EG Intensity
+   40       0              0..77  EG Intensity AMS Source
+   41       0        -1000..1000  EG Intensity AMS Int
+   42       0              0..77  EG Intensity AMS Int Mod Source
+   43       0        -1000..1000  EG Intensity AMS Int Mod Int
+   44       0            0..1500  Keyboard Track
+   45       0              0..77  Keyboard Track AMS Source
+   46       0        -1500..1500  Keyboard Track AMS Int
+   47       0              0..77  Keyboard Track AMS Int Mod Source
+   48       0        -1500..1500  Keyboard Track AMS Int Mod Int
+   49       0               0..1  Amp EG Mode
+   50       0              0..77  Amp EG Mode AMS Source
+   51       0              -1..1  Amp EG Mode AMS Intensity
+   52       0          -200..200  Attenuator
+   53       0              0..77  Attenuator AMS Source
+   54       0          -400..400  Attenuator AMS Int
+   55       0              0..77  Attenuator AMS Int Mod Source
+   56       0          -400..400  Attenuator AMS Int Mod Int
+   57       0            0..1000  MG Level
+   58       0              0..77  MG Level AMS Source
+   59       0        -1000..1000  MG Level AMS Int
+   60       0              0..77  MG Level AMS Int Mod Source
+   61       0        -1000..1000  MG Level AMS Int Mod Int
+   62       0               0..2  MG Destination
+   63       0              0..77  MG Destination AMS Source
+   64       0              -2..2  MG Destination AMS Int
+   65    0..1              0..77  Ext Mod Source
+   66    0..1        -1000..1000  Ext Mod Osc Pulse Width Int
+   67    0..1        -1000..1000  Ext Mod Filter Cutoff Int
+   68    0..1        -1000..1000  Ext Mod Amp Gain Int
+   69    0..1        -1000..1000  Ext Mod MG Level Int
+   70       0            0..1000  Analog
+
+
+Message Formats:
+  F0 42 3g 68 43 <type> <comp> <sub> <param id> <index> <value> F7
+
+  <type>
+        09: HD-1 patch 1
+        0A: HD-1 patch 2
+        0B: EXi patch 1
+        0C: EXi patch 2
+  <comp>, <sub>
+        single-byte values from table
+  <param id>
+        pp: (7-bit) for parameter ids in the range of 0..126
+        7F pp pp: (14-bit, MSB first) for parameter ids in the range of 127..16383 (deprecated)
+  <index>
+        single-byte value from table
+  <value>
+        vv vv vv: 21-bit signed value, MSB first
+
+
+  F0 42 3g 68 44 <type> <comp> <sub> <param id> <index> <value type> <value> F7
+
+  <type>, <comp>, <sub>
+        (as above)
+  <param id>
+        pp: parameter id
+  <index>
+        (as above)
+  <value type>
+        02: 16-byte UUID
+  <value>
+        binary value converted to 7-bit sys/ex data (see *3 in KRONOS_MIDI_SysEx.txt)
+
+
+PolysixEX Tone Adjust
+
+assign  type        value                      name
+------  ----  -----------------  --------------------------------
+     0     -                  -  Off
+     1   Rel            -99..99  Filter Cutoff
+     2   Rel            -99..99  Filter Resonance
+     3   Rel            -99..99  Filter EG Intensity
+     5   Rel            -99..99  Filter Amp EG Attack
+     6   Rel            -99..99  Filter Amp EG Decay
+     7   Rel            -99..99  Filter Amp EG Sustain
+     8   Rel            -99..99  Filter Amp EG Release
+    21   Rel            -99..99  Pitch LFO 1 Intensity
+    22   Rel            -99..99  LFO 1 Speed
+    23   Rel            -99..99  LFO 1 Fade
+    24   Rel            -99..99  LFO 1 Delay
+    25   Abs              -1..1  LFO 1 Stop
+    26   Rel            -99..99  LFO 2 Speed
+    27   Rel            -99..99  LFO 2 Fade
+    28   Rel            -99..99  LFO 2 Delay
+    29   Abs              -1..1  LFO 2 Stop
+    30   Rel            -99..99  Common LFO Speed
+    31   Abs               0..1  Unison Enable
+    32   Abs              2..16  Unison Num Voices
+    33   Abs             0..200  Unison Detune
+    34   Abs               0..9  Unison Thickness
+    35   Abs              0..99  Common Step Seq Attack
+    36   Abs              0..99  Common Step Seq Decay
+
+    48   Abs            0..1000  Osc Vibrato Int
+    49   Abs        -1000..1000  Osc Vibrato Int AMS Intensity
+    50   Abs               0..2  Osc Octave
+    51   Abs               0..2  Osc Waveform
+    52   Abs            0..1000  Osc Pulse Width
+    53   Abs        -1000..1000  Osc Pulse Width AMS Intensity
+    54   Abs            0..1000  Osc PWM Speed
+    55   Abs        -1000..1000  Osc PWM Speed AMS Intensity
+    56   Abs               0..2  Sub Osc
+    57   Abs              -2..2  Sub Osc AMS Intensity
+    58   Abs            0..1000  Filter Cutoff
+    59   Abs        -1000..1000  Filter Cutoff AMS Intensity
+    60   Abs            0..1000  Filter Resonance
+    61   Abs        -1000..1000  Filter Resonance AMS Intensity
+    62   Abs          -500..500  Filter EG Intensity
+    63   Abs        -1000..1000  Filter EG Intensity AMS Intensity
+    64   Abs            0..1500  Filter Kbd Track
+    65   Abs               0..1  Amp EG Mode
+    66   Abs          -200..200  Amp Attenuator
+    67   Abs          -400..400  Amp Attenuator AMS Intensity
+    68   Abs            0..1000  EG Attack Time
+    69   Abs        -1000..1000  EG Attack Time AMS Intensity
+    70   Abs            0..1000  EG Decay Time
+    71   Abs        -1000..1000  EG Decay Time AMS Intensity
+    72   Abs            0..1000  EG Sustain Level
+    73   Abs        -1000..1000  EG Sustain Level AMS Intensity
+    74   Abs            0..1000  EG Release Time
+    75   Abs        -1000..1000  EG Release Time AMS Intensity
+    76   Abs            0..1000  Volume
+    77   Abs        -1000..1000  Volume AMS Intensity
+    78   Abs               0..1  MG Key Sync
+    79   Abs               0..1  MG Tempo Sync
+    80   Abs               0..9  MG Base Note
+    81   Abs            0..1000  MG Frequency
+    82   Abs        -1000..1000  MG Frequency AMS Intensity
+    83   Abs              0..15  MG Times
+    84   Abs            -15..15  MG Times AMS Intensity
+    85   Abs            0..1000  MG Delay
+    86   Abs            0..1000  MG Level
+    87   Abs        -1000..1000  MG Level AMS Intensity
+    88   Abs               0..2  MG Desintation (Mode)
+    89   Abs        -2400..2400  Transpose
+    90   Abs        -4800..4800  Transpose AMS Intensity
+    91   Abs          -500..500  Tune
+    92   Abs        -1000..1000  Tune AMS Intensity
+    93   Abs               0..3  Effect Mode
+    94   Abs            0..1000  Effect Spread
+    95   Abs        -1000..1000  Effect Spread AMS Intensity
+    96   Abs            0..1000  Effect Speed/Intensity
+    97   Abs        -1000..1000  Effect Speed/Intensity AMS Intensity
+    98   Abs               0..1  Arp Enable
+    99   Abs               0..1  Arp Key Sync
+   100   Abs               0..1  Arp Tempo Sync
+   101   Abs               0..9  Arp Base Note
+   102   Abs            0..1000  Arp Speed
+   103   Abs        -1000..1000  Arp Speed AMS Intensity
+   104   Abs              0..15  Arp Times
+   105   Abs            -15..15  Arp Times AMS Intensity
+   106   Abs               0..2  Arp Range
+   107   Abs               0..2  Arp Mode
+   108   Abs               0..1  Arp Latch
+   109   Rel            -99..99  EG 2 Attack Time (Relative)
+   110   Rel            -99..99  EG 2 Decay Time (Relative)
+   111   Rel            -99..99  EG 2 Sustain Level (Relative)
+   112   Rel            -99..99  EG 2 Release Time (Relative)
+   113   Rel            -99..99  EG 3 Attack Time (Relative)
+   114   Rel            -99..99  EG 3 Decay Time (Relative)
+   115   Rel            -99..99  EG 3 Sustain Level (Relative)
+   116   Rel            -99..99  EG 3 Release Time (Relative)
+   117   Abs              0..17  LFO 1 Waveform
+   118   Abs            -99..99  LFO 1 Shape
+   119   Abs              0..17  LFO 2 Waveform
+   120   Abs            -99..99  LFO 2 Shape
+
+
+PolysixEX AMS Sources
+
+src                name
+---  --------------------------------
+  0  Off
+  1  AMS Mixer 1
+  2  AMS Mixer 2
+  3  AMS Mixer 3
+  4  AMS Mixer 4
+  5  Common Step Seq
+  6  Polysix EG
+  7  EG 2
+  8  EG 3
+  9  MG
+ 10  MG + delay
+ 11  LFO 1
+ 12  LFO 2
+ 13  Common LFO
+ 14  Keytrack 1
+ 15  Keytrack 2
+ 16  Note Number
+ 17  Velocity
+ 18  Exp Velocity
+ 19  Poly Aftertouch
+ 20  Aftertouch
+ 21  JSX
+ 22  JS+Y (CC#1)
+ 23  JS-Y (CC#2)
+ 24  JS+Y + AT/2
+ 25  JS-Y + AT/2
+ 26  Pedal (CC#4)
+ 27  Ribbon (CC#16)
+ 28  Slider (CC#18)
+ 29  Knob5 (CC#17)
+ 30  Knob6 (CC#19)
+ 31  Knob7 (CC#20)
+ 32  Knob8 (CC#21)
+ 33  Knob5 [+]
+ 34  Knob6 [+]
+ 35  Knob7 [+]
+ 36  Knob8 [+]
+ 37  Damper (CC#64)
+ 38  PortaSW (CC#65)
+ 39  Sostenuto (CC#66)
+ 40  Soft Pdl (CC#67)
+ 41  SW1 (CC#80)
+ 42  SW2 (CC#81)
+ 43  FootSW (CC#82)
+ 44  MIDI Ctl (CC#83)
+ 45  Vector JS+X (CC#85)
+ 46  Vector JS-X (CC#86)
+ 47  Vector JS+Y (CC#87)
+ 48  Vector JS-Y (CC#88)
+ 49  Tempo
+ 50  Off
+ 51  Off
+ 52  Off
+ 53  Off
+ 54  Off
+ 55  Off
+ 56  Off
+ 57  Off
+ 58  Off
+ 59  Off
+ 60  Off
+ 61  Off
+ 62  Off
+ 63  Off
+ 64  Off
+ 65  Off
+ 66  Off
+ 67  Off
+ 68  Off
+ 69  Off
+ 70  Off
+ 71  Off
+ 72  Off
+ 73  Off
+ 74  Off
+ 75  Off
+ 76  Off
+ 77  Off
+

@@ -66,8 +66,8 @@ void pushNameRecord(std::vector<uint8_t>& v, const std::string& name, size_t tot
 // One CBK1 Combi record: name at offset+4 (same shape as PBK1), plus a
 // couple of Timbre-to-Program references at the confirmed fixed stride
 // (docs/README.md's "Combi Timbre references" section) -- byte0=number,
-// byte1=rawBankCode, byte2's top 3 bits=status. Only Timbre 0 is set here;
-// every other Timbre (1..15) stays all-zero, matching a genuinely
+// byte1=rawBankCode, byte2's top 3 bits=status. Timbres 0 and 1 are set
+// here; every other Timbre (2..15) stays all-zero, matching a genuinely
 // unassigned Timbre (isDefault=true).
 constexpr size_t kTimbreBaseOffset = 4806;
 constexpr size_t kTimbreStride = 188;
@@ -78,12 +78,27 @@ std::vector<uint8_t> makeCbkCombiRecord(const std::string& name, size_t totalSiz
     rec[kTimbreBaseOffset] = 5;                                   // Timbre 0 -> Program number 5
     rec[kTimbreBaseOffset + 1] = 1;                               // Timbre 0 -> raw bank code 1 (INT-B)
     rec[kTimbreBaseOffset + 2] = static_cast<uint8_t>(1 << 5);     // status Internal
+    // Timbre 1 -> raw bank code 20 (USER-D, PBK1 file-order index 11 --
+    // see kConfirmedTimbreBanks in PcgFile.cpp) -- exercises the raw-code
+    // <-> file-order-index translation for a bank where the two numbers
+    // differ, not just the INT-A..D range where they happen to coincide.
+    rec[kTimbreBaseOffset + kTimbreStride] = 7;                                // Timbre 1 -> Program number 7
+    rec[kTimbreBaseOffset + kTimbreStride + 1] = 20;                           // Timbre 1 -> raw bank code 20 (USER-D)
+    rec[kTimbreBaseOffset + kTimbreStride + 2] = static_cast<uint8_t>(1 << 5);  // status Internal
     return rec;
 }
 
+// Real chunk header shape (confirmed via
+// docs/external/Synthify-Kronos-PCG-File-Structures.xlsx, see PcgFile.cpp's
+// readChunk()): [4-char tag][u32be size][4-byte unknown "dwX"][content].
+// `dwX` itself is arbitrary/unused data here -- nothing in the parser reads
+// it, only skips past it -- but it must be PRESENT (12-byte header, not the
+// old 8-byte tag+size-only shape) for this fixture to actually exercise the
+// real on-disk layout.
 void appendChunk(std::vector<uint8_t>& out, const char* tag, const std::vector<uint8_t>& content) {
     out.insert(out.end(), tag, tag + 4);
     pushU32BE(out, static_cast<uint32_t>(content.size()));
+    pushU32BE(out, 0);  // dwX -- unknown, unused by the parser
     out.insert(out.end(), content.begin(), content.end());
 }
 
@@ -91,14 +106,17 @@ void appendChunk(std::vector<uint8_t>& out, const char* tag, const std::vector<u
 // Comment, plus Font size/Transpose encoded via the confirmed bit-packing
 // (docs/README.md §4.4): Font size's low 2 bits and Type+Color share byte
 // +12, Font size's high bit and Transpose's low 3 bits share byte +17,
-// Transpose's high 3 bits share byte +13 with Bank. `colorField1based`,
-// `garbageBit1`, and `garbageLow4` deliberately poke bits Font size/
-// Transpose/Bank/Color do NOT own, to prove decoding only reads the bits it
-// actually owns (mirrors setlist-comment.test.js's bit-preservation check,
-// but for the C++ decoder instead of the JS encoder).
+// Transpose's high 3 bits share byte +13 with Bank. `colorField1based` and
+// `garbageLow4` deliberately poke bits Font size/Transpose/Bank/Color do
+// NOT own, to prove decoding only reads the bits it actually owns (mirrors
+// setlist-comment.test.js's bit-preservation check, but for the C++
+// decoder instead of the JS encoder). Byte +12 has no spare bit left to
+// poke this way anymore -- Type is confirmed 2 bits wide (bits0-1, not
+// just bit0), so combined with Color (bits2-5) and Font size (bits6-7)
+// every bit in this byte is now owned by something real.
 std::vector<uint8_t> makeSbkSongRecord(bool isProgram, int bank, int number, int colorField1based, int holdTime,
-                                        int volume, int fontSizeValue, int transpose, bool garbageBit1,
-                                        int garbageLow4, const std::string& comment) {
+                                        int volume, int fontSizeValue, int transpose, int garbageLow4,
+                                        const std::string& comment) {
     std::vector<uint8_t> rec(542, 0);
 
     int unsigned6 = transpose >= 0 ? transpose : transpose + 64;
@@ -106,8 +124,7 @@ std::vector<uint8_t> makeSbkSongRecord(bool isProgram, int bank, int number, int
     int fontLow3 = unsigned6 & 0x07;
 
     uint8_t typeColor = 0;
-    typeColor |= isProgram ? 0x01 : 0x00;
-    typeColor |= garbageBit1 ? 0x02 : 0x00;
+    typeColor |= isProgram ? 0x01 : 0x00;  // Type: bits0-1, 0=Combi/1=Program/2=Song -- see kSbkTypeMask in PcgFile.cpp
     typeColor |= static_cast<uint8_t>(((colorField1based - 1) & 0x0F) << 2);
     typeColor |= static_cast<uint8_t>((fontSizeValue & 0x02) ? 0x80 : 0x00);
     typeColor |= static_cast<uint8_t>((fontSizeValue & 0x01) ? 0x40 : 0x00);
@@ -141,9 +158,11 @@ std::vector<uint8_t> buildSyntheticPcgFile() {
     constexpr size_t kSbkRecordSize = 542;
     constexpr size_t kBankRecordSize = 32;  // PBK1 record stride for this test (real files use ~4960)
 
-    // SDB1: one Set List, "Test Setlist", with song 0/1 named.
+    // SDB1: one Set List, "Test Setlist", with song 0/1 named. Header is
+    // 2 u32be fields (numSetlists, bytesPerSetlist) -- NOT 3; there is no
+    // separate leading "count" field, see PcgFile.cpp's own note on this
+    // (confirmed against a real 36MB backup, 2026-08-08).
     std::vector<uint8_t> sdb1;
-    pushU32BE(sdb1, 1);                                     // "used" count, unused
     pushU32BE(sdb1, 1);                                     // numSetlists
     pushU32BE(sdb1, (kSongsPerSetlist + 1) * kRecordSize);  // bytesPerSetlist
     pushNameRecord(sdb1, "Test Setlist", kRecordSize);
@@ -155,15 +174,14 @@ std::vector<uint8_t> buildSyntheticPcgFile() {
     // Font size L (3), transpose -5. Song 1 -> same Program (bank1/number0,
     // to exercise a 2-usage count), Font size XS (1), transpose +20.
     std::vector<uint8_t> sbk1;
-    pushU32BE(sbk1, 1);
-    pushU32BE(sbk1, 1);
-    pushU32BE(sbk1, static_cast<uint32_t>(kSbkHeaderSize + kSongsPerSetlist * kSbkRecordSize));
+    pushU32BE(sbk1, 1);  // numSetlists
+    pushU32BE(sbk1, static_cast<uint32_t>(kSbkHeaderSize + kSongsPerSetlist * kSbkRecordSize));  // bytesPerSetlist
     pushZeros(sbk1, kSbkHeaderSize);
     auto song0 = makeSbkSongRecord(/*isProgram=*/true, /*bank=*/1, /*number=*/0, /*color=*/1, /*holdTime=*/4,
-                                    /*volume=*/100, /*fontSizeValue=*/3, /*transpose=*/-5, /*garbageBit1=*/true,
+                                    /*volume=*/100, /*fontSizeValue=*/3, /*transpose=*/-5,
                                     /*garbageLow4=*/0x0B, "Hello test");
     auto song1 = makeSbkSongRecord(/*isProgram=*/true, /*bank=*/1, /*number=*/0, /*color=*/5, /*holdTime=*/9,
-                                    /*volume=*/80, /*fontSizeValue=*/1, /*transpose=*/20, /*garbageBit1=*/true,
+                                    /*volume=*/80, /*fontSizeValue=*/1, /*transpose=*/20,
                                     /*garbageLow4=*/0x05, "second");
     sbk1.insert(sbk1.end(), song0.begin(), song0.end());
     sbk1.insert(sbk1.end(), song1.begin(), song1.end());
@@ -175,9 +193,8 @@ std::vector<uint8_t> buildSyntheticPcgFile() {
     // unused Set List song slot) so testCopyProgramFrom() has genuinely
     // empty same-type targets to copy into.
     std::vector<uint8_t> pbk1BankA;
-    pushU32BE(pbk1BankA, 0);
-    pushU32BE(pbk1BankA, 5);
-    pushU32BE(pbk1BankA, static_cast<uint32_t>(kBankRecordSize));
+    pushU32BE(pbk1BankA, 5);  // numRecords
+    pushU32BE(pbk1BankA, static_cast<uint32_t>(kBankRecordSize));  // bytesPerRecord
     pushNameRecord(pbk1BankA, "Test Program A", kBankRecordSize);
     pushNameRecord(pbk1BankA, "Test Program A", kBankRecordSize);  // byte-exact duplicate of the record above
     pushNameRecord(pbk1BankA, "Unique Program", kBankRecordSize);
@@ -194,9 +211,8 @@ std::vector<uint8_t> buildSyntheticPcgFile() {
     // PBK1 bank 1: two distinct records -- number 0 is what both song slots
     // above reference.
     std::vector<uint8_t> pbk1BankB;
-    pushU32BE(pbk1BankB, 0);
-    pushU32BE(pbk1BankB, 2);
-    pushU32BE(pbk1BankB, static_cast<uint32_t>(kBankRecordSize));
+    pushU32BE(pbk1BankB, 2);  // numRecords
+    pushU32BE(pbk1BankB, static_cast<uint32_t>(kBankRecordSize));  // bytesPerRecord
     pushNameRecord(pbk1BankB, "Bank1 Program0", kBankRecordSize);
     pushNameRecord(pbk1BankB, "Bank1 Program1", kBankRecordSize);
 
@@ -204,18 +220,28 @@ std::vector<uint8_t> buildSyntheticPcgFile() {
     // number5, status Internal) and 15 default/unassigned Timbres.
     const size_t kCombiRecordSize = kTimbreBaseOffset + kTimbreStride * 16;
     std::vector<uint8_t> cbk1BankA;
-    pushU32BE(cbk1BankA, 0);
     pushU32BE(cbk1BankA, 1);  // numRecords
-    pushU32BE(cbk1BankA, static_cast<uint32_t>(kCombiRecordSize));
+    pushU32BE(cbk1BankA, static_cast<uint32_t>(kCombiRecordSize));  // bytesPerRecord
     auto combi0 = makeCbkCombiRecord("Test Combi", kCombiRecordSize);
     cbk1BankA.insert(cbk1BankA.end(), combi0.begin(), combi0.end());
 
-    std::vector<uint8_t> data;
-    data.insert(data.end(), {'K', 'O', 'R', 'G'});
-    pushZeros(data, 12);  // pad to the 16-byte offset every chunk walk starts from
-    appendChunk(data, "SDB1", sdb1);
-    appendChunk(data, "SBK1", sbk1);
-    appendChunk(data, "PBK1", pbk1BankA);
+    // Real hierarchy (docs/README.md §2), not a flat sibling list: SDB1/SBK1
+    // nest inside SLS1, PBK1/MBK1 inside PRG1, CBK1 inside CMB1 -- each
+    // wrapping chunk's own declared `size` is exactly the sum of its
+    // children's full sizes (header + content each), the invariant
+    // readChunk()'s recursive walk depends on. A DIV1 sibling (content
+    // deliberately empty -- this project doesn't decode it) sits before
+    // SLS1, matching real file order and exercising a zero-size chunk.
+    // Nesting this way is what actually exercises readChunk()'s 12-byte
+    // header fix end-to-end -- a flat sibling list (the previous shape of
+    // this fixture) still passed even with the old, wrong 8-byte-header
+    // math, because nothing was nested deeply enough to drift out of sync.
+    std::vector<uint8_t> sls1Content;
+    appendChunk(sls1Content, "SDB1", sdb1);
+    appendChunk(sls1Content, "SBK1", sbk1);
+
+    std::vector<uint8_t> prg1Content;
+    appendChunk(prg1Content, "PBK1", pbk1BankA);
     // Tagged MBK1 (EXi), not PBK1, so the synthetic fixture exercises both
     // classifyProgramBankType() paths end-to-end through loadFromMemory(),
     // not just the standalone unit test below. The toy kBankRecordSize (32)
@@ -223,8 +249,26 @@ std::vector<uint8_t> buildSyntheticPcgFile() {
     // that's fine, tagMatchesStride is expected to be false for both banks
     // in this synthetic fixture; only `type` (derived from the tag) matters
     // for the end-to-end assertions.
-    appendChunk(data, "MBK1", pbk1BankB);
-    appendChunk(data, "CBK1", cbk1BankA);
+    appendChunk(prg1Content, "MBK1", pbk1BankB);
+
+    std::vector<uint8_t> cmb1Content;
+    appendChunk(cmb1Content, "CBK1", cbk1BankA);
+
+    // PCG1 itself is a real chunk starting at byte 16 (confirmed against a
+    // real 36MB backup, 2026-08-08: its own declared size exactly spans
+    // the rest of the file) -- DIV1/SLS1/PRG1/CMB1 are its children, one
+    // level in, not siblings alongside some 16-byte "file header" that
+    // already consumes PCG1's own tag+size+dwX.
+    std::vector<uint8_t> pcg1Content;
+    appendChunk(pcg1Content, "DIV1", {});
+    appendChunk(pcg1Content, "SLS1", sls1Content);
+    appendChunk(pcg1Content, "PRG1", prg1Content);
+    appendChunk(pcg1Content, "CMB1", cmb1Content);
+
+    std::vector<uint8_t> data;
+    data.insert(data.end(), {'K', 'O', 'R', 'G'});
+    pushZeros(data, 12);  // pad to the 16-byte offset every chunk walk starts from
+    appendChunk(data, "PCG1", pcg1Content);
     return data;
 }
 
@@ -467,7 +511,7 @@ void testPcgFileEndToEnd() {
         if (outOfRange) CHECK(*outOfRange == kronos::PcgFile::ProgramCopyError::OutOfRange);
     }
 
-    // Combis: one synthetic CBK1 record with a real Timbre 0 and 15
+    // Combis: one synthetic CBK1 record with real Timbres 0/1 and 14
     // default/unassigned Timbres.
     CHECK_EQ(pcg.combis().size(), static_cast<size_t>(1), "combis() has one row for the synthetic CBK1 record");
     const auto& combi0 = pcg.combis()[0];
@@ -479,7 +523,10 @@ void testPcgFileEndToEnd() {
     CHECK_EQ(combi0.timbres[0].rawBankCode, 1, "Combi Timbre 0 rawBankCode");
     CHECK(combi0.timbres[0].status == kronos::TimbreStatus::Internal);
     CHECK(!combi0.timbres[0].isDefault);
-    CHECK(combi0.timbres[1].isDefault);  // untouched -- genuinely unassigned
+    CHECK_EQ(combi0.timbres[1].number, 7, "Combi Timbre 1 number");
+    CHECK_EQ(combi0.timbres[1].rawBankCode, 20, "Combi Timbre 1 rawBankCode (USER-D)");
+    CHECK(!combi0.timbres[1].isDefault);
+    CHECK(combi0.timbres[2].isDefault);  // untouched -- genuinely unassigned
 
     auto redecodedCombi = pcg.decodeCombi(0, 0);
     CHECK(redecodedCombi.has_value());
@@ -489,6 +536,67 @@ void testPcgFileEndToEnd() {
     }
     CHECK(!pcg.decodeCombi(99, 0).has_value());  // out-of-range bank
     CHECK(!pcg.decodeCombi(0, 99).has_value());  // out-of-range number
+
+    // isConfirmedTimbreProgramBank()/timbreBankName()/combiUsagesForProgram()/
+    // combiUsageCounts() -- the raw-code <-> file-order-index translation
+    // (kConfirmedTimbreBanks in PcgFile.cpp) that lets Combi-usage counting
+    // cover USER-A/D/F/AA (PBK1 file-order indices 8/11/13/14) in addition
+    // to INT-A..D, where the two number spaces happen to coincide.
+    {
+        CHECK(kronos::isConfirmedTimbreProgramBank(1));   // INT-B -- coincides with its own raw code
+        CHECK(kronos::isConfirmedTimbreProgramBank(11));  // USER-D -- file-order index 11, raw code 20
+        CHECK(!kronos::isConfirmedTimbreProgramBank(4));  // INT-E -- not independently confirmed
+        CHECK_EQ(kronos::timbreBankName(20), std::string("USER-D"), "timbreBankName() for the confirmed USER-D raw code");
+
+        auto usersD = pcg.combiUsagesForProgram(11, 7);  // USER-D file-order index, Timbre 1's number
+        CHECK_EQ(usersD.size(), static_cast<size_t>(1), "combiUsagesForProgram() finds Timbre 1 via the translated raw code");
+        if (usersD.size() == 1) {
+            CHECK_EQ(usersD[0].bank, 0, "combiUsagesForProgram() result's Combi bank");
+            CHECK_EQ(usersD[0].number, 0, "combiUsagesForProgram() result's Combi number");
+        }
+        CHECK_EQ(pcg.combiUsagesForProgram(4, 7).size(), static_cast<size_t>(0),
+                 "combiUsagesForProgram() returns nothing for an unconfirmed bank rather than guessing");
+
+        auto counts = pcg.combiUsageCounts();
+        CHECK(counts.size() > 11 && counts[11].size() > 7 && counts[11][7] == 1);
+    }
+
+    // Internals accessors (topLevelChunkTags()/programBankInfo()/
+    // combiBankInfo()) -- the synthetic fixture's real top-level chunks are
+    // DIV1, SLS1 (wrapping SDB1/SBK1), PRG1 (wrapping PBK1 bank0/MBK1
+    // bank1), CMB1 (wrapping CBK1 bank0), in that order -- topLevelChunkTags()
+    // must NOT descend into any of them (that's what actually exercises
+    // readChunk()'s 12-byte-header fix: getting this wrong desyncs the
+    // whole-file walk after the first nested chunk, exactly the real bug
+    // this fixture reshape was built to catch, see STATE.md).
+    {
+        auto tags = pcg.topLevelChunkTags();
+        std::vector<std::string> expectedTags = {"DIV1", "SLS1", "PRG1", "CMB1"};
+        CHECK_EQ(tags.size(), expectedTags.size(), "topLevelChunkTags() finds every top-level chunk, not its nested children");
+        if (tags.size() == expectedTags.size()) {
+            for (size_t i = 0; i < tags.size(); ++i) {
+                CHECK_EQ(tags[i], expectedTags[i], "topLevelChunkTags() preserves file order");
+            }
+        }
+
+        auto progBanks = pcg.programBankInfo();
+        CHECK_EQ(progBanks.size(), static_cast<size_t>(2), "programBankInfo() has one entry per PRG1 sub-bank");
+        if (progBanks.size() == 2) {
+            CHECK_EQ(progBanks[0].index, 0, "programBankInfo()[0].index");
+            CHECK(progBanks[0].bankType == kronos::ProgramBankType::Hd1);
+            CHECK_EQ(progBanks[0].numRecords, 5, "programBankInfo()[0].numRecords (bank 0 has 5 records)");
+            CHECK_EQ(progBanks[1].index, 1, "programBankInfo()[1].index");
+            CHECK(progBanks[1].bankType == kronos::ProgramBankType::Exi);
+            CHECK_EQ(progBanks[1].numRecords, 2, "programBankInfo()[1].numRecords (bank 1 has 2 records)");
+        }
+
+        auto combiBanks = pcg.combiBankInfo();
+        CHECK_EQ(combiBanks.size(), static_cast<size_t>(1), "combiBankInfo() has one entry per CBK1 sub-bank");
+        if (combiBanks.size() == 1) {
+            CHECK_EQ(combiBanks[0].index, 0, "combiBankInfo()[0].index");
+            CHECK_EQ(combiBanks[0].numRecords, 1, "combiBankInfo()[0].numRecords (one synthetic Combi record)");
+        }
+    }
 
     // songRecordBytes()/putSongRecordBytes(): the raw-byte read/write path
     // the Setlist Color/Volume/Comment row editors use (frontend/pane.js +

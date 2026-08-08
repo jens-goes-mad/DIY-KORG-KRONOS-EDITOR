@@ -22,7 +22,16 @@ const TYPE_COLOR_OFFSET = 12; // docs/README.md §4.3 -- bits6-7 are Font size's
 const FONT_SIZE_LOW_MASK = 0xc0; // bits 6-7 of +12
 const FONT_TRANSPOSE_OFFSET = 17; // docs/README.md §4.3 -- bit4 is Font size's high bit
 const FONT_SIZE_HIGH_MASK = 0x10; // bit 4 of +17
-const COMMENT_OFFSET = 18; // docs/README.md §4.3
+export const COMMENT_OFFSET = 18; // docs/README.md §4.3
+// Confirmed via docs/external/KORG/SetList.txt (2026-08-08) -- NOT
+// RECORD_SIZE - COMMENT_OFFSET (=524), this project's original assumption
+// before that source was available. The trailing 12 bytes of the record
+// (530..541) are NOT comment space -- see src/kronos/PcgFile.cpp's own
+// comment on the matching C++ constant for why this matters on write, not
+// just read: filling/writing past this bound risks clobbering whatever
+// those 12 bytes actually are. Exported (like RECORD_SIZE) so tests can
+// reference the real boundary instead of a magic number.
+export const COMMENT_MAX_LENGTH = 512;
 
 export const FONT_SIZES = ["XS", "S", "M", "L", "XL"]; // UI display order (small to large)
 // The real confirmed encoding value per size (docs/README.md §4.4) -- NOT
@@ -43,7 +52,8 @@ export function decodeSetlistComment(bytes) {
     throw new Error(`decodeSetlistComment: expected ${RECORD_SIZE} bytes, got ${bytes.length}`);
   }
   let end = COMMENT_OFFSET;
-  while (end < bytes.length && bytes[end] !== 0) end++;
+  const commentFieldEnd = Math.min(COMMENT_OFFSET + COMMENT_MAX_LENGTH, bytes.length);
+  while (end < commentFieldEnd && bytes[end] !== 0) end++;
   const comment = bytesToLatin1String(bytes.slice(COMMENT_OFFSET, end));
 
   const typeColor = bytes[TYPE_COLOR_OFFSET];
@@ -76,11 +86,13 @@ export function encodeSetlistComment(bytes, state) {
     (bytes[FONT_TRANSPOSE_OFFSET] & ~FONT_SIZE_HIGH_MASK) | (value & 4 ? FONT_SIZE_HIGH_MASK : 0);
 
   const commentBytes = latin1StringToBytes(state.comment || "");
-  const maxLen = RECORD_SIZE - COMMENT_OFFSET - 1; // leave room for the NUL terminator
-  const truncated = commentBytes.slice(0, maxLen);
-  out.fill(0, COMMENT_OFFSET, RECORD_SIZE);
+  // Full field width, not reserving a byte for a NUL terminator -- a
+  // full-length comment doesn't need one, same convention this format
+  // already uses for name fields (see docs/README.md's SDB1 section: "a
+  // full-length 24-character name has no terminator at all").
+  const truncated = commentBytes.slice(0, COMMENT_MAX_LENGTH);
+  out.fill(0, COMMENT_OFFSET, COMMENT_OFFSET + COMMENT_MAX_LENGTH);  // NOT RECORD_SIZE -- see COMMENT_MAX_LENGTH's own comment
   out.set(truncated, COMMENT_OFFSET);
-  // out[COMMENT_OFFSET + truncated.length] is already 0 from the fill() above.
   return out;
 }
 

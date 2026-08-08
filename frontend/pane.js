@@ -974,6 +974,7 @@ function createPane(paneId, root, { onDropEntry, onDropProgram, log, showToast }
               <li data-category="programs"><a>Programs</a></li>
               <li data-category="combis"><a>Combis</a></li>
               <li data-category="duplicates"><a>Duplicates</a></li>
+              <li data-category="internals"><a>Internals</a></li>
             </ul>
           </div>
         </div>
@@ -981,16 +982,18 @@ function createPane(paneId, root, { onDropEntry, onDropProgram, log, showToast }
     </div>
     <div class="pane-category-content" data-category-panel="setlist"></div>
     <div class="pane-category-content" data-category-panel="library" hidden></div>
+    <div class="pane-category-content" data-category-panel="internals" hidden></div>
   `;
 
   const datasetSelect = root.querySelector(".dataset-select");
   const categoryTabs = root.querySelectorAll(".pane-category-tabs li");
   const setlistContainer = root.querySelector('[data-category-panel="setlist"]');
   const libraryContainer = root.querySelector('[data-category-panel="library"]');
+  const internalsContainer = root.querySelector('[data-category-panel="internals"]');
 
   let currentDatasetId = null;  // which loaded dataset this pane is showing, if any -- decoupled from paneId
   let knownDatasets = [];       // last list from onDatasetsChanged(), so the dataset-select's change handler can resolve a displayName without a bridge round-trip
-  let currentCategory = "setlist";  // "setlist" | "programs" | "combis" | "duplicates"
+  let currentCategory = "setlist";  // "setlist" | "programs" | "combis" | "duplicates" | "internals"
 
   function getCurrentDatasetId() {
     return currentDatasetId;
@@ -1027,9 +1030,13 @@ function createPane(paneId, root, { onDropEntry, onDropProgram, log, showToast }
     currentCategory = category;
 
     const isSetlist = category === "setlist";
+    const isInternals = category === "internals";
+    const isLibrary = !isSetlist && !isInternals;
+
     setlistContainer.hidden = !isSetlist;
-    libraryContainer.hidden = isSetlist;
-    if (!isSetlist) libraryPanels.showPanel(category);
+    libraryContainer.hidden = !isLibrary;
+    internalsContainer.hidden = !isInternals;
+    if (isLibrary) libraryPanels.showPanel(category);
   }
 
   categoryTabs.forEach((tab) => {
@@ -1063,11 +1070,15 @@ function createPane(paneId, root, { onDropEntry, onDropProgram, log, showToast }
     getProgramBankType,
     onDropProgram,
   });
+  const internalsPanel = createInternalsPanel(internalsContainer, {
+    getDatasetId: getCurrentDatasetId,
+    log,
+  });
 
   // Displays an already-open dataset in this pane -- called both right after
   // a fresh file drop (a new dataset) and when the dataset-select's change
   // handler switches to a dataset another pane already opened. Notifies
-  // BOTH content renderers regardless of which category is currently
+  // ALL THREE content renderers regardless of which category is currently
   // visible, so switching back to a hidden category later still shows
   // fresh data instead of whatever was last loaded.
   async function loadDataset(datasetId, displayName) {
@@ -1076,6 +1087,7 @@ function createPane(paneId, root, { onDropEntry, onDropProgram, log, showToast }
     await refreshProgramBankTypes();
     await setlistPanel.onDatasetChanged(displayName);
     await libraryPanels.onDatasetChanged();
+    await internalsPanel.onDatasetChanged();
   }
 
   // Back to the "nothing selected" state -- used both for the dataset-select's
@@ -1086,6 +1098,7 @@ function createPane(paneId, root, { onDropEntry, onDropProgram, log, showToast }
     await refreshProgramBankTypes();
     await setlistPanel.onDatasetChanged();
     await libraryPanels.onDatasetChanged();
+    await internalsPanel.onDatasetChanged();
   }
 
   datasetSelect.addEventListener("change", async () => {

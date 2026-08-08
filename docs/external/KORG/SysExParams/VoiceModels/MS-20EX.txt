@@ -1,0 +1,704 @@
+========================================================================
+MS-20EX
+This file was generated automatically.  Do not edit by hand.
+========================================================================
+
+Components
+
+comp  sub                name
+----  ---  --------------------------------
+ 127    0  MS-20EX Patch
+   0    0  Stereo 3-Band EQ
+   1    0  Common KeyTrack 1
+   2    0  Common KeyTrack 2
+   3    0  Pan/Output
+   4    0  AMS Mixer 1
+   5    0  AMS Mixer 2
+   6    0  AMS Mixer 3
+   7    0  AMS Mixer 4
+   8    0  LFO 1
+   9    0  LFO 2
+  10    0  LFO 3
+  11    0  LFO 4
+  12    0  EG 3
+  13    0  EG 4
+  14    0  EG 5
+  15    0  EG 6
+  16    0  MS-20 Synth
+  17    0  EG 1 & 2
+
+
+MS-20EX Patch (comp 127, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0              0..97  VoiceDelay
+    1       0               0..1  MG Key Sync
+    2       0            0..1000  MG Frequency
+    3       0              0..77  MG Frequency AMS Source
+    4       0        -1000..1000  MG Frequency AMS Intensity
+    5       0              0..77  MG Frequency AMS Int Mod Source
+    6       0        -1000..1000  MG Frequency AMS Int Mod Intensity
+    7       0               0..1  MG Tempo Sync
+    8       0               0..9  MG Base Note
+    9       0              0..15  MG Tempo Sync Times
+   10       0              0..77  MG Tempo Sync Times AMS Source
+   11       0            -15..15  MG Tempo Sync Times AMS Intensity
+   12       0              0..77  MG Tempo Sync Times AMS Int Mod Source
+   13       0            -15..15  MG Tempo Sync Times AMS Int Mod Intensity
+   14       0            0..1000  MG Waveform
+   15       0              0..77  MG Waveform AMS Source
+   16       0        -1000..1000  MG Waveform AMS Intensity
+   17       0              0..77  MG Waveform AMS Int Mod Source
+   18       0        -1000..1000  MG Waveform AMS Int Mod Intensity
+   19       0               0..5  Voice Allocator EG
+
+
+Stereo 3-Band EQ (comp 0, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..1  Bypass
+    1       0              0..99  InputTrim
+    2       0            -36..36  Low
+    3       0             0..165  MidFreq
+    4       0            -36..36  Mid
+    5       0            -36..36  High
+
+
+Common KeyTrack 1 (comp 1, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0             0..127  LowKey
+    1       0             0..127  MidKey
+    2       0             0..127  HighKey
+    3       0          -100..100  LowRamp
+    4       0          -100..100  MidLowRamp
+    5       0          -100..100  MidHighRamp
+    6       0          -100..100  HighRamp
+
+
+Common KeyTrack 2 (comp 2, sub 0)
+
+    see Common KeyTrack 1 (comp 1, sub 0)
+
+
+Pan/Output (comp 3, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..1  PanUseDrumkitSetting
+    1       0              0..77  PanAMSSource
+    2       0            -99..99  PanAMSIntensity
+    3       0             0..127  Pan
+    4       0             0..127  Send 1 Level
+    5       0             0..127  Send 2 Level
+    6       0             0..127  Patch Level
+    7       0               0..1  Patch Mute
+    8       0               0..1  Patch Solo (not stored)
+
+
+AMS Mixer 1 (comp 4, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..6  Mixer Type
+    1       0              0..77  Source A
+    2       0            -99..99  Amount A
+    3       0              0..77  Source B
+    4       0            -99..99  Amount B
+    5       0              0..77  Amt A x B: Source A (deprecated. use Source A)
+    6       0            -99..99  Amt A x B: Amount A (deprecated. use Amount A)
+    7       0              0..77  Amt A x B: Source B (deprecated. use Source B)
+    8       0            -99..99  Amt A x B: Amount B (deprecated. use Amount B)
+    9       0              0..77  Offset: Source (deprecated. use Source A)
+   10       0          -199..199  Offset: Amount
+   11       0          -199..199  Offset: Offset
+   12       0              0..77  Smoothing: Source (deprecated. use Source A)
+   13       0              0..99  Smoothing: Attack
+   14       0              0..99  Smoothing: Decay
+   15       0              0..77  Shape: Source (deprecated. use Source A)
+   16       0            -99..99  Shape: Shape
+   17       0               0..1  Shape: Mode
+   18       0              0..77  Quantize: Source (deprecated. use AMS Source A)
+   19       0              2..32  Quantize: Steps
+   20       0              0..77  Gate: Source
+   21       0            -99..99  Gate: Threshold
+   22       0               0..1  Gate: Control at Note-on only
+   23       0               0..1  Gate: Below Threshold Use AMS
+   24       0               0..1  Gate: At/Above Threshold Use AMS
+   25       0              0..77  Gate: Below Threshold AMS Source Select (deprecated. use Source A)
+   26       0              0..77  Gate: At/Above Threshold AMS Source Select (deprecated. use Source B)
+   27       0            -99..99  Gate: Below Threshold Fixed Value
+   28       0            -99..99  Gate: At/Above Threshold Fixed Value
+
+
+AMS Mixer 2 (comp 5, sub 0)
+
+    see AMS Mixer 1 (comp 4, sub 0)
+
+
+AMS Mixer 3 (comp 6, sub 0)
+
+    see AMS Mixer 1 (comp 4, sub 0)
+
+
+AMS Mixer 4 (comp 7, sub 0)
+
+    see AMS Mixer 1 (comp 4, sub 0)
+
+
+LFO 1 (comp 8, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0              0..17  Waveform
+    1       0            -36..37  Start Phase
+    2       0            -99..99  Shape
+    3       0              0..77  Shape AMS Source
+    4       0            -99..99  Shape AMS Intensity
+    5       0              0..99  Frequency
+    6       0              0..99  FrequencyFine
+    7       0               0..1  Stop
+    8       0            -99..99  Offset
+    9       0               0..1  KeySync
+   10       0              0..99  Fade
+   11       0              0..99  Delay
+   12       0              0..77  FrequencyAMS1Source
+   13       0            -99..99  FrequencyAMS1Intensity
+   14       0              0..77  FrequencyAMS1ModSource
+   15       0            -99..99  FrequencyAMS1ModIntensity
+   16       0              0..77  FrequencyAMS2Source
+   17       0            -99..99  FrequencyAMS2Intensity
+   18       0               0..1  MIDITempoSync
+   19       0               0..9  MIDITempoSyncBaseNote
+   20       0              1..32  MIDITempoSyncTimes
+
+
+LFO 2 (comp 9, sub 0)
+
+    see LFO 1 (comp 8, sub 0)
+
+
+LFO 3 (comp 10, sub 0)
+
+    see LFO 1 (comp 8, sub 0)
+
+
+LFO 4 (comp 11, sub 0)
+
+    see LFO 1 (comp 8, sub 0)
+
+
+EG 3 (comp 12, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0            -99..99  Start Level
+            1                     Attack Level
+            2                     Breakpoint Level
+            3                     Sustain Level
+            4                     Release Level
+    1       0              0..99  Attack Time
+            1                     Decay Time
+            2                     Slope Time
+            3                     Release Time
+    2       0              0..10  Attack Curve
+            1                     Decay Curve
+            2                     Slope Curve
+            3                     Release Curve
+    3       0              0..77  LevelModAMS1Source
+    4       0            -99..99  Start Lvl Mod Intens
+            1                     Attack Lvl Mod Intens
+            2                     Breakpoint Lvl Mod Intens
+    5       0              0..77  LevelModAMS2Source
+    6       0            -99..99  Start Lvl Mod Intens
+            1                     Attack Lvl Mod Intens
+            2                     Breakpoint Lvl Mod Intens
+    7       0              0..77  TimeModAMS1Source
+    8       0            -99..99  Attack Time Mod Intens
+            1                     Decay Time Mod Intens
+            2                     Slope Time Mod Intens
+            3                     Release Time Mod Intens
+    9       0              0..77  TimeModAMS2Source
+   10       0            -99..99  Attack Time Mod Intens
+            1                     Decay Time Mod Intens
+            2                     Slope Time Mod Intens
+            3                     Release Time Mod Intens
+   11       0              0..77  TimeModAMS3Source
+   12       0            -99..99  Attack Time Mod Intens
+            1                     Decay Time Mod Intens
+            2                     Slope Time Mod Intens
+            3                     Release Time Mod Intens
+   13       0              0..77  ResetAMSSource
+   14       0            -99..99  ResetAMSThreshold
+
+
+EG 4 (comp 13, sub 0)
+
+    see EG 3 (comp 12, sub 0)
+
+
+EG 5 (comp 14, sub 0)
+
+    see EG 3 (comp 12, sub 0)
+
+
+EG 6 (comp 15, sub 0)
+
+    see EG 3 (comp 12, sub 0)
+
+
+MS-20 Synth (comp 16, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..3  Vco1Waveform
+    1       0              0..77  Vco1WaveformAMSSource
+    2       0              -3..3  Vco1WaveformAMSIntensity
+    3       0            0..1000  Vco1PulseWidth
+    4       0               0..3  Vco1Scale
+    5       0              0..77  Vco1ScaleAMSSource
+    6       0              -3..3  Vco1ScaleAMSIntensity
+    7       0               0..3  Vco2Waveform
+    8       0              0..77  Vco2WaveformAMSSource
+    9       0              -3..3  Vco2WaveformAMSIntensity
+   10       0        -1200..1200  Vco2Pitch
+   11       0              0..77  Vco2PitchAMSSource
+   12       0        -2400..2400  Vco2PitchAMSIntensity
+   13       0              0..77  Vco2PitchAMSIntAMSSource
+   14       0        -2400..2400  Vco2PitchAMSIntAMSIntensity
+   15       0               0..3  Vco2Scale
+   16       0              0..77  Vco2ScaleAMSSource
+   17       0              -3..3  Vco2ScaleAMSIntensity
+   18       0            0..1000  Portamento
+   19       0          -500..500  FineTune
+   20       0              0..77  FineTuneAMSSource
+   21       0        -1000..1000  FineTuneAMSIntensity
+   22       0              0..77  FineTuneAMSIntAMSSource
+   23       0        -1000..1000  FineTuneAMSIntAMSIntensity
+   24       0            0..1000  FreqModMgTExt
+   25       0            0..1000  FreqModEg1Ext
+   26       0            0..1000  Vco1Level
+   27       0            0..1000  Vco2Level
+   28       0            0..1200  BendRange
+   29       0        -2400..2400  Transpose
+   30       0              0..77  TransposeAMSSource
+   31       0        -4800..4800  TransposeAMSIntensity
+   32       0              0..77  TransposeAMSIntAMSSource
+   33       0        -4800..4800  TransposeAMSIntAMSIntensity
+   34       0            0..1000  Hpf Cutoff
+   35       0            0..1000  Hpf Peak
+   36       0            0..1000  Hpf MG/T.Ext
+   37       0            0..1000  Hpf EG2/Ext
+   38       0            0..1000  Lpf Cutoff
+   39       0            0..1000  Lpf Peak
+   40       0            0..1000  Lpf MG/T.Ext
+   41       0            0..1000  Lpf EG2/Ext
+   42       0            0..1000  EspSignalLevel
+   43       0              0..77  EspSignalLevelAMSSource
+   44       0        -1000..1000  EspSignalLevelAMSIntensity
+   45       0            0..1000  EspLowCutFreq
+   46       0              0..77  EspLowCutFreqAMSSource
+   47       0        -1000..1000  EspLowCutFreqAMSIntensity
+   48       0            0..1000  EspHighCutFreq
+   49       0              0..77  EspHighCutFreqAMSSource
+   50       0        -1000..1000  EspHighCutFreqAMSIntensity
+   51       0            0..1000  EspCVAdjust
+   52       0              0..77  EspCVAdjustAMSSource
+   53       0        -1000..1000  EspCVAdjustAMSIntensity
+   54       0            0..1000  EspThreshold
+   55       0              0..77  EspThresholdAMSSource
+   56       0        -1000..1000  EspThresholdAMSIntensity
+   57       0            0..1000  Analog
+   58       0              0..77  Wheel AMS Source
+   59       0        -1000..1000  Wheel AMS Intensity
+   60       0              0..77  Momentary Sw AMS Source
+   61       0        -1000..1000  Momentary Sw AMS Intensity
+   62       0        -1000..1000  Mixer 1 Level A
+   63       0        -1000..1000  Mixer 1 Level B
+   64       0        -1000..1000  Mixer 2 Level A
+   65       0        -1000..1000  Mixer 2 Level B
+   66       0              0..27  Total/Ext Ctrl In
+            1                     Vco Freq Ctrl In
+            2                     Ext Sig In
+            3                     Hpf Freq Ctrl In
+            4                     Lpf Sig In
+            5                     Lpf Freq Ctrl In
+            6                     Vca Sig In
+            7                     Vca Init Gain In
+            8                     Sample & Hold Clk In
+            9                     Sample & Hold Sig In
+           10                     Eg1 Trig In
+           11                     Kbd Trig In
+           12                     Vco 1&2 Cv In
+           13                     Vco 2 Cv In
+           14                     Mvca Ctrl In
+           15                     Mvca Sig In
+           16                     Esp Sig In
+           17                     Esp BP In
+           18                     Mixer 1 In A
+           19                     Mixer 1 In B
+           20                     Mixer 2 In A
+           21                     Mixer 2 In B
+   67       0            0..1000  Volume
+   68       0              0..77  Volume AMS Source
+   69       0        -1000..1000  Volume AMS Intensity
+   70       0              0..56  Ext Mod A Source
+   71       0        -1000..1000  Ext Mod A to Hpf Fc
+   72       0        -1000..1000  Ext Mod A to Lpf Fc
+   73       0        -1000..1000  Ext Mod A to Vco1 Pw
+   74       0        -2400..2400  Ext Mod A to Vco2 Pitch
+   75       0        -1000..1000  Ext Mod A to Amp
+   76       0              0..56  Ext Mod B Source
+   77       0        -1000..1000  Ext Mod B to Hpf Fc
+   78       0        -1000..1000  Ext Mod B to Lpf Fc
+   79       0        -1000..1000  Ext Mod B to Vco T.Ext
+   80       0        -1000..1000  Ext Mod B to Hpf T.Ext
+   81       0        -1000..1000  Ext Mod B to Lpf T.Ext
+   82       0              0..77  Portamento AMS Source
+            1                     Vco1PulseWidth AMS Source
+            2                     Vco1Level AMS Source
+            3                     Vco2Level AMS Source
+            4                     PitchMgTExt AMS Source
+            5                     PitchEg1Ext AMS Source
+            6                     HpfCutoff AMS Source
+            7                     HpfPeak AMS Source
+            8                     HpfMgText AMS Source
+            9                     HpfEg2Ext AMS Source
+           10                     LpfCutoff AMS Source
+           11                     LpfPeak AMS Source
+           12                     LpfMgText AMS Source
+           13                     LpfEg2Ext AMS Source
+   83       0        -1000..1000  Portamento AMS Intensity
+            1                     Vco1PulseWidth AMS Intensity
+            2                     Vco1Level AMS Intensity
+            3                     Vco2Level AMS Intensity
+            4                     PitchMgTExt AMS Intensity
+            5                     PitchEg1Ext AMS Intensity
+            6                     HpfCutoff AMS Intensity
+            7                     HpfPeak AMS Intensity
+            8                     HpfMgText AMS Intensity
+            9                     HpfEg2Ext AMS Intensity
+           10                     LpfCutoff AMS Intensity
+           11                     LpfPeak AMS Intensity
+           12                     LpfMgText AMS Intensity
+           13                     LpfEg2Ext AMS Intensity
+   84       0              0..77  Portamento AMS Int AMS Source
+            1                     Vco1PulseWidth AMS Int AMS Source
+            2                     Vco1Level AMS Int AMS Source
+            3                     Vco2Level AMS Int AMS Source
+            4                     PitchMgTExt AMS Int AMS Source
+            5                     PitchEg1Ext AMS Int AMS Source
+            6                     HpfCutoff AMS Int AMS Source
+            7                     HpfPeak AMS Int AMS Source
+            8                     HpfMgText AMS Int AMS Source
+            9                     HpfEg2Ext AMS Int AMS Source
+           10                     LpfCutoff AMS Int AMS Source
+           11                     LpfPeak AMS Int AMS Source
+           12                     LpfMgText AMS Int AMS Source
+           13                     LpfEg2Ext AMS Int AMS Source
+   85       0        -1000..1000  Portamento AMS Int AMS Intensity
+            1                     Vco1PulseWidth AMS Int AMS Intensity
+            2                     Vco1Level AMS Int AMS Intensity
+            3                     Vco2Level AMS Int AMS Intensity
+            4                     PitchMgTExt AMS Int AMS Intensity
+            5                     PitchEg1Ext AMS Int AMS Intensity
+            6                     HpfCutoff AMS Int AMS Intensity
+            7                     HpfPeak AMS Int AMS Intensity
+            8                     HpfMgText AMS Int AMS Intensity
+            9                     HpfEg2Ext AMS Int AMS Intensity
+           10                     LpfCutoff AMS Int AMS Intensity
+           11                     LpfPeak AMS Int AMS Intensity
+           12                     LpfMgText AMS Int AMS Intensity
+           13                     LpfEg2Ext AMS Int AMS Intensity
+   86       0              0..77  Mixer1LevelA AMS Source
+            1                     Mixer1LevelB AMS Source
+            2                     Mixer2LevelA AMS Source
+            3                     Mixer2LevelB AMS Source
+   87       0        -2000..2000  Mixer1LevelA AMS Intensity
+            1                     Mixer1LevelB AMS Intensity
+            2                     Mixer2LevelA AMS Intensity
+            3                     Mixer2LevelB AMS Intensity
+   88       0              0..77  Mixer1LevelA AMS Int AMS Source
+            1                     Mixer1LevelB AMS Int AMS Source
+            2                     Mixer2LevelA AMS Int AMS Source
+            3                     Mixer2LevelB AMS Int AMS Source
+   89       0        -2000..2000  Mixer1LevelA AMS Int AMS Intensity
+            1                     Mixer1LevelB AMS Int AMS Intensity
+            2                     Mixer2LevelA AMS Int AMS Intensity
+            3                     Mixer2LevelB AMS Int AMS Intensity
+   90       0               0..1  Trigger On:
+
+
+EG 1 & 2 (comp 17, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0            0..1000  EG2 Hold Time
+    1       0            0..1000  EG2 Attack Time
+    2       0            0..1000  EG2 Decay Time
+    3       0            0..1000  EG2 Sustain Level
+    4       0            0..1000  EG2 Release Time
+    5       0            0..1000  EG1 Delay Time
+    6       0            0..1000  EG1 Attack Time
+    7       0            0..1000  EG1 Release Time
+    8       0              0..77  EG2 Hold Time AMS Source
+    9       0        -1000..1000  EG2 Hold Time AMS Intensity
+   10       0              0..77  EG2 Hold Time AMS Int AMS Source
+   11       0        -1000..1000  EG2 Hold Time AMS Int AMS Intensity
+   12       0              0..77  EG2 Attack Time AMS Source
+   13       0        -1000..1000  EG2 Attack Time AMS Intensity
+   14       0              0..77  EG2 Attack Time AMS Int AMS Source
+   15       0        -1000..1000  EG2 Attack Time AMS Int AMS Intensity
+   16       0              0..77  EG2 Decay Time AMS Source
+   17       0        -1000..1000  EG2 Decay Time AMS Intensity
+   18       0              0..77  EG2 Decay Time AMS Int AMS Source
+   19       0        -1000..1000  EG2 Decay Time AMS Int AMS Intensity
+   20       0              0..77  EG2 Sustain Level AMS Source
+   21       0        -1000..1000  EG2 Sustain Level AMS Intensity
+   22       0              0..77  EG2 Sustain Level AMS Int AMS Source
+   23       0        -1000..1000  EG2 Sustain Level AMS Int AMS Intensity
+   24       0              0..77  EG2 Release Time AMS Source
+   25       0        -1000..1000  EG2 Release Time AMS Intensity
+   26       0              0..77  EG2 Release Time AMS Int AMS Source
+   27       0        -1000..1000  EG2 Release Time AMS Int AMS Intensity
+   28       0              0..77  EG1 Delay Time AMS Source
+   29       0        -1000..1000  EG1 Delay Time AMS Intensity
+   30       0              0..77  EG1 Delay Time AMS Int AMS Source
+   31       0        -1000..1000  EG1 Delay Time AMS Int AMS Intensity
+   32       0              0..77  EG1 Attack Time AMS Source
+   33       0        -1000..1000  EG1 Attack Time AMS Intensity
+   34       0              0..77  EG1 Attack Time AMS Int AMS Source
+   35       0        -1000..1000  EG1 Attack Time AMS Int AMS Intensity
+   36       0              0..77  EG1 Release Time AMS Source
+   37       0        -1000..1000  EG1 Release Time AMS Intensity
+   38       0              0..77  EG1 Release Time AMS Int AMS Source
+   39       0        -1000..1000  EG1 Release Time AMS Int AMS Intensity
+
+
+Message Formats:
+  F0 42 3g 68 43 <type> <comp> <sub> <param id> <index> <value> F7
+
+  <type>
+        09: HD-1 patch 1
+        0A: HD-1 patch 2
+        0B: EXi patch 1
+        0C: EXi patch 2
+  <comp>, <sub>
+        single-byte values from table
+  <param id>
+        pp: (7-bit) for parameter ids in the range of 0..126
+        7F pp pp: (14-bit, MSB first) for parameter ids in the range of 127..16383 (deprecated)
+  <index>
+        single-byte value from table
+  <value>
+        vv vv vv: 21-bit signed value, MSB first
+
+
+  F0 42 3g 68 44 <type> <comp> <sub> <param id> <index> <value type> <value> F7
+
+  <type>, <comp>, <sub>
+        (as above)
+  <param id>
+        pp: parameter id
+  <index>
+        (as above)
+  <value type>
+        02: 16-byte UUID
+  <value>
+        binary value converted to 7-bit sys/ex data (see *3 in KRONOS_MIDI_SysEx.txt)
+
+
+MS-20EX Tone Adjust
+
+assign  type        value                      name
+------  ----  -----------------  --------------------------------
+     0     -                  -  Off
+     1   Rel            -99..99  Filter Cutoff
+     2   Rel            -99..99  Filter Resonance
+     3   Rel            -99..99  Filter EG Intensity
+     5   Rel            -99..99  Filter Amp EG Attack
+     6   Rel            -99..99  Filter Amp EG Decay
+     7   Rel            -99..99  Filter Amp EG Sustain
+     8   Rel            -99..99  Filter Amp EG Release
+    21   Rel            -99..99  Pitch LFO 1 Intensity
+    22   Rel            -99..99  LFO 1 Speed
+    23   Rel            -99..99  LFO 1 Fade
+    24   Rel            -99..99  LFO 1 Delay
+    25   Abs              -1..1  LFO 1 Stop
+    26   Rel            -99..99  LFO 2 Speed
+    27   Rel            -99..99  LFO 2 Fade
+    28   Rel            -99..99  LFO 2 Delay
+    29   Abs              -1..1  LFO 2 Stop
+    30   Rel            -99..99  Common LFO Speed
+    31   Abs               0..1  Unison Enable
+    32   Abs              2..16  Unison Num Voices
+    33   Abs             0..200  Unison Detune
+    34   Abs               0..9  Unison Thickness
+    35   Abs              0..99  Common Step Seq Attack
+    36   Abs              0..99  Common Step Seq Decay
+
+    48   Abs               0..3  VCO 1 WAVE FORM
+    49   Abs            0..1000  VCO 1 PW
+    50   Abs               0..3  VCO 1 SCALE
+    51   Abs               0..3  VCO 2 WAVE FORM
+    52   Abs        -1200..1200  VCO 2 PITCH
+    53   Abs               0..3  VCO 2 SCALE
+    54   Abs            0..1000  PORTAMENTO TIME
+    55   Abs          -500..500  FINE TUNE
+    56   Abs            0..1000  FREQ MOD MG/T.EXT
+    57   Abs            0..1000  FREQ MOD EG1/EXT
+    58   Abs            0..1000  VCO 1 LEVEL
+    59   Abs            0..1000  VCO 2 LEVEL
+    60   Abs            0..1000  HPF FREQUENCY
+    61   Abs            0..1000  HPF PEAK
+    62   Abs            0..1000  HPF MOD MG/T.EXT
+    63   Abs            0..1000  HPF MOD EG2/EXT
+    64   Abs            0..1000  LPF FREQUENCY
+    65   Abs            0..1000  LPF PEAK
+    66   Abs            0..1000  LPF MOD MG/T.EXT
+    67   Abs            0..1000  LPF MOD EG2/EXT
+    68   Abs            0..1200  BEND RANGE
+    69   Abs        -2400..2400  TRANSPOSE
+    70   Abs               0..1  MG Key Sync
+    71   Abs               0..1  MG Tempo Sync
+    72   Abs               0..9  MG Base Note
+    73   Abs            0..1000  MG Frequency
+    74   Abs              0..15  MG Times
+    75   Abs            0..1000  MG Waveform
+    76   Abs            0..1000  EG1 DELAY TIME
+    77   Abs            0..1000  EG1 ATTACK TIME
+    78   Abs            0..1000  EG1 RELEASE TIME
+    79   Abs            0..1000  EG2 HOLD TIME
+    80   Abs            0..1000  EG2 ATTACK TIME
+    81   Abs            0..1000  EG2 DECAY TIME
+    82   Abs            0..1000  EG2 SUSTAIN LEVEL
+    83   Abs            0..1000  EG2 RELEASE TIME
+    84   Abs        -1000..1000  MIXER 1 LEVEL A
+    85   Abs        -1000..1000  MIXER 1 LEVEL B
+    86   Abs        -1000..1000  MIXER 2 LEVEL A
+    87   Abs        -1000..1000  MIXER 2 LEVEL B
+    88   Abs            0..1000  ESP SIGNAL LEVEL
+    89   Abs            0..1000  ESP LOW CUT FREQ
+    90   Abs            0..1000  ESP HIGH CUT FREQ
+    91   Abs            0..1000  ESP CV ADJUST
+    92   Abs            0..1000  ESP THRESHOLD
+    93   Rel            -99..99  EG3 ATTACK TIME (RELATIVE)
+    94   Rel            -99..99  EG3 DECAY TIME (RELATIVE)
+    95   Rel            -99..99  EG3 SUSTAIN LEVEL (RELATIVE)
+    96   Rel            -99..99  EG3 RELEASE TIME (RELATIVE)
+    97   Rel            -99..99  EG4 ATTACK TIME (RELATIVE)
+    98   Rel            -99..99  EG4 DECAY TIME (RELATIVE)
+    99   Rel            -99..99  EG4 SUSTAIN LEVEL (RELATIVE)
+   100   Rel            -99..99  EG4 RELEASE TIME (RELATIVE)
+   101   Rel            -99..99  EG5 ATTACK TIME (RELATIVE)
+   102   Rel            -99..99  EG5 DECAY TIME (RELATIVE)
+   103   Rel            -99..99  EG5 SUSTAIN LEVEL (RELATIVE)
+   104   Rel            -99..99  EG5 RELEASE TIME (RELATIVE)
+   105   Rel            -99..99  EG6 ATTACK TIME (RELATIVE)
+   106   Rel            -99..99  EG6 DECAY TIME (RELATIVE)
+   107   Rel            -99..99  EG6 SUSTAIN LEVEL (RELATIVE)
+   108   Rel            -99..99  EG6 RELEASE TIME (RELATIVE)
+   109   Abs              0..17  LFO1 WAVE FORM
+   110   Abs            -99..99  LFO1 SHAPE
+   111   Abs              0..17  LFO2 WAVE FORM
+   112   Abs            -99..99  LFO2 SHAPE
+   113   Abs              0..17  LFO3 WAVE FORM
+   114   Abs            -99..99  LFO3 SHAPE
+   115   Abs              0..17  LFO3 SPEED (RELATIVE)
+   116   Abs            -99..99  LFO3 FADE (RELATIVE)
+   117   Rel            -99..99  LFO3 DELAY (RELATIVE)
+   118   Rel            -99..99  LFO3 STOP
+   119   Rel            -99..99  LFO4 WAVE FORM
+   120   Abs               0..1  LFO4 SHAPE
+   121   Rel            -99..99  LFO4 SPEED (RELATIVE)
+   122   Rel            -99..99  LFO4 FADE (RELATIVE)
+   123   Rel            -99..99  LFO4 DELAY (RELATIVE)
+   124   Abs               0..1  LFO4 STOP
+
+
+MS-20EX AMS Sources
+
+src                name
+---  --------------------------------
+  0  Off
+  1  AMS Mixer 1
+  2  AMS Mixer 2
+  3  AMS Mixer 3
+  4  AMS Mixer 4
+  5  Common Step Seq
+  6  EG 3
+  7  EG 4
+  8  EG 5
+  9  EG 6
+ 10  MG Tri
+ 11  MG Pulse
+ 12  LFO1
+ 13  LFO2
+ 14  LFO3
+ 15  LFO4
+ 16  Common LFO
+ 17  Keytrack 1
+ 18  Keytrack 2
+ 19  Note Number
+ 20  Velocity
+ 21  Exp Velocity
+ 22  Poly Aftertouch
+ 23  Aftertouch
+ 24  JSX
+ 25  JS+Y (CC#1)
+ 26  JS-Y (CC#2)
+ 27  JS+Y + AT/2
+ 28  JS-Y + AT/2
+ 29  Pedal (CC#4)
+ 30  Ribbon (CC#16)
+ 31  Slider (CC#18)
+ 32  Knob5 (CC#17)
+ 33  Knob6 (CC#19)
+ 34  Knob7 (CC#20)
+ 35  Knob8 (CC#21)
+ 36  Knob5 [+]
+ 37  Knob6 [+]
+ 38  Knob7 [+]
+ 39  Knob8 [+]
+ 40  Damper (CC#64)
+ 41  PortaSW (CC#65)
+ 42  Sostenuto (CC#66)
+ 43  Soft Pdl (CC#67)
+ 44  SW1 (CC#80)
+ 45  SW2 (CC#81)
+ 46  FootSW (CC#82)
+ 47  MIDI Ctl (CC#83)
+ 48  Vector JS+X (CC#85)
+ 49  Vector JS-X (CC#86)
+ 50  Vector JS+Y (CC#87)
+ 51  Vector JS-Y (CC#88)
+ 52  Tempo
+ 53  Off
+ 54  Off
+ 55  Off
+ 56  Off
+ 57  Off
+ 58  Off
+ 59  Off
+ 60  Off
+ 61  Off
+ 62  Off
+ 63  Off
+ 64  Off
+ 65  Off
+ 66  Off
+ 67  Off
+ 68  Off
+ 69  Off
+ 70  Off
+ 71  Off
+ 72  Off
+ 73  Off
+ 74  Off
+ 75  Off
+ 76  Off
+ 77  Off
+

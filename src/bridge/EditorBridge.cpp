@@ -505,6 +505,41 @@ choc::value::Value EditorBridge::getProgramBankTypes(const choc::value::ValueVie
     return result;
 }
 
+choc::value::Value EditorBridge::getDatasetInternals(const choc::value::ValueView& args) {
+    const int datasetId = intArg(args, 0);
+    auto* file = fileOf(datasetId);
+    if (file == nullptr) return makeError("Dataset " + std::to_string(datasetId) + " has no file loaded");
+
+    auto result = makeOk();
+
+    auto topLevelChunks = choc::value::createEmptyArray();
+    for (const auto& tag : file->topLevelChunkTags()) topLevelChunks.addArrayElement(choc::value::Value(tag));
+    result.setMember("topLevelChunks", topLevelChunks);
+
+    auto programBanks = choc::value::createEmptyArray();
+    for (const auto& b : file->programBankInfo()) {
+        auto v = choc::value::createObject("ProgramBankInfo");
+        v.setMember("index", b.index);
+        v.setMember("bankType", programBankTypeName(b.bankType));
+        v.setMember("numRecords", b.numRecords);
+        v.setMember("bytesPerRecord", b.bytesPerRecord);
+        programBanks.addArrayElement(v);
+    }
+    result.setMember("programBanks", programBanks);
+
+    auto combiBanks = choc::value::createEmptyArray();
+    for (const auto& b : file->combiBankInfo()) {
+        auto v = choc::value::createObject("CombiBankInfo");
+        v.setMember("index", b.index);
+        v.setMember("numRecords", b.numRecords);
+        v.setMember("bytesPerRecord", b.bytesPerRecord);
+        combiBanks.addArrayElement(v);
+    }
+    result.setMember("combiBanks", combiBanks);
+
+    return result;
+}
+
 namespace {
 
 std::string programCopyErrorMessage(kronos::PcgFile::ProgramCopyError error) {

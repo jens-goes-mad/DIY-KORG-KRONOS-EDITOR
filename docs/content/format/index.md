@@ -60,24 +60,65 @@ byte values, which are consistent with every claim (including the format
 flag reading 0x00 on a real `.PCG` file). Nothing downstream in this
 parser depends on these fields yet.
 
-### 1.2 Chunk framing
+### 1.2 Chunk framing — CONFIRMED (2026-08-08, revises an earlier wrong model)
 
-After the file header, the rest of the file is a sequence of chunks:
+After the file header, the rest of the file is a sequence of chunks, each
+with a **fixed 12-byte header**:
 
 ```
-[4-byte prefix field][4-char tag][4-byte big-endian size][size bytes of content]
+[4-char tag][4-byte big-endian size][4-byte unknown field "dwX"][size bytes of content]
 ```
 
-The 4-byte prefix field's purpose is **unknown**. It precedes *every*
-chunk encountered (not just a container's first child), so a chunk header
-must be searched for at two candidate positions: directly, and 4 bytes
-later. All tags found so far are 4 characters, first an uppercase letter,
+**Confirmed** via `docs/external/Synthify-Kronos-PCG-File-Structures.xlsx`
+(fetched independently, see §9's external-references list), which
+describes exactly this structure in its own words: "A Chunk has a header
+consisting of three 4-byte sized objects... TAG1... size... dwX... Data".
+Cross-checked against this project's own byte-level findings via two
+*other* independently-fetched official/community documents
+(`docs/external/KORG/SetList.txt` and `CombiAndSongTimbreSet.txt`, Korg's
+own SysEx parameter documentation) -- every field offset in those documents
+lines up exactly with this project's own confirmed on-disk offsets once
+this 12-byte header (not the old 8-byte one) is accounted for.
+
+This **revises an earlier, wrong model**: this project previously believed
+an extra 4-byte field of unknown purpose *preceded* the tag, ambiguously
+(sometimes present, sometimes not), requiring a chunk header to be searched
+for at two candidate positions. That was backwards -- the unknown field
+(`dwX`) isn't a prefix before the tag at all; it's the *third* word of a
+fixed, unambiguous header, right after `size` and right before the content
+starts. The old model's "try position 0, then position+4" logic happened
+to self-correct the resulting drift often enough (especially for deep,
+unscoped searches like finding `MBK1`/`PBK1` bank chunks anywhere in the
+file) that it went unnoticed for a while -- but a strict top-to-bottom walk
+of a file's *top-level* chunks (`PcgFile::topLevelChunkTags()`, added for
+the Internals pane) drifted out of sync after the first nested chunk with
+the old math, which is what surfaced this. `dwX`'s own meaning is still
+**unknown** -- only its presence, fixed position, and fixed width are
+confirmed.
+
+All tags found so far are 4 characters, first an uppercase letter,
 remaining three uppercase letters or digits (`[A-Z][A-Z0-9]{3}`) --
 `KORG`, `PCG1`, `DIV1`, `SLS1`, `SLD1`, `SDB1`, `STL1`, `SBK1`, `PRG1`,
 `MBK1`, `PBK1`, `CMB1`, `CBK1`, `DKT1`, `WSQ1`, `GLB1`, `DPI1`, and
 `DBK1`/`WBK1` (Drum Kit/Wave Sequence sub-banks, §7) and `INI1` (seen
 once in the external reference, §7, purpose entirely unknown -- not
 observed by this project directly yet).
+
+A container chunk's own declared `size` covers *all* of its content,
+including any chunks nested inside it -- i.e. for a chunk that's itself a
+parent of children, the children's own full sizes (their own 12-byte
+header plus their own content, recursively) sum to exactly the parent's
+declared size, with no gap and no overlap. This is what lets a strict,
+non-recursive walk of one level (e.g. `topLevelChunkTags()`) skip cleanly
+from one top-level chunk directly to the next sibling, and what lets a
+deep, unscoped recursive search (`collectChunks()`) find a chunk regardless
+of how many levels it's nested at. Verified end-to-end via a synthetic test
+fixture built with a *real* nested hierarchy (`PCG1 > SLS1 > (SDB1, SBK1)`,
+`PCG1 > PRG1 > (PBK1, MBK1)`, `PCG1 > CMB1 > (CBK1)`, matching §2 below) --
+deliberately reverting the header-size fix while keeping that nested
+fixture makes the whole file fail to load at all ("No SDB1 chunk found"),
+confirming this isn't just a cosmetic offset difference but the mechanism
+a nested walk actually depends on.
 
 ## 2. Chunk hierarchy
 
@@ -99,6 +140,15 @@ PCG1                                -- whole-file container
  └─ DPI1                            -- unidentified -- NOT explored
 ```
 
+`PCG1` itself is a real, explicit chunk (its own 12-byte header, §1.2)
+starting at byte 16, immediately after the 16-byte file header (§1.1) --
+**not** implicitly consumed by that file header. Confirmed directly
+against a real 36MB backup: `PCG1`'s own declared content size exactly
+spans the rest of the file, and `DIV1`/`SLS1`/`PRG1`/`CMB1`/`GLB1` are its
+direct children, one level inside its own content -- `topLevelChunkTags()`
+(`PcgFile.cpp`) reads `PCG1` first and returns *its* children, not
+whatever it finds naively starting at byte 16.
+
 Only one `SLS1`/`SLD1`/`SDB1`/`STL1`/`SBK1` chain exists per file, but that
 single chain holds all 128 of the unit's Set Lists internally (§3) -- this
 is not a limitation.
@@ -117,15 +167,33 @@ hit. This was necessary because the factory-preload data alone is
 `"HD-1"`, `"Combi"`), which looks like structural metadata rather than a
 free-text name field until real user data is checked against it.
 
-### 3.1 Header (12 bytes, at SDB1's content start)
+### 3.1 Header (8 bytes, at SDB1's content start) — CORRECTED 2026-08-08
 
 ```
 offset  field                  sample value
-0       u32be used             344       -- meaning unclear, not a simple slot/name count
-4       u32be numSetlists      128       -- matches real hardware's 128 Set Lists
-8       u32be bytesPerSetlist  3612      -- == 129 * 28
-12..    `numSetlists` Set List blocks, `bytesPerSetlist` bytes each
+0       u32be numSetlists      128       -- matches real hardware's 128 Set Lists
+4       u32be bytesPerSetlist  3612      -- == 129 * 28
+8..     `numSetlists` Set List blocks, `bytesPerSetlist` bytes each
 ```
+
+**Was previously documented as a 12-byte header** with a leading `used`
+field (sample value 344, "meaning unclear") before `numSetlists`. That
+extra field never existed -- it was a misreading, caused by an unrelated
+bug in this project's *chunk-level* header parsing (a 4-byte field, `dwX`,
+that belongs to the chunk wrapper around SDB1, not to SDB1's own content --
+see §1.2) that happened to shift every offset in this section by exactly
+4 bytes in a way that canceled itself out end-to-end, so real Set List
+names still decoded correctly despite the wrong field labels. Fixing the
+chunk-level bug on its own (2026-08-08) broke this cancellation and
+exposed the real, always-8-byte header underneath -- confirmed directly
+against a real 36MB backup: `numSetlists`/`bytesPerSetlist` land exactly
+where expected, and the whole 128-Set-List table (including all 5 real
+user-named Set Lists in the exact confirmed order, §3.2) decodes correctly
+with this header shape and no other. There are 4 bytes left over between
+the last Set List block and the chunk's own declared end
+(`bytesPerSetlist * numSetlists` is 4 bytes short of the chunk's full
+content size) -- not yet understood, flagged rather than guessed at (see
+open question list).
 
 ### 3.2 Set List block (129 x 28-byte records)
 
@@ -146,8 +214,7 @@ Three marker values seen:
 
 Unpopulated song slots are empty strings (all-NUL after the marker) --
 most factory-default Set Lists (`"Set List 005"` .. `"Set List 127"`) have
-no songs assigned. The header's `used` count doesn't cleanly match
-"non-empty song slots" or "non-default Set List count" -- still unknown.
+no songs assigned.
 
 **Verified** end to end against the real 47.9MB sample: all 128 Set Lists
 extracted correctly, including 5 real user-named ones (`Preload Set List`,
@@ -164,15 +231,23 @@ parameter, whose SDB1 bytes were 100% identical across the group, proving
 no parameter data hides there. The real parameters live in `SBK1`, found
 only by a *generic* chunk-tag scan (not a targeted SDB1-only search).
 
-### 4.1 Header (same 12-byte shape as SDB1)
+### 4.1 Header (same 8-byte shape as SDB1, see §3.1)
 
 ```
 offset  field                  sample value
-0       u32be count            347 / 470 seen across two files -- unclear meaning
-4       u32be numSetlists      128
-8       u32be bytesPerSetlist  69,416  -- == 40 (header) + 128 * 542
-12..    `numSetlists` Set List blocks, `bytesPerSetlist` bytes each
+0       u32be numSetlists      128
+4       u32be bytesPerSetlist  69,416  -- == 40 (header) + 128 * 542
+8..     `numSetlists` Set List blocks, `bytesPerSetlist` bytes each
 ```
+
+Previously documented as a 12-byte header with a leading `count` field
+(347/470 seen across two files) -- same correction as §3.1, same cause
+(canceled out against an unrelated chunk-level bug until 2026-08-08).
+Confirmed directly against a real 36MB backup: `numSetlists`=128,
+`bytesPerSetlist`=69,416 land exactly where expected with this 8-byte
+shape, and all 128 Set Lists' worth of slot parameters (2,560 Programs /
+1,792 Combis' worth of references, matching the real maximums exactly)
+decode correctly.
 
 ### 4.2 Set List block
 
@@ -187,13 +262,13 @@ project owner set up groups of 4-6 near-identical slots each varying
 
 | Offset | Field | Encoding | Confirmed via |
 |---|---|---|---|
-| +12 | Type + Color + Font size (low 2 bits) | bit0 = type (1=Program, 0=Combi); bits 2-5 = `4*(color-1)`, 1-based color (this byte's bits 0-5 only -- see §4.4 note); bits 6-7 = Font size's low 2 bits, see §4.4 | Color values `1,2,4,16` -> byte `1,5,13,61`, exact match |
+| +12 | Type + Color + Font size (low 2 bits) | bits 0-1 = Type (0=Combi, 1=Program, 2=Song); bits 2-5 = `4*(color-1)`, 1-based color (this byte's bits 0-5 only -- see §4.4 note); bits 6-7 = Font size's low 2 bits, see §4.4 | Color values `1,2,4,16` -> byte `1,5,13,61`, exact match. Type: **CORRECTED 2026-08-08** -- was documented (and coded) as a single bit (bit0 only, 1=Program/0=Combi); Korg's own SysEx documentation (`docs/external/KORG/SetList.txt`) confirms it's 2 bits, and this project's own code was accidentally still correct for Program-vs-Combi specifically (bit0 alone distinguishes those two), just not for Song (a slot this project has still never observed in a real file) and the unused value 3. |
 | +13 | Bank + Transpose (high 3 bits) | bits 0-4 = raw bank index (see §5); bits 5-7 = Transpose's high 3 bits, see §4.4 | see §5 |
 | +14 | Number | program/combi number within that bank (0-127) | see §5 |
 | +15 | Hold Time | `byte = HoldTime + 1` | Values `1,2,3,5` -> byte `2,3,4,6`, exact match. Default/baseline byte value 6 => default Hold Time is 5. |
 | +16 | Volume | raw 0-127, MIDI-style, no transform | Values `0,1,80,127` matched exactly. Default/baseline is 127. |
-| +17 | Font size (high bit) + Transpose (low 3 bits) | bit 4 = Font size's high bit, see §4.4; bits 5-7 = Transpose's low 3 bits, see §4.4; bit 3 and bits 0-2 still **unexplained** | see §4.4 |
-| +18.. | Comment | free ASCII text, can contain literal `\r\n`; NUL-terminated (not `\r\n`-terminated) | Multiple test comments matched exactly, incl. multi-line ones |
+| +17 | Font size (high bit) + Transpose (low 3 bits) + Keyboard Track | bit 4 = Font size's high bit, see §4.4; bits 5-7 = Transpose's low 3 bits, see §4.4; bits 0-3 = Keyboard Track (track 1-16), per `docs/external/KORG/SetList.txt` -- not yet decoded anywhere in this app (nothing needs it yet). Bits 0-2 specifically still not independently isolated by this project's own test files. | see §4.4; Keyboard Track per Korg's own SysEx doc, 2026-08-08 |
+| +18.. | Comment | free ASCII text, **512 bytes max** (confirmed 2026-08-08, was assumed to run to the record's own end, 524 bytes), can contain literal `\r\n`; NUL-terminated only if shorter than the full 512 bytes (a full-length comment has no terminator, same convention as this format's name fields) | Multiple test comments matched exactly, incl. multi-line ones; length cap per `docs/external/KORG/SetList.txt` |
 
 Bits 6-7 of +12 and bit 4 of +17 (Font size), and bits 5-7 of +13 and +17
 (Transpose), overlap with fields already documented above (Color, Bank) --
@@ -302,11 +377,33 @@ shape**:
 
 ```
 offset  field                     Combi value   Program value
-0       u32be count (unknown)     varies        varies
-4       u32be numRecords          128           128
-8       u32be bytesPerRecord      7810          4960
-12..    `numRecords` records, `bytesPerRecord` bytes each
+0       u32be numRecords          128           128
+4       u32be bytesPerRecord      7810          4960
+8..     `numRecords` records, `bytesPerRecord` bytes each
 ```
+
+**Corrected 2026-08-08** (was previously documented as a 12-byte header
+with a leading "count (unknown)" field) -- same fix, same cause, as
+§3.1/§4.1's identical correction: the extra field never existed, it was a
+misreading canceled out by an unrelated chunk-level bug until that bug was
+fixed. Confirmed directly against a real 36MB backup with this 8-byte
+shape: all 20 Program banks and all 14 Combi banks decode with
+`numRecords`/`bytesPerRecord` exactly as expected, and the resulting
+Program/Combi counts (2,560 / 1,792) exactly match the real physical
+maximums (20×128 / 14×128). Same unexplained 4-byte gap as §3.1 between
+the last record and the chunk's own declared end.
+
+**Confirmed directly** (real Kronos hardware behavior we confirmed
+2026-08-07, not derived from parsing): a bank is the
+unit's atomic storage granularity -- its capacity is a fixed 128 slots,
+and a bank is always either fully populated or entirely absent from a
+given backup, never partially saved. This is why `numRecords` above reads
+exactly 128 for every real Program/Combi bank this project has ever
+parsed, rather than something that just happened to be 128 in the files
+examined so far. It also sharpens what "a bank is missing from this
+backup" can mean in practice -- see the [Internals pane](/overview) and
+open question #13 below: the only real absence a backup can have is a
+whole bank chunk missing entirely, never a partial one.
 
 Each record's name is a **fixed 24-byte field starting 4 bytes into the
 record** -- space/NUL-padded, but **not NUL-terminated**: a full-length
@@ -316,7 +413,8 @@ handles both bank types uniformly; a slot's `bank`/`number` (from SBK1,
 §4.3) directly index `[bank][number]` into whichever list matches its
 type. Whether a bank is tagged `MBK1` or `PBK1` turned out to be
 irrelevant to name lookup -- just two tag values for the identical record
-shape (unknown what the tag distinction itself actually signifies).
+shape. The tag itself is understood (via an external reference, §7) to
+signal which sound engine that bank's Programs use; see §5.2 below.
 
 ### 5.1 Combi banks (`CMB1 > CBK1`) -- 14 banks
 
@@ -347,6 +445,18 @@ Note `GM` itself is *not* one of these 20 stored banks -- bank values
 `>=20` seen in real slot data don't correspond to anything stored per-file
 (see §5.4), consistent with `GM` being fixed MIDI-spec content Korg
 doesn't need to store, rather than the 21st item in this list.
+
+**Confirmed directly** (2026-08-07): which sound engine a
+Program bank uses (HD-1 vs EXi, see §7's `MBK1`/`PBK1` note) is a *global,
+per-bank* setting on the unit itself -- Programs within one bank can't
+individually be assigned to different engines. Combined with the
+whole-bank-or-nothing storage granularity noted above, this means a
+Program bank chunk found in a file is always a complete, single-engine
+128-slot unit; this project's own `ProgramBankType`
+(`src/kronos/PcgFile.h`) is tracked per bank for exactly this reason,
+never per record. (This confirms the *behavior* -- one engine per bank, no
+partial banks -- not the specific `MBK1`=EXi/`PBK1`=HD-1 tag mapping
+itself, which remains externally sourced only; see §7.)
 
 ### 5.3 Verification anchors (ground truth given directly, not guessed)
 
@@ -433,6 +543,20 @@ added to the lookup table (`kronos::timbreBankName()`) until each
 individual code is confirmed the same rigorous way -- unknown codes
 surface as a raw number in the UI rather than a guessed name.
 
+These 8 codes are a *different number space* from this project's own PBK1
+file-order Program bank index (`ProgramInfo::bank`) -- they coincide for
+INT-A..D (both happen to use 0..3) but diverge for the other 4 (e.g.
+USER-D is file-order index 11, but Timbre code 20). `PcgFile.cpp`'s
+`kConfirmedTimbreBanks` table pairs each confirmed code with its file-order
+index so Combi-usage counting (`combiUsagesForProgram()`/
+`combiUsageCounts()`, backing the Programs table's `#CMB` column, the
+Program usage panel, and Duplicates' per-copy reference counts) can
+translate between the two and cover all 8 confirmed banks correctly, not
+just the INT-A..D range where the numbers happen to match (fixed
+2026-08-08 -- previously only INT-A..D actually fed into usage counting,
+even though USER-A/D/F/AA's codes were already sitting right here,
+confirmed but unused for that purpose).
+
 ### 6.3 A resolved "anomaly" (worth recording as a methodology note)
 
 An early Combi sample ("061 Sledgehammer") appeared to contradict this
@@ -477,25 +601,32 @@ Recorded here for later, even though nothing below is wired into
   software synth engines like AL-1/MOD-7/etc., HD-1 = the PCM sample
   playback engine). Plausibly relevant to why some Combi Timbre blocks
   (§6) have visibly different internal parameter layouts from each other
-  -- likely engine-dependent -- but not confirmed or acted on yet.
-- **A possible third Set List slot type**: this project's SBK1 parsing
-  (§4.3) reads a single bit (`isProgram`: 1=Program, 0=Combi). The
-  external doc describes a byte with three possible values instead --
-  `00=Combi, 01=Program, 02=Song` -- implying Set List slots might be able
-  to reference a Song/sequence directly, which a single bit read could
-  silently misclassify as a Combi. Not reproduced against a real file
-  yet; worth a dedicated check before trusting `isProgram` on an
-  otherwise-unusual slot. The same example also shows one further
-  unexplained byte right after the slot's Type/Bank/Number fields
-  (their notes just mark it `??`) -- not confirmed to be (or not be)
-  this project's own reserved byte at SBK1 record offset +17 (§4.3),
-  since the two documents don't use the same offset baseline.
+  -- likely engine-dependent -- but not confirmed or acted on yet. The
+  underlying *behavior* this describes -- engine assignment is a global,
+  per-bank setting, never mixed within a bank -- **is** independently
+  confirmed directly (§5.2); only the specific claim that the `MBK1`/
+  `PBK1` tag is what encodes it remains externally sourced only.
+- **A possible third Set List slot type -- bit width CONFIRMED 2026-08-08,
+  a real Song-type slot still not reproduced**: this project's SBK1
+  parsing (§4.3) used to read a single bit (`isProgram`: 1=Program,
+  0=Combi). This external doc's claim of a byte with three possible
+  values (`00=Combi, 01=Program, 02=Song`) is now independently confirmed
+  by a *second*, separate source -- Korg's own SysEx parameter
+  documentation (`docs/external/KORG/SetList.txt`) -- and this project's
+  own decoder has been corrected to match (§4.3). What's still open: no
+  real file has been seen with a slot actually carrying type value 2, so
+  whether Set List slots genuinely *can* reference a Song/sequence
+  directly (vs. that value simply being reserved/unused in practice) isn't
+  confirmed, just the bit layout that would represent it if it exists.
 - **`DKT1` (Drum Kits) / `WSQ1` (Wave Sequences)**: confirmed to contain
-  `DBK1`/`WBK1` sub-bank chunks following the same
-  count/numRecords/bytesPerRecord header shape as every other bank type
-  in this format -- still entirely unparsed by this project (open
-  question §8.5), but now known to at least share the familiar shape
-  rather than being a total unknown. Unlike Programs/Combis' uniform
+  `DBK1`/`WBK1` sub-bank chunks following the same general
+  numRecords/bytesPerRecord header shape as every other bank type in this
+  format (§5's now-corrected 2-field, 8-byte version, not the original
+  3-field guess -- see §5's own correction note; not independently
+  re-verified for DKT1/WSQ1 specifically, but the pattern has now held for
+  every other chunk type checked) -- still entirely unparsed by this
+  project (open question §8.5), but now known to at least share the
+  familiar shape rather than being a total unknown. Unlike Programs/Combis' uniform
   128-slots-per-bank, the external doc's example shows **non-uniform**
   bank sizes here: Drum Kits split as 40 (Int) + 16 per USER letter
   (`000-039` Int, `040-055` U-A, ... up to `136-151` U-G, 152 total);
@@ -523,18 +654,32 @@ Recorded here for later, even though nothing below is wired into
 
 ## 8. Open questions (consolidated)
 
-1. The 4-byte prefix field preceding every chunk header, throughout the
-   whole format (§1.2) -- a running byte offset? An index? Untested.
-2. What the `used`/`count` header field (present in SDB1, SBK1, CBK1,
-   MBK1, PBK1 alike) actually counts.
-3. Byte +17's bit 3 and bits 0-2 (§4.3) -- still unexplained now that bit
-   4 and bits 5-7 are confirmed as Font size/Transpose (§4.4). Real files
-   do show isolated non-zero values there independent of Font
-   size/Transpose (e.g. `0x08`), so something real is still unaccounted
-   for in this byte.
+1. **RESOLVED (2026-08-08), see §1.2**: the 4-byte field is not an
+   ambiguous prefix *before* the tag -- it's a fixed 12-byte header's third
+   word (`tag`, `size`, `dwX`), always right after `size` and right before
+   content. Its own *meaning* is still a completely open question (a
+   running byte offset? An index? Untested) -- only its position and
+   fixed width are confirmed now, not what it contains.
+2. **RESOLVED (2026-08-08)**: there is no separate `used`/`count` field --
+   see §3.1/§4.1/§5's corrected header shapes. It was a misreading of an
+   unrelated chunk-level field (`dwX`, open question #1) that bled into
+   this project's understanding of SDB1/SBK1/PBK1/MBK1/CBK1's own content,
+   caused by a bug in chunk-level parsing that happened to cancel out
+   end-to-end until that bug was fixed on its own.
+3. Byte +17's bits 0-2 (§4.3) -- **still open**, though bit 3 is now
+   resolved (see §4.3: Keyboard Track, bits 3-0). Korg's own SysEx
+   parameter documentation (`docs/external/KORG/SetList.txt`) plus a
+   direct byte-level check confirm bits 3-0 of this byte are Keyboard
+   Track (4 bits, `00~0F` = track 1-16) -- an exact bit-width match for
+   what was flagged unexplained here, consistent with real files showing
+   isolated non-zero values there independent of Font size/Transpose (e.g.
+   `0x08`). Not yet wired into `SlotParams`/decoded anywhere in the app
+   (nothing needs it yet), and the remaining bits 0-2 of this same byte are
+   still genuinely unaccounted for.
 4. Exactly which of the 20 PRG1 banks maps to which *display label* --
    the lookup mechanism itself is confirmed (§5.3); the specific label
    order (§5.2) is a positional assumption pending further verification.
+   See #13 below for a more fundamental version of the same uncertainty.
 5. `DKT1` (Drum Kits), `WSQ1` (Wave Sequences), `GLB1`, `DPI1`, and `INI1`
    (§7, tag observed once, never by this project directly) -- entirely
    unexplored. Unknown whether Set List slots can reference these
@@ -551,9 +696,11 @@ Recorded here for later, even though nothing below is wired into
 8. The remaining Combi Timbre bank codes (§6.2): `INT-E/F/G` and
    `USER-B/C/E/G` are strongly implied by the confirmed codes either side
    of them, but not independently verified the same rigorous way.
-9. A possible third SBK1 slot type ("Song", §7) this project's single-bit
-   `isProgram` read can't represent -- could be silently misclassifying
-   some slots as Combis. Not reproduced yet.
+9. **Bit layout RESOLVED (2026-08-08)**, real occurrence still unconfirmed:
+   the third SBK1 slot type ("Song", §7) is now correctly readable (Type
+   is 2 bits, not the 1 this project originally decoded) -- see §4.3. No
+   real file has been seen with a Song-type slot yet, so whether this
+   value actually occurs in practice remains open.
 10. Whether the external reference's `21`-Program-banks `DIV1` reading
     (§7) points at a real 21st bank this project's chunk scan is missing.
 11. The file-header checksum flag (§1.1, byte offset 8) -- our real
@@ -564,6 +711,22 @@ Recorded here for later, even though nothing below is wired into
     an `INI1` chunk in the external reference's example (§7) -- a real
     second copy of something, or an artifact of how that document's own
     notes are ordered? Not investigated against a real file.
+13. **A more fundamental version of #4, surfaced 2026-08-07**: every
+    Program/Combi bank "index" this project uses anywhere is actually just
+    that bank's *position* among however many PRG1/CBK1 sub-bank chunks
+    were found in the file, in file order -- not a confirmed bank identity
+    tied to anything in the bytes themselves. This has been silently
+    correct so far only because every real file examined happened to
+    contain a complete, canonically-ordered set of banks. If a real backup
+    can omit banks (plausible -- Kronos backup tools appear to let you
+    choose which data to include when saving), a file missing one bank
+    would silently relabel every later bank as one position earlier than
+    its real identity, with nothing in this project currently able to
+    detect it. Each PRG1/CBK1 sub-bank chunk's own first 4 bytes (see #2's
+    `used`/`count` field -- currently read and discarded, "meaning not
+    understood yet") are a real candidate for a per-chunk identity field
+    that would fix this properly. Not yet investigated with real test data
+    that's actually missing a known bank.
 
 ## 9. Where this is implemented
 

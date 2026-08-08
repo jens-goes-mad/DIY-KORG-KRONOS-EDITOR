@@ -331,6 +331,30 @@
   window.getProgramBankTypes = (datasetId) =>
     Promise.resolve(datasets[datasetId] ? [{ bank: 0, bankType: "HD-1" }, { bank: 1, bankType: "EXi" }] : []);
 
+  // Mirrors makeFakePrograms()/makeFakeCombis()' own record counts (6 per
+  // Program bank -- 5 named + 1 empty filler slot; 3 per Combi bank, no
+  // filler) -- for exercising internals.js in mock mode. Only 2 of the 20
+  // expected Program banks and 2 of 14 expected Combi banks "exist" here,
+  // deliberately, so the pane's own "N of 20/14 found" shortfall messaging
+  // has something real to show in mock mode too, not just when a real
+  // backup is actually missing banks. Same reasoning for topLevelChunks --
+  // a plausible but incomplete subset (no DKT1/WSQ1/GLB1/DPI1), consistent
+  // with what this project has never actually parsed for any real file.
+  window.getDatasetInternals = (datasetId) => {
+    if (!datasets[datasetId]) return fail(`Dataset ${datasetId} has no file loaded`);
+    return ok({
+      topLevelChunks: ["DIV1", "SLS1", "PRG1", "CMB1"],
+      programBanks: [
+        { index: 0, bankType: "HD-1", numRecords: 6, bytesPerRecord: 4960 },
+        { index: 1, bankType: "EXi", numRecords: 6, bytesPerRecord: 3706 },
+      ],
+      combiBanks: [
+        { index: 0, numRecords: 3, bytesPerRecord: 4048 },
+        { index: 1, numRecords: 3, bytesPerRecord: 4048 },
+      ],
+    });
+  };
+
   window.getProgramUsage = (datasetId, bank, number) => {
     const dataset = datasets[datasetId];
     if (!dataset) return fail(`Dataset ${datasetId} has no file loaded`);

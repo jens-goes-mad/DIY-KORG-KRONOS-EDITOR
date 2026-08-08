@@ -1,0 +1,437 @@
+========================================================================
+EP-1
+This file was generated automatically.  Do not edit by hand.
+========================================================================
+
+Components
+
+comp  sub                name
+----  ---  --------------------------------
+ 127    0  EP-1 Patch
+   0    0  3-Band EQ
+   1    0  Common KeyTrack 1
+   2    0  Common KeyTrack 2
+   3    0  Pan/Output
+   4    0  AMS Mixer 1
+   5    0  AMS Mixer 2
+   6    0  LFO 1
+   7    0  LFO 2
+   8    0  Amp EG
+   9    0  Filter EG
+  10    0  Pitch EG
+  11    0  EP Osc
+  12    0  Amp
+  13    0  IFX Slot
+
+
+EP-1 Patch (comp 127, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0              0..97  VoiceDelay
+    1       0               0..5  Model Type
+    2       0               0..9  IFX Type
+    3       0             0..100  T Volume
+    4       0              0..77  T Volume AMS Source
+    5       0          -100..100  T Volume AMS Int
+    6       0          -100..100  T Treble
+    7       0              0..77  T Treble AMS Source
+    8       0          -100..100  T Treble AMS Int
+    9       0          -100..100  T Bass
+   10       0              0..77  T Bass AMS Source
+   11       0          -100..100  T Bass AMS Int
+   12       0               0..1  T Tremolo On/Off
+   13       0              0..77  T Tremolo On/Off AMS Source
+   14       0               0..1  T Tremolo On/Off AMS Switch Mode
+   15       0             0..100  T Tremolo Speed
+   16       0              0..77  T Tremolo Speed AMS Source
+   17       0          -100..100  T Tremolo Speed AMS Int
+   18       0             0..100  T Tremolo Intensity
+   19       0              0..77  T Tremolo Intensity AMS Source
+   20       0          -100..100  T Tremolo Intensity AMS Int
+   21       0               0..1  T Cabinet On/Off
+   22       0              0..77  T Cabinet On/Off AMS Source
+   23       0               0..1  T Cabinet On/Off AMS Switch Mode
+   24       0             0..100  T Cabinet Drive
+   25       0              0..77  T Cabinet Drive AMS Source
+   26       0          -100..100  T Cabinet Drive AMS Int
+   27       0             0..100  R Volume
+   28       0              0..77  R Volume AMS Source
+   29       0          -100..100  R Volume AMS Int
+   30       0             0..100  R Vibrato
+   31       0              0..77  R Vibrato AMS Source
+   32       0          -100..100  R Vibrato AMS Int
+   33       0             0..100  R Speed
+   34       0              0..77  R Speed AMS Source
+   35       0          -100..100  R Speed AMS Int
+   36       0               0..1  R Cabinet On/Off
+   37       0              0..77  R Cabinet On/Off AMS Source
+   38       0               0..1  R Cabinet On/Off AMS Switch Mode
+   39       0             0..100  R Cabinet Drive
+   40       0              0..77  R Cabinet Drive AMS Source
+   41       0          -100..100  R Cabinet Drive AMS Int
+   42       0               0..1  IFX Enable
+
+
+3-Band EQ (comp 0, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..1  Bypass
+    1       0              0..99  InputTrim
+    2       0            -36..36  Low
+    3       0             0..165  MidFreq
+    4       0            -36..36  Mid
+    5       0            -36..36  High
+
+
+Common KeyTrack 1 (comp 1, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0             0..127  LowKey
+    1       0             0..127  MidKey
+    2       0             0..127  HighKey
+    3       0          -100..100  LowRamp
+    4       0          -100..100  MidLowRamp
+    5       0          -100..100  MidHighRamp
+    6       0          -100..100  HighRamp
+
+
+Common KeyTrack 2 (comp 2, sub 0)
+
+    see Common KeyTrack 1 (comp 1, sub 0)
+
+
+Pan/Output (comp 3, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..1  PanUseDrumkitSetting
+    1       0              0..77  PanAMSSource
+    2       0            -99..99  PanAMSIntensity
+    3       0             0..127  Pan
+    4       0             0..127  Send 1 Level
+    5       0             0..127  Send 2 Level
+    6       0             0..127  Patch Level
+    7       0               0..1  Patch Mute
+    8       0               0..1  Patch Solo (not stored)
+
+
+AMS Mixer 1 (comp 4, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0               0..6  Mixer Type
+    1       0              0..77  Source A
+    2       0            -99..99  Amount A
+    3       0              0..77  Source B
+    4       0            -99..99  Amount B
+    5       0              0..77  Amt A x B: Source A (deprecated. use Source A)
+    6       0            -99..99  Amt A x B: Amount A (deprecated. use Amount A)
+    7       0              0..77  Amt A x B: Source B (deprecated. use Source B)
+    8       0            -99..99  Amt A x B: Amount B (deprecated. use Amount B)
+    9       0              0..77  Offset: Source (deprecated. use Source A)
+   10       0          -199..199  Offset: Amount
+   11       0          -199..199  Offset: Offset
+   12       0              0..77  Smoothing: Source (deprecated. use Source A)
+   13       0              0..99  Smoothing: Attack
+   14       0              0..99  Smoothing: Decay
+   15       0              0..77  Shape: Source (deprecated. use Source A)
+   16       0            -99..99  Shape: Shape
+   17       0               0..1  Shape: Mode
+   18       0              0..77  Quantize: Source (deprecated. use AMS Source A)
+   19       0              2..32  Quantize: Steps
+   20       0              0..77  Gate: Source
+   21       0            -99..99  Gate: Threshold
+   22       0               0..1  Gate: Control at Note-on only
+   23       0               0..1  Gate: Below Threshold Use AMS
+   24       0               0..1  Gate: At/Above Threshold Use AMS
+   25       0              0..77  Gate: Below Threshold AMS Source Select (deprecated. use Source A)
+   26       0              0..77  Gate: At/Above Threshold AMS Source Select (deprecated. use Source B)
+   27       0            -99..99  Gate: Below Threshold Fixed Value
+   28       0            -99..99  Gate: At/Above Threshold Fixed Value
+
+
+AMS Mixer 2 (comp 5, sub 0)
+
+    see AMS Mixer 1 (comp 4, sub 0)
+
+
+LFO 1 (comp 6, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0              0..17  Waveform
+    1       0            -36..37  Start Phase
+    2       0            -99..99  Shape
+    3       0              0..77  Shape AMS Source
+    4       0            -99..99  Shape AMS Intensity
+    5       0              0..99  Frequency
+    6       0              0..99  FrequencyFine
+    7       0               0..1  Stop
+    8       0            -99..99  Offset
+    9       0               0..1  KeySync
+   10       0              0..99  Fade
+   11       0              0..99  Delay
+   12       0              0..77  FrequencyAMS1Source
+   13       0            -99..99  FrequencyAMS1Intensity
+   14       0              0..77  FrequencyAMS1ModSource
+   15       0            -99..99  FrequencyAMS1ModIntensity
+   16       0              0..77  FrequencyAMS2Source
+   17       0            -99..99  FrequencyAMS2Intensity
+   18       0               0..1  MIDITempoSync
+   19       0               0..9  MIDITempoSyncBaseNote
+   20       0              1..32  MIDITempoSyncTimes
+
+
+LFO 2 (comp 7, sub 0)
+
+    see LFO 1 (comp 6, sub 0)
+
+
+Amp EG (comp 8, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0            -99..99  Start Level
+            1                     Attack Level
+            2                     Breakpoint Level
+            3                     Sustain Level
+            4                     Release Level
+    1       0              0..99  Attack Time
+            1                     Decay Time
+            2                     Slope Time
+            3                     Release Time
+    2       0              0..10  Attack Curve
+            1                     Decay Curve
+            2                     Slope Curve
+            3                     Release Curve
+    3       0              0..77  LevelModAMS1Source
+    4       0            -99..99  Start Lvl Mod Intens
+            1                     Attack Lvl Mod Intens
+            2                     Breakpoint Lvl Mod Intens
+    5       0              0..77  LevelModAMS2Source
+    6       0            -99..99  Start Lvl Mod Intens
+            1                     Attack Lvl Mod Intens
+            2                     Breakpoint Lvl Mod Intens
+    7       0              0..77  TimeModAMS1Source
+    8       0            -99..99  Attack Time Mod Intens
+            1                     Decay Time Mod Intens
+            2                     Slope Time Mod Intens
+            3                     Release Time Mod Intens
+    9       0              0..77  TimeModAMS2Source
+   10       0            -99..99  Attack Time Mod Intens
+            1                     Decay Time Mod Intens
+            2                     Slope Time Mod Intens
+            3                     Release Time Mod Intens
+   11       0              0..77  TimeModAMS3Source
+   12       0            -99..99  Attack Time Mod Intens
+            1                     Decay Time Mod Intens
+            2                     Slope Time Mod Intens
+            3                     Release Time Mod Intens
+   13       0              0..77  ResetAMSSource
+   14       0            -99..99  ResetAMSThreshold
+
+
+Filter EG (comp 9, sub 0)
+
+    see Amp EG (comp 8, sub 0)
+
+
+Pitch EG (comp 10, sub 0)
+
+    see Amp EG (comp 8, sub 0)
+
+
+EP Osc (comp 11, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0          -100..200  PitchSlope
+    1       0            -60..60  Ribbon
+    2       0            -60..12  PitchBendUp
+    3       0            -60..12  PitchBendDown
+    4       0             0..100  Osc Level
+    5       0              0..77  Osc Level AMS Src
+    6       0          -100..100  Osc Level AMS Int
+    7       0          -100..100  Decay
+    8       0              0..77  Decay AMS Src
+    9       0          -100..100  Decay AMS Int
+   10       0          -100..100  Release
+   11       0              0..77  Release AMS Src
+   12       0          -100..100  Release AMS Int
+   13       0             0..100  Key Down Noise Level
+   14       0              0..77  Key Down Noise Level AMS Src
+   15       0          -100..100  Key Down Noise Level AMS Int
+   16       0             0..100  Key Up Noise Level
+   17       0              0..77  Key Up Noise Level AMS Src
+   18       0          -100..100  Key Up Noise Level AMS Int
+   19       0            -36..36  Noise Tone
+   20       0              0..77  Noise Tone AMS Src
+   21       0            -36..36  Noise Tone AMS Int
+   22       0          -100..100  Hammer Width
+   23       0              0..77  Hammer Width AMS Src
+   24       0          -100..100  Hammer Width AMS Int
+
+
+Amp (comp 12, sub 0)
+
+param   index        value                      name
+-----  ------  -----------------  --------------------------------
+    0       0             0..127  Level
+    1       0              0..77  AMSSource
+    2       0            -99..99  AMSIntensity
+
+
+Message Formats:
+  F0 42 3g 68 43 <type> <comp> <sub> <param id> <index> <value> F7
+
+  <type>
+        09: HD-1 patch 1
+        0A: HD-1 patch 2
+        0B: EXi patch 1
+        0C: EXi patch 2
+  <comp>, <sub>
+        single-byte values from table
+  <param id>
+        pp: (7-bit) for parameter ids in the range of 0..126
+        7F pp pp: (14-bit, MSB first) for parameter ids in the range of 127..16383 (deprecated)
+  <index>
+        single-byte value from table
+  <value>
+        vv vv vv: 21-bit signed value, MSB first
+
+
+  F0 42 3g 68 44 <type> <comp> <sub> <param id> <index> <value type> <value> F7
+
+  <type>, <comp>, <sub>
+        (as above)
+  <param id>
+        pp: parameter id
+  <index>
+        (as above)
+  <value type>
+        02: 16-byte UUID
+  <value>
+        binary value converted to 7-bit sys/ex data (see *3 in KRONOS_MIDI_SysEx.txt)
+
+
+EP-1 Tone Adjust
+
+assign  type        value                      name
+------  ----  -----------------  --------------------------------
+     0     -                  -  Off
+    30   Rel            -99..99  Common LFO Speed
+    31   Abs               0..1  Unison Enable
+    32   Abs              2..16  Unison Num Voices
+    33   Abs             0..200  Unison Detune
+    34   Abs               0..9  Unison Thickness
+    35   Abs              0..99  Common Step Seq Attack
+    36   Abs              0..99  Common Step Seq Decay
+
+    48   Abs             0..100  Harmonic Sound Level
+    49   Abs          -100..100  Harmonic Sound Decay
+    50   Abs          -100..100  Harmonic Sound Release
+    51   Abs             0..100  Attack Noise Level
+    52   Abs             0..100  Release Noise Level
+    53   Abs            -36..36  Attack Tone
+    54   Abs          -100..100  Hammer Width
+    55   Abs             0..100  Volume
+    56   Abs          -100..100  Tine Treble
+    57   Abs          -100..100  Tine Bass
+    58   Abs               0..1  Tine Vibrato On/Off
+    59   Abs             0..100  Vibrato Speed
+    60   Abs             0..100  Vibrato Intensity
+    61   Abs               0..1  Cabinet On/Off
+    62   Abs             0..100  Cabinet Drive
+    63   Abs             5..210  IFX Speed
+    64   Abs             0..100  IFX Depth
+    65   Abs             0..100  IFX Resonance
+    66   Abs             1..100  IFX Attack
+    67   Abs             0..100  IFX Wet/Dry
+
+
+EP-1 AMS Sources
+
+src                name
+---  --------------------------------
+  0  Off
+  1  AMS Mixer 1
+  2  AMS Mixer 2
+  3  Common Step Seq
+  4  Common LFO
+  5  Keytrack 1
+  6  Keytrack 2
+  7  Note Number
+  8  Velocity
+  9  Exp Velocity
+ 10  Release Velocity
+ 11  Poly Aftertouch
+ 12  Aftertouch
+ 13  JSX
+ 14  JS+Y (CC#1)
+ 15  JS-Y (CC#2)
+ 16  JS+Y + AT/2
+ 17  JS-Y + AT/2
+ 18  Pedal (CC#4)
+ 19  Ribbon (CC#16)
+ 20  Slider (CC#18)
+ 21  Knob5 (CC#17)
+ 22  Knob6 (CC#19)
+ 23  Knob7 (CC#20)
+ 24  Knob8 (CC#21)
+ 25  Knob5 [+]
+ 26  Knob6 [+]
+ 27  Knob7 [+]
+ 28  Knob8 [+]
+ 29  Damper (CC#64)
+ 30  PortaSW (CC#65)
+ 31  Sostenuto (CC#66)
+ 32  Soft Pdl (CC#67)
+ 33  SW1 (CC#80)
+ 34  SW2 (CC#81)
+ 35  FootSW (CC#82)
+ 36  MIDI Ctl (CC#83)
+ 37  Vector JS+X (CC#85)
+ 38  Vector JS-X (CC#86)
+ 39  Vector JS+Y (CC#87)
+ 40  Vector JS-Y (CC#88)
+ 41  Tempo
+ 42  Off
+ 43  Off
+ 44  Off
+ 45  Off
+ 46  Off
+ 47  Off
+ 48  Off
+ 49  Off
+ 50  Off
+ 51  Off
+ 52  Off
+ 53  Off
+ 54  Off
+ 55  Off
+ 56  Off
+ 57  Off
+ 58  Off
+ 59  Off
+ 60  Off
+ 61  Off
+ 62  Off
+ 63  Off
+ 64  Off
+ 65  Off
+ 66  Off
+ 67  Off
+ 68  Off
+ 69  Off
+ 70  Off
+ 71  Off
+ 72  Off
+ 73  Off
+ 74  Off
+ 75  Off
+ 76  Off
+ 77  Off
+
